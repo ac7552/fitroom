@@ -50,7 +50,9 @@ response's `garment.garment` says which it is.
 
 Sizes are always in cm. `unit` is what the chart was written in. `kind` is `garment` when the chart gives the
 jacket's own measurements, or `body` when it gives the body it's meant for (Fitroom then estimates the
-jacket by adding regular-cut ease). `missing` lists measurements the chart doesn't give; those are `null`.
+jacket by adding regular-cut ease). It's `sizes` when the chart only converts sizes (S, M, L against US,
+UK or IT numbers). A men's US or UK size is the chest it fits in inches, so Fitroom estimates the chest
+alone from it. Shops that load their chart from the Kiwi Sizing app are read from Kiwi's API. `missing` lists measurements the chart doesn't give; those are `null`.
 
 `fabric` is `wool`, `cotton`, `denim`, `leather` or `nylon`, from the listing's words (wool when it says
 nothing). Jackets also have a `style`, for drawing the right one: `tailored` (blazers, suit and sport

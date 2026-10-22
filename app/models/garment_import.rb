@@ -19,6 +19,10 @@ class GarmentImport
   # Worn over tailoring and cut long; fitted with more room and no "right" length.
   COATS = /overcoat|topcoat|top coat|car coat|trench|peacoat|pea coat|parka|duffle|\bcoat\b/i
   NOT_COATS = /sport ?coat|suit|blazer|tuxedo/i
+  # A "hoodie" that's insulated or zips up with a hood is outerwear (Canada Goose calls jackets hoodies).
+  HOODED_OUTERWEAR = /\bdown\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell|zip(?:per)? closure|two-way zip/i
+  # Kiwi Sizing's chart API, which many Shopify shops load their size charts from (see Page#kiwi_sizing).
+  KIWI_SIZING = "https://app.kiwisizing.com/api/getSizingChart"
 
   # How a jacket looks, so the 3D view draws the right one: tailored (blazers, suit and sport jackets),
   # shirt (button-front denim, trucker and work jackets), bomber, or zip (most other outerwear). First match wins.
@@ -61,7 +65,7 @@ class GarmentImport
 
   KINDS = %w[jacket coat trousers].freeze
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 3
+  FORMAT = 4
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -79,6 +83,11 @@ class GarmentImport
   # garment: what a pasted chart is for ("jacket", "coat" or "trousers"); a link works it out from the page.
   def self.from_text(text, garment: "jacket") = new.from_text(text, garment:)
 
+  # fetch_json: reads a size chart service's answer (stubbed in tests).
+  def initialize(fetch_json: Fetcher.method(:get_json))
+    @fetch_json = fetch_json
+  end
+
   def from_page(html, source_url:)
     page = Page.new(html)
     product = page.product
@@ -87,6 +96,7 @@ class GarmentImport
     # The table that gives the most measurements wins; a resale listing's own measurements come next.
     chart = page.tables.filter_map { ChartReader.read(it.rows, context: it.context, garment: kind) }.min_by { it.missing.size }
     chart ||= page.item_measurements&.then { ChartReader.read(it, context: "item measurements", single: true, garment: kind) }
+    chart ||= kiwi_chart(page, kind)
     unless chart
       raise Error.new("no_size_chart", "Couldn't find a size chart on that page. Many shops load it in a pop-up: " \
                                        "copy the chart from there and paste it instead.")
@@ -107,11 +117,24 @@ class GarmentImport
 
   private
 
+  # The chart a Kiwi Sizing shop loads after its page opens: the first of its tables that reads as one.
+  def kiwi_chart(page, kind)
+    params = page.kiwi_sizing or return
+    answer = @fetch_json.call("#{KIWI_SIZING}?#{params.to_query}")
+    Array(answer["sizings"]).flat_map { it["tables"].to_h.values }.filter_map do |table|
+      rows = Array(table["data"]).map { |row| Array(row).map { Nokogiri::HTML.fragment(it["value"].to_s).text } }
+      ChartReader.read(rows, context: "size chart", garment: kind)
+    end.min_by { it.missing.size }
+  rescue Fetcher::Error, JSON::ParserError, NoMethodError, TypeError
+    nil
+  end
+
   # Jacket, coat or trousers, from the product's name and category.
   def kind_of(product)
     words = product.values_at(:name, :category).join(" ")
     return "coat" if words.match?(COATS) && !words.match?(NOT_COATS)
     return "jacket" if words.match?(JACKETS)
+    return "jacket" if words.match?(/hoodie|hooded/i) && product[:description].to_s.match?(HOODED_OUTERWEAR)
     return "trousers" if words.match?(TROUSERS)
     return "jacket" unless words.match?(UNSUPPORTED)
 

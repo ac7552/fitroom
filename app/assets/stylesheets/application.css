@@ -389,7 +389,8 @@ a { color: inherit; }
 .stage-note { margin: 0; font: 12px var(--mono); color: #5d616a; }
 .segmented--dark { background: rgb(255 255 255 / 0.5); }
 
-.stage-photos { position: absolute; right: 16px; top: 96px; display: grid; gap: 8px; }
+/* Bottom right, clear of the controls above however they wrap, and of the size rows below. */
+.stage-photos { position: absolute; right: 16px; bottom: 96px; display: grid; gap: 8px; }
 .stage-photo {
   width: clamp(72px, 14%, 120px);
   aspect-ratio: 3 / 4;
@@ -538,6 +539,6 @@ a { color: inherit; }
   .field-help { grid-column: 1; margin-top: 0; }
   .check { grid-template-columns: 84px auto minmax(0, 1fr); gap: 8px; }
   .own-size { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .stage-photos { top: auto; bottom: 120px; }
+  .stage-photos { bottom: 120px; }
   .size-row-label { width: 60px; }
 }

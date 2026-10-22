@@ -34,6 +34,20 @@ class GarmentImport
       end
     end
 
+    # Shopify shops using the Kiwi Sizing app load their size chart from Kiwi's API after the page opens.
+    # The page carries what Kiwi needs to pick the chart: the shop and the product's id, title, tags, type,
+    # vendor and collections. Returns them, or nil when the page doesn't use Kiwi.
+    def kiwi_sizing
+      script = @doc.css("script").map(&:text).select { it.include?("KiwiSizing") }.join("\n")
+      shop = script[/KiwiSizing\.shop\s*=\s*"([^"]+)"/, 1]
+      fields = %w[product title tags type vendor collections].to_h do |field|
+        [ field, script[/^\s*#{field}:\s*"((?:[^"\\]|\\.)*)"/, 1]&.then { JSON.parse(%("#{it}")) rescue it } ]
+      end
+      return unless shop&.end_with?(".myshopify.com") && fields["product"].to_s.match?(/\A\d+\z/)
+
+      { "shop" => shop, **fields.compact }
+    end
+
     # A single item's measurements as a one-row table: [["Size", "Chest", ...], ["XXL", "50.5\"", ...]].
     def item_measurements
       pairs = {}

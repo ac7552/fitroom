@@ -18,6 +18,7 @@ class GarmentImport
       198.18.0.0/15 224.0.0.0/4 240.0.0.0/4 ::/128 ::1/128 fc00::/7 fe80::/10 ff00::/8
     ].map { IPAddr.new(it) }.freeze
 
+    ACCEPT = { page: "text/html,application/xhtml+xml", image: "image/webp,image/jpeg,image/png", json: "application/json" }.freeze
     IMAGE_TYPES = %r{\Aimage/(jpeg|png|webp)\z}
     MAX_IMAGE_BYTES = 2_500_000
 
@@ -27,22 +28,25 @@ class GarmentImport
     # Returns [bytes, content type].
     def self.get_image(url) = new.get(url, image: true)
 
-    def get(url, redirects = 0, image: false)
+    # A JSON API that a shop's page loads its size chart from (see Page#kiwi_sizing), parsed.
+    def self.get_json(url) = JSON.parse(new.get(url, json: true))
+
+    def get(url, redirects = 0, image: false, json: false)
       uri = parse(url)
       http = connect(uri, resolve(uri.hostname))
 
       request = Net::HTTP::Get.new(uri)
       request["User-Agent"] = USER_AGENT
-      request["Accept"] = image ? "image/webp,image/jpeg,image/png" : "text/html,application/xhtml+xml"
+      request["Accept"] = ACCEPT[image ? :image : json ? :json : :page]
 
       begin
         http.request(request) do |response|
           case response
           when Net::HTTPRedirection
             raise Error, "That page redirects too many times." if redirects >= MAX_REDIRECTS
-            return get(URI.join(uri, response["location"]).to_s, redirects + 1, image:)
+            return get(URI.join(uri, response["location"]).to_s, redirects + 1, image:, json:)
           when Net::HTTPSuccess
-            return image ? read_image(response) : read_body(response)
+            return image ? read_image(response) : read_body(response, json:)
           when Net::HTTPForbidden, Net::HTTPUnauthorized, Net::HTTPTooManyRequests, Net::HTTPServiceUnavailable
             # Big shops often turn away any reader that isn't a person's browser. Fitroom doesn't pretend to be one.
             raise Error, "#{uri.hostname.delete_prefix('www.')} doesn't let apps read its pages. Paste its size chart, " \
@@ -114,9 +118,9 @@ class GarmentImport
       [ bytes, type ]
     end
 
-    def read_body(response)
-      unless response["content-type"].to_s.match?(%r{text/html|application/xhtml})
-        raise Error, "That link isn't a web page."
+    def read_body(response, json: false)
+      unless response["content-type"].to_s.match?(json ? %r{application/json} : %r{text/html|application/xhtml})
+        raise Error, json ? "The shop's size chart service didn't answer with a chart." : "That link isn't a web page."
       end
 
       body = +""

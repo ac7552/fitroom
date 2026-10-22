@@ -111,6 +111,51 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "tailored", GarmentImport.new.from_page(page("navy-suit-jacket"), source_url: "https://shop.example/navy")[:style]
   end
 
+  KIWI_CHART = {
+    "sizings" => [ {
+      "name" => "Generic Tops",
+      "tables" => { "t1" => { "data" => [
+        [ "S/M/L", "US", "UK", "EU", "IT" ], [ "S", "38", "38", "39", "48" ], [ "M", "40", "40", "40", "50" ], [ "L", "42", "42", "41", "52" ]
+      ].map { |row| row.map { { "type" => "single", "value" => it } } } } }
+    } ]
+  }.freeze
+
+  test "reads a Kiwi Sizing shop's chart from Kiwi, and a down hoodie as a zip-up jacket" do
+    asked = nil
+    import = GarmentImport.new(fetch_json: ->(url) { asked = url; KIWI_CHART })
+    garment = import.from_page(page("kiwi-hoodie"), source_url: "https://shop.example/products/hoodie")
+
+    query = Rack::Utils.parse_query(URI(asked).query)
+    assert asked.start_with?(GarmentImport::KIWI_SIZING)
+    assert_equal [ "sample-shop.myshopify.com", "123456", "Hoodies" ], query.values_at("shop", "product", "type")
+    assert_equal %(hoodies,mens,Sample "Outdoor"), query["tags"]
+    assert_equal [ "jacket", "zip", "nylon" ], garment.values_at(:garment, :style, :fabric)
+    assert_equal GarmentImport::COLORS["black"], garment[:color]
+  end
+
+  test "a size conversion chart is read as the chest each size fits" do
+    import = GarmentImport.new(fetch_json: ->(_) { KIWI_CHART })
+    chart = import.from_page(page("kiwi-hoodie"), source_url: "x")[:chart]
+
+    assert_equal [ "sizes", %w[waist shoulders sleeve length] ], chart.values_at(:kind, :missing)
+    assert_equal [ "S / US 38", "M / US 40", "L / US 42" ], chart[:sizes].map { it["name"] }
+    # A US 40 fits a 40 inch chest; the jacket is that plus a regular cut's room.
+    assert_in_delta 40 * 2.54 + 11, chart[:sizes][1]["chest"], 0.01
+  end
+
+  test "a sweatshirt hoodie is still turned away" do
+    import = GarmentImport.new(fetch_json: ->(_) { KIWI_CHART })
+    html = page("kiwi-hoodie").gsub(/Nylon\. .*?Color: Black/, "Cotton fleece. Kangaroo pocket.")
+    error = assert_raises(GarmentImport::Error) { import.from_page(html, source_url: "x") }
+    assert_equal "not_supported", error.code
+  end
+
+  test "a Kiwi shop whose chart service is down says there's no chart" do
+    import = GarmentImport.new(fetch_json: ->(_) { raise GarmentImport::Fetcher::Error, "down" })
+    error = assert_raises(GarmentImport::Error) { import.from_page(page("kiwi-hoodie"), source_url: "x") }
+    assert_equal "no_size_chart", error.code
+  end
+
   test "a sport coat is a jacket, not a coat" do
     html = page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", "Navy Sport Coat")
     assert_equal "jacket", GarmentImport.new.from_page(html, source_url: "x")[:garment]

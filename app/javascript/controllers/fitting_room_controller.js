@@ -194,6 +194,7 @@ export default class extends Controller {
       const notes = [
         chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`,
         chart.kind === "body" ? "estimated from the shop's body sizes" : null,
+        chart.kind === "sizes" ? "estimated from the shop's size numbers (a US 40 fits a 40 inch chest)" : null,
         chart.missing.length ? `no ${chart.missing.map(m => m.replace("_", " ")).join(" or ")} on the chart` : null
       ].filter(Boolean)
       const thumb = garment.photo

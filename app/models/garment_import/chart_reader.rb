@@ -61,7 +61,7 @@ class GarmentImport
     # Returns a Chart, or nil if the table isn't a size chart for this kind of garment.
     def read
       table = oriented
-      return unless table
+      return conversion unless table
 
       header, *body = table
       columns = map_columns(header)
@@ -181,5 +181,31 @@ class GarmentImport
     end
 
     def to_cm(value, unit) = unit == "in" ? value * 2.54 : value
+
+    # A size conversion chart (S, M, L against US, UK, EU or IT sizes) has no measurements, but a men's US or
+    # UK jacket size is the chest it fits in inches, and an Italian or French one is half of it in cm. Read
+    # as a body chart of chests: kind "sizes".
+    SIZE_SYSTEMS = [ [ /\A(US|UK)\b/i, 2.54 ], [ /\A(IT|FR)\b/i, 2.0 ] ].freeze
+
+    def conversion
+      return if @single || @key != "chest" || @rows.size < 3
+
+      header, *body = @rows
+      SIZE_SYSTEMS.each do |system, cm_per_size|
+        column = header.index { it.match?(system) }
+        next unless column&.positive?
+
+        sizes = body.filter_map do |row|
+          number = number(row[column]) or next
+          chest = number * cm_per_size
+          next unless chest.between?(76, 142)
+
+          name = [ row.first, "#{header[column]} #{row[column]}" ].uniq.join(" / ").truncate(20, omission: "")
+          to_garment_cm({ "name" => name, "chest" => chest }, "cm", "body")
+        end
+        return Chart.new(sizes:, unit: "in", kind: "sizes", missing: @columns.keys - [ "chest" ]) if sizes.size >= 3
+      end
+      nil
+    end
   end
 end
