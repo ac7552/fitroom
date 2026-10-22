@@ -1,0 +1,115 @@
+# A made-up suit jacket size chart for development. Not any real brand's measurements.
+# Finished garment measurements in centimetres: chest and waist are all the way around the jacket,
+# shoulders seam to seam, sleeve from shoulder seam to cuff, length down the centre back.
+name: Sample suit jacket
+garment: jacket
+source: Made-up sample data
+sizes:
+  - name: 36S
+    chest: 102.8
+    waist: 87.8
+    shoulders: 43.6
+    sleeve: 60.3
+    length: 71.0
+  - name: 36R
+    chest: 102.8
+    waist: 87.8
+    shoulders: 43.6
+    sleeve: 62.8
+    length: 75.0
+  - name: 36L
+    chest: 102.8
+    waist: 87.8
+    shoulders: 43.6
+    sleeve: 65.3
+    length: 79.0
+  - name: 38S
+    chest: 107.9
+    waist: 92.9
+    shoulders: 44.8
+    sleeve: 60.9
+    length: 71.5
+  - name: 38R
+    chest: 107.9
+    waist: 92.9
+    shoulders: 44.8
+    sleeve: 63.4
+    length: 75.5
+  - name: 38L
+    chest: 107.9
+    waist: 92.9
+    shoulders: 44.8
+    sleeve: 65.9
+    length: 79.5
+  - name: 40S
+    chest: 113.0
+    waist: 98.0
+    shoulders: 46.0
+    sleeve: 61.5
+    length: 72.0
+  - name: 40R
+    chest: 113.0
+    waist: 98.0
+    shoulders: 46.0
+    sleeve: 64.0
+    length: 76.0
+  - name: 40L
+    chest: 113.0
+    waist: 98.0
+    shoulders: 46.0
+    sleeve: 66.5
+    length: 80.0
+  - name: 42S
+    chest: 118.1
+    waist: 103.1
+    shoulders: 47.2
+    sleeve: 62.1
+    length: 72.5
+  - name: 42R
+    chest: 118.1
+    waist: 103.1
+    shoulders: 47.2
+    sleeve: 64.6
+    length: 76.5
+  - name: 42L
+    chest: 118.1
+    waist: 103.1
+    shoulders: 47.2
+    sleeve: 67.1
+    length: 80.5
+  - name: 44S
+    chest: 123.2
+    waist: 108.2
+    shoulders: 48.4
+    sleeve: 62.7
+    length: 73.0
+  - name: 44R
+    chest: 123.2
+    waist: 108.2
+    shoulders: 48.4
+    sleeve: 65.2
+    length: 77.0
+  - name: 44L
+    chest: 123.2
+    waist: 108.2
+    shoulders: 48.4
+    sleeve: 67.7
+    length: 81.0
+  - name: 46S
+    chest: 128.3
+    waist: 113.3
+    shoulders: 49.6
+    sleeve: 63.3
+    length: 73.5
+  - name: 46R
+    chest: 128.3
+    waist: 113.3
+    shoulders: 49.6
+    sleeve: 65.8
+    length: 77.5
+  - name: 46L
+    chest: 128.3
+    waist: 113.3
+    shoulders: 49.6
+    sleeve: 68.3
+    length: 81.5

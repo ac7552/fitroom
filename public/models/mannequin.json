@@ -1,0 +1,659 @@
+{
+  "units": "cm",
+  "body": {
+    "height": 173.66,
+    "chest": 98.85,
+    "waist": 79.21,
+    "shoulders": 46.04,
+    "arm": 59.07,
+    "hips": 97.55,
+    "inseam": 83.18
+  },
+  "jacket": {
+    "chest": 110.95,
+    "waist": 96.96,
+    "shoulders": 46.66,
+    "sleeve": 53.24,
+    "length": 62.13
+  },
+  "trousers": {
+    "waist": 85.22,
+    "seat": 106.48,
+    "thigh": 59.56,
+    "inseam": 73.21,
+    "leg_opening": 42.83
+  },
+  "casual": {
+    "chest": 110.73,
+    "waist": 109.11,
+    "shoulders": 50.98,
+    "sleeve": 53.17,
+    "length": 79.33
+  },
+  "head": {
+    "centre": [
+      0.0,
+      1.6315,
+      0.0613
+    ],
+    "radii": [
+      0.0798,
+      0.0999,
+      0.1009
+    ]
+  },
+  "targets": {
+    "measure-bust-circ-incr": {
+      "body": {
+        "chest": 15.46,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 12.909,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 14.851,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-bust-circ-decr": {
+      "body": {
+        "chest": -16.091,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": -15.713,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": -15.426,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-waist-circ-incr": {
+      "body": {
+        "chest": 0.0,
+        "waist": 9.294,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 0.0,
+        "waist": 9.504,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 7.226,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": 9.242,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-waist-circ-decr": {
+      "body": {
+        "chest": 0.0,
+        "waist": -9.107,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 0.0,
+        "waist": -8.713,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": -7.146,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": -9.038,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-shoulder-dist-incr": {
+      "body": {
+        "chest": 4.844,
+        "waist": 0.0,
+        "shoulders": 4.631,
+        "arm": -0.0,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 7.585,
+        "waist": 0.0,
+        "shoulders": 4.631,
+        "sleeve": -0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 6.296,
+        "waist": 0.0,
+        "shoulders": 4.631,
+        "sleeve": -0.0,
+        "length": 0.0
+      }
+    },
+    "measure-shoulder-dist-decr": {
+      "body": {
+        "chest": -2.998,
+        "waist": 0.0,
+        "shoulders": -2.511,
+        "arm": -0.007,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": -4.047,
+        "waist": 0.0,
+        "shoulders": -2.511,
+        "sleeve": -0.006,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": -3.571,
+        "waist": 0.0,
+        "shoulders": -2.511,
+        "sleeve": -0.005,
+        "length": 0.0
+      }
+    },
+    "measure-upperarm-length-incr": {
+      "body": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "arm": 6.958,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 0.05,
+        "waist": 0.0,
+        "shoulders": 0.044,
+        "sleeve": 6.631,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.167,
+        "sleeve": 6.785,
+        "length": 0.0
+      }
+    },
+    "measure-upperarm-length-decr": {
+      "body": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "arm": -4.836,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": -0.035,
+        "waist": 0.0,
+        "shoulders": -0.031,
+        "sleeve": -4.553,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": -0.112,
+        "sleeve": -4.166,
+        "length": 0.0
+      }
+    },
+    "measure-lowerarm-length-incr": {
+      "body": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "arm": 6.484,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": 5.393,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": 5.993,
+        "length": 0.0
+      }
+    },
+    "measure-lowerarm-length-decr": {
+      "body": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "arm": -4.499,
+        "hips": 0.0,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": -3.719,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": 0.0,
+        "shoulders": 0.0,
+        "sleeve": -3.209,
+        "length": 0.0
+      }
+    },
+    "measure-hips-circ-incr": {
+      "body": {
+        "chest": 0.0,
+        "waist": 1.822,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 15.026,
+        "inseam": 0.697
+      },
+      "jacket": {
+        "chest": 0.0,
+        "waist": 3.109,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 4.988,
+        "seat": 15.781,
+        "thigh": 0.137,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": 1.879,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-hips-circ-decr": {
+      "body": {
+        "chest": 0.0,
+        "waist": -0.934,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": -4.406,
+        "inseam": 0.0
+      },
+      "jacket": {
+        "chest": 0.0,
+        "waist": -1.253,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": -2.533,
+        "seat": -6.72,
+        "thigh": -0.044,
+        "inseam": 0.0,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": 0.0,
+        "waist": -0.894,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-upperleg-height-incr": {
+      "body": {
+        "chest": -0.175,
+        "waist": 2.912,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 2.35,
+        "inseam": 10.37
+      },
+      "jacket": {
+        "chest": -2.128,
+        "waist": 3.314,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": -0.073,
+        "thigh": -34.954,
+        "inseam": 9.825,
+        "leg_opening": -0.0
+      },
+      "casual": {
+        "chest": -0.111,
+        "waist": -2.017,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-upperleg-height-decr": {
+      "body": {
+        "chest": -0.029,
+        "waist": -2.454,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 0.337,
+        "inseam": -6.97
+      },
+      "jacket": {
+        "chest": 0.129,
+        "waist": 0.097,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": -0.017
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.972,
+        "thigh": -0.051,
+        "inseam": -6.035,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": -0.016,
+        "waist": 0.133,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-lowerleg-height-incr": {
+      "body": {
+        "chest": 0.025,
+        "waist": -4.646,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": 1.958,
+        "inseam": 8.1
+      },
+      "jacket": {
+        "chest": 0.019,
+        "waist": 2.405,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": 8.1,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": -0.093,
+        "waist": -0.238,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    },
+    "measure-lowerleg-height-decr": {
+      "body": {
+        "chest": 0.025,
+        "waist": -0.995,
+        "shoulders": 0.0,
+        "arm": 0.0,
+        "hips": -0.815,
+        "inseam": -5.9
+      },
+      "jacket": {
+        "chest": 0.019,
+        "waist": 0.079,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      },
+      "trousers": {
+        "waist": 0.0,
+        "seat": 0.0,
+        "thigh": 0.0,
+        "inseam": -5.9,
+        "leg_opening": 0.0
+      },
+      "casual": {
+        "chest": -0.093,
+        "waist": 0.117,
+        "shoulders": 0.0,
+        "sleeve": 0.0,
+        "length": 0.0
+      }
+    }
+  },
+  "ease_check": {
+    "ease-chest": {
+      "chest": 0.871,
+      "waist": 0.001,
+      "shoulders": 0.0,
+      "sleeve": 0.0,
+      "length": 0.0
+    },
+    "ease-waist": {
+      "chest": 0.0,
+      "waist": 0.989,
+      "shoulders": 0.0,
+      "sleeve": 0.0,
+      "length": 0.0
+    },
+    "ease-shoulders": {
+      "chest": 0.077,
+      "waist": 0.0,
+      "shoulders": 0.93,
+      "sleeve": 0.315,
+      "length": 0.0
+    },
+    "ease-sleeve": {
+      "chest": 0.0,
+      "waist": 0.0,
+      "shoulders": 0.032,
+      "sleeve": 1.0,
+      "length": 0.0
+    },
+    "ease-length": {
+      "chest": 0.0,
+      "waist": -0.035,
+      "shoulders": 0.0,
+      "sleeve": 0.0,
+      "length": 0.959
+    },
+    "ease-trousers-waist": {
+      "waist": 0.94,
+      "seat": 0.0,
+      "thigh": 0.0,
+      "inseam": 0.0,
+      "leg_opening": 0.0
+    },
+    "ease-seat": {
+      "waist": 0.2,
+      "seat": 0.707,
+      "thigh": 0.083,
+      "inseam": 0.0,
+      "leg_opening": 0.0
+    },
+    "ease-thigh": {
+      "waist": 0.0,
+      "seat": 0.0,
+      "thigh": 0.895,
+      "inseam": 0.0,
+      "leg_opening": 0.0
+    },
+    "ease-leg-opening": {
+      "waist": 0.0,
+      "seat": 0.0,
+      "thigh": 0.0,
+      "inseam": 0.0,
+      "leg_opening": 0.972
+    },
+    "ease-inseam": {
+      "waist": 0.0,
+      "seat": 0.0,
+      "thigh": -6.742,
+      "inseam": 1.0,
+      "leg_opening": 0.0
+    }
+  },
+  "ease_check_casual": {
+    "ease-chest": {
+      "chest": 0.986,
+      "waist": 0.002,
+      "shoulders": 0.0,
+      "sleeve": 0.0,
+      "length": 0.0
+    },
+    "ease-waist": {
+      "chest": 0.0,
+      "waist": 0.996,
+      "shoulders": 0.0,
+      "sleeve": 0.0,
+      "length": 0.0
+    },
+    "ease-shoulders": {
+      "chest": 0.053,
+      "waist": 0.0,
+      "shoulders": 0.93,
+      "sleeve": 0.315,
+      "length": 0.0
+    },
+    "ease-sleeve": {
+      "chest": 0.0,
+      "waist": 0.0,
+      "shoulders": 0.099,
+      "sleeve": 1.0,
+      "length": 0.0
+    },
+    "ease-length": {
+      "chest": 0.0,
+      "waist": 0.0,
+      "shoulders": 0.0,
+      "sleeve": 0.0,
+      "length": 1.0
+    }
+  },
+  "textures": {
+    "suit": "textures/suit.webp",
+    "suit_ao": "textures/suit_ao.webp",
+    "casual_zip": "textures/casual_zip.png",
+    "casual_bomber": "textures/casual_bomber.png",
+    "casual_shirt": "textures/casual_shirt.png"
+  }
+}
