@@ -6,7 +6,7 @@ class SizeChart
 
   class NotFound < StandardError; end
 
-  attr_reader :key, :name, :garment, :source, :sizes
+  attr_reader :key, :name, :garment, :source, :sizes, :style, :fabric
 
   def self.find(key)
     path = DIR.join("#{key}.yml")
@@ -25,6 +25,12 @@ class SizeChart
     @garment = data.fetch("garment")
     @source = data.fetch("source")
     @sizes = data.fetch("sizes").map { |size| size.slice("name", *MEASUREMENTS) }
+    # How the 3D view draws it, when the chart says (see GarmentImport): its style, cloth and colour.
+    @style = data["style"]
+    @fabric = data["fabric"]
+    @color = data["color"]
+    @color_name = data["color_name"]
+    @cut = data["cut"]&.transform_keys(&:to_sym)
   end
 
   def summary
@@ -34,8 +40,9 @@ class SizeChart
   # The same shape a GarmentImport returns, so clients treat built-in and imported jackets alike.
   def as_garment
     {
-      name:, brand: nil, color_name: "Navy", color: GarmentImport::COLORS["navy"], source_url: nil, garment:,
-      chart: { sizes:, unit: "cm", kind: "garment", missing: [] }
+      name:, brand: nil, color_name: @color_name || "Navy", color: @color || GarmentImport::COLORS["navy"], source_url: nil, garment:,
+      **({ style:, fabric:, cut: @cut }.compact),
+      chart: { sizes:, unit: "cm", kind: "garment", missing: MEASUREMENTS.reject { |m| sizes.any? { it[m] } } }
     }
   end
 

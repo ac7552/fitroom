@@ -1,0 +1,41 @@
+# A made-up T-shirt size chart for development. Not any real brand's measurements.
+# Finished garment measurements in centimetres: chest all the way around under the arms, shoulders seam to
+# seam, sleeve from the shoulder seam to the sleeve's hem, length from the high point of the shoulder.
+name: Sample T-shirt
+garment: top
+style: tee
+fabric: cotton
+color: "#2e3f63"
+color_name: Navy
+source: Made-up sample data
+sizes:
+  - name: XS
+    chest: 92.0
+    shoulders: 41.5
+    sleeve: 19.0
+    length: 67.0
+  - name: S
+    chest: 98.0
+    shoulders: 43.5
+    sleeve: 20.0
+    length: 69.0
+  - name: M
+    chest: 104.0
+    shoulders: 45.5
+    sleeve: 21.0
+    length: 71.0
+  - name: L
+    chest: 110.0
+    shoulders: 47.5
+    sleeve: 22.0
+    length: 73.0
+  - name: XL
+    chest: 116.0
+    shoulders: 49.5
+    sleeve: 23.0
+    length: 75.0
+  - name: XXL
+    chest: 122.0
+    shoulders: 51.5
+    sleeve: 24.0
+    length: 77.0

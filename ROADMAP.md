@@ -15,8 +15,19 @@ tailor's verdict for each item. The web page and a future mobile app share one J
 model file and solver (`lib/body_fit.js` has no browser dependencies). Like the web page, it keeps
 measurements in memory only.
 
-**More body types.** The mannequin is one man of average build. Add a woman's form and clothes, and builds
-(slim, athletic, broad) that set MakeHuman's macro sliders before measurements fine-tune them.
+**More body types.** There's now a woman's mannequin (a slender display form) beside the man's, with dresses
+and women's sizes. Next: builds (slim, athletic, broad, curvy) that set MakeHuman's macro sliders before
+measurements fine-tune them.
+
+**Rompers and jumpsuits.** One piece with legs: a pattern that joins a bodice to shorts or trousers.
+
+**The details of complicated clothes.** Belts, ties and sashes, scarves, cut-outs, sheer panels, ruffles and
+uneven hems are named on the item card but not drawn yet.
+
+**Trousers and skirts draped like the tops,** and women's blazers and coats (today they're the men's cut).
+
+**A test set of real listings.** Shirts, pants, dresses and things Fitroom doesn't fit yet (belts, shoes),
+each with what it should come out as, run against every change.
 
 **A garment library.** Jackets are drawn as a suit blazer, or as a casual jacket built from the body in
 zip-up, bomber and denim/button-up styles. More shapes would help: hooded jackets, puffers with

@@ -1,44 +1,71 @@
 import { Controller } from "@hotwired/stimulus"
-import { formatLength, toCm } from "lib/format"
+import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
+import { readPhoto, readGarment } from "lib/garments/print"
 
-// The fitting room: an outfit (up to a jacket, a coat and trousers, each from a link, a pasted chart or a
-// photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
+// The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
+// or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
 // whichever sizes you pick, in one of a few poses.
 //
 // Fit results come from the same API the mobile app uses. The measurements go out with each request
 // and are kept nowhere: not on the server, not in cookies or browser storage. Inputs have no names, so
 // the browser never submits or remembers them, and a refresh clears them. Photos never leave the device.
-const EXAMPLE_CM = { chest: 101.6, waist: 86.4, shoulders: 45.5, arm: 65.5, height: 178, hips: 101, inseam: 81 }
+// Example numbers for each mannequin: an average man's and woman's.
+const EXAMPLES_CM = {
+  men: { chest: 101.6, waist: 86.4, shoulders: 45.5, arm: 65.5, height: 178, hips: 101, inseam: 81 },
+  women: { chest: 91.5, waist: 74, shoulders: 39.5, arm: 58, height: 165, hips: 99, inseam: 76 }
+}
 const REQUIRED = ["chest", "waist", "shoulders", "arm", "height"]
 
-const KINDS = { jacket: "Jacket", coat: "Coat", trousers: "Trousers" }
-// How the 3D view draws a jacket (see STYLES in lib/stage.js), and the cloth it's made of.
-const STYLE_NAMES = { tailored: "Blazer or suit jacket", zip: "Zip-up jacket", bomber: "Bomber", shirt: "Denim or button-up jacket" }
-const FABRIC_NAMES = { wool: "Wool", cotton: "Cotton", denim: "Denim", leather: "Leather", nylon: "Nylon" }
-const ORDER = ["coat", "jacket", "trousers"]
+// What the page calls each kind of item (the API's names are top, jacket, coat and trousers).
+const KINDS = { top: "Top", jacket: "Jacket", coat: "Coat", trousers: "Pants" }
+const DEFAULT_STYLE = { top: "tee", jacket: "tailored" }
+const ORDER = ["coat", "jacket", "top", "trousers"]
 const OWN_PARTS = {
   jacket: [["chest", "Chest"], ["waist", "Waist"], ["shoulders", "Shoulders"], ["sleeve", "Sleeve"], ["length", "Length"]],
   trousers: [["waist", "Waist"], ["seat", "Seat"], ["thigh", "Thigh"], ["inseam", "Inseam"], ["leg_opening", "Opening"]]
 }
+// What the 3D view says while it drapes a top.
+const DRAPE_TEXT = { sewing: "Sewing it together…", settling: "Letting the cloth settle…", posing: "Moving it into the pose…" }
 const FLAT_PARTS = ["chest", "waist", "seat", "thigh", "leg_opening"]
+// The page's words for each measurement, for messages about them (see PagesHelper).
+const BODY_WORDS = {
+  height: ["height", "Stand up straight, with no shoes on."],
+  chest: ["chest", "Wrap the tape around your chest, under your arms."],
+  waist: ["waist", "Wrap the tape around your middle, at your belly button."],
+  shoulders: ["shoulders", "Measure across your back, from one shoulder bone to the other."],
+  arm: ["arm", "Measure from your shoulder bone down to your wrist."],
+  hips: ["hips", "Wrap the tape around the widest part of your bottom."],
+  inseam: ["leg", "Measure from your crotch down to the floor, on the inside of your leg."]
+}
+const FIT_NAMES = { slim: "Snug", regular: "Regular", classic: "Loose" }
 
-const STATUS_TEXT = { good: "Fits", tight: "Tight", loose: "Loose", short: "Short", long: "Long", unknown: "Not listed" }
-const VERDICT_TEXT = { fits: "Fits as it comes", alter: "Fits with tailoring", compromise: "Won't fit right" }
+// Plain words for the API's results.
+const STATUS_TEXT = { good: "Fits", tight: "Too tight", loose: "Too loose", short: "Too short", long: "Too long", unknown: "Can't tell" }
+const VERDICT_TEXT = { fits: "Fits", alter: "Fits after a small change from a tailor", compromise: "Won't fit well" }
+const PART_NAMES = { inseam: "Leg length", leg_opening: "Leg opening", sleeve: "Sleeves" }
 
 export default class extends Controller {
   static targets = [
     "input", "unit", "unitLabel", "cut", "results", "canvas", "sizes", "stageNote", "legend", "warnings",
-    "link", "importButton", "chartText", "importError", "outfitList", "itemType",
+    "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
-    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "exact"
+    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "exact",
+    "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider"
   ]
-  static values = { fitsUrl: String, importUrl: String, studioUrl: String, garment: Object }
+  static values = { fitsUrl: String, importUrl: String, studioUrl: String, garment: Object, dress: Object }
 
   connect() {
     this.unit = this.unitTargets.find(radio => radio.checked)?.value ?? "in"
-    this.unitLabelTargets.forEach(label => { label.textContent = this.unit })
+    this.showUnit()
     this.stage = new FittingStage(this.canvasTarget)
+    this.shownBodyType = this.bodyType
+    this.stage.setBodyType(this.bodyType)
+    this.floatSwitches()
+    this.stage.onDrape = (phase, done) => {
+      this.draping = done ? null : DRAPE_TEXT[phase] ?? null
+      this.renderStageNote()
+    }
     this.outfit = {}
     this.addItem(this.garmentValue)
     this.renderOwnSizes()
@@ -46,6 +73,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.switchWatch?.disconnect()
     clearTimeout(this.timer)
     this.requests?.forEach(r => r.abort())
     this.stage?.dispose()
@@ -74,22 +102,28 @@ export default class extends Controller {
   async importGarment(payload) {
     this.importErrorTarget.hidden = true
     this.importButtonTarget.disabled = true
-    this.importButtonTarget.textContent = "Reading…"
+    this.importButtonTarget.textContent = "Reading the page…"
     try {
+      if (payload.url) {
+        const shopData = await readShop(payload.url)
+        if (shopData) payload = { ...payload, shop_data: shopData }
+      }
       const response = await fetch(this.importUrlValue, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(40000)
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message ?? "Couldn't read that.")
       this.addItem(data.garment)
       this.update()
     } catch (error) {
-      this.showImportError(error.message.startsWith("Failed to fetch") ? "Couldn't reach Fitroom. Is the server running?" : error.message)
+      this.showImportError(error.name === "TimeoutError" ? "That store's page took too long. Try again, or paste its size chart instead."
+        : error.message.startsWith("Failed to fetch") ? "Can't reach Fitroom. Is the server running?" : error.message)
     } finally {
       this.importButtonTarget.disabled = false
-      this.importButtonTarget.textContent = "Add it"
+      this.importButtonTarget.textContent = "Add"
     }
   }
 
@@ -101,12 +135,46 @@ export default class extends Controller {
     this.outfit[kind] = item
     this.renderOutfit()
     if (garment.photo && !garment.photoColor) {
-      clothColor(garment.photo).then(color => {
+      // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth.
+      readPhoto(garment.photo, { shape: frontShape(garment.chart) }).then(async read => {
+        const color = read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) return
         garment.color = garment.photoColor = color
+        // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
+        // printed gets the photo's print.
+        garment.print = garment.cut && !garment.cut.printed ? null : read?.print ?? null
         this.renderOutfit()
         if (item.fit) this.render()
       })
+    }
+  }
+
+  // Just a photo: the page works out what it is (it stays here), and Fitroom gives that kind of thing its
+  // usual sizes. The photo's colour and print go on the 3D view as a shop photo's do.
+  async importPhoto() {
+    const file = this.snapInputTarget.files[0]
+    if (!file) return
+    const label = this.snapLabelTarget
+    label.textContent = "Looking at the photo…"
+    this.importErrorTarget.hidden = true
+    try {
+      const photo = await smallPhoto(file)
+      const read = await readGarment(photo)
+      if (!read) throw new Error("Couldn't see the clothes in that photo. Try one with the clothes on a plain background.")
+      const response = await fetch(this.importUrlValue, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ photo_kind: read.kind, photo_style: read.style })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message ?? "Couldn't add that.")
+      this.addItem({ ...data.garment, photo })
+      this.update()
+    } catch (error) {
+      this.showImportError(error.message)
+    } finally {
+      label.textContent = "+ Add a photo of the clothes"
+      this.snapInputTarget.value = ""
     }
   }
 
@@ -127,7 +195,7 @@ export default class extends Controller {
     this.photoUrl = URL.createObjectURL(file)
     this.photoPreviewTarget.src = this.photoUrl
     this.photoPreviewTarget.hidden = false
-    this.photoLabelTarget.textContent = "Change photo"
+    this.photoLabelTarget.textContent = "Change the photo"
     this.photoColor = await clothColor(this.photoUrl)
   }
 
@@ -137,12 +205,13 @@ export default class extends Controller {
   }
 
   addOwnSize() {
-    const trousers = this.itemTypeTarget.value === "trousers"
-    const parts = OWN_PARTS[trousers ? "trousers" : "jacket"]
+    const kind = this.itemTypeTarget.value
+    const trousers = kind === "trousers"
+    const parts = OWN_PARTS[trousers ? "trousers" : "jacket"]   // a top is measured like a jacket
     const row = document.createElement("div")
     row.className = "own-size"
     row.innerHTML = `
-      <label><span>Size</span><input type="text" autocomplete="off" spellcheck="false" placeholder="${trousers ? "32" : "40R"}" data-own="name"></label>
+      <label><span>Size</span><input type="text" autocomplete="off" spellcheck="false" placeholder="${trousers ? "32" : kind === "top" ? "M" : "40R"}" data-own="name"></label>
       ${parts.map(([part, label]) => `
         <label><span>${label}</span><input type="number" inputmode="decimal" min="0" step="0.25" autocomplete="off" data-own="${part}"></label>`).join("")}`
     this.ownSizesTarget.append(row)
@@ -165,20 +234,21 @@ export default class extends Controller {
     }).filter(size => size[main])
 
     if (sizes.length === 0) {
-      this.showImportError(`Add at least the ${main} for one size.`)
+      this.showImportError(`Type in at least the ${main} for one size.`)
       return
     }
     this.importErrorTarget.hidden = true
     const missing = parts.map(([part]) => part).filter(part => sizes.every(size => size[part] == null))
     this.addItem({
       name: `Your ${KINDS[kind].toLowerCase()}`, brand: null, color_name: null, color: this.photoColor ?? "#2a3552",
-      source_url: null, garment: kind, photo: this.photoUrl ?? null, fabric: "wool", ...(kind === "jacket" ? { style: "tailored" } : {}),
+      source_url: null, garment: kind, photo: this.photoUrl ?? null, fabric: kind === "top" ? "cotton" : "wool",
+      ...(DEFAULT_STYLE[kind] ? { style: DEFAULT_STYLE[kind] } : {}),
       chart: { sizes, unit: this.unit, kind: "garment", missing }
     })
     this.photoUrl = null
     this.photoColor = null
     this.photoPreviewTarget.hidden = true
-    this.photoLabelTarget.textContent = "+ Choose a photo (optional)"
+    this.photoLabelTarget.textContent = "+ Add a photo"
     this.update()
   }
 
@@ -189,18 +259,23 @@ export default class extends Controller {
 
   renderOutfit() {
     const items = this.items()
+    // Hips and leg length only matter for pants.
+    // Hips matter for pants and dresses; leg length only for pants.
+    const dress = this.outfit.top?.garment.style === "dress"
+    this.pantsOnlyTargets.forEach(field => { field.hidden = !(this.outfit.trousers || (dress && field.dataset.alsoDress)) })
     this.outfitListTarget.innerHTML = items.length ? items.map(({ kind, garment }) => {
       const chart = garment.chart
       const notes = [
         chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`,
-        chart.kind === "body" ? "estimated from the shop's body sizes" : null,
-        chart.kind === "sizes" ? "estimated from the shop's size numbers (a US 40 fits a 40 inch chest)" : null,
-        chart.missing.length ? `no ${chart.missing.map(m => m.replace("_", " ")).join(" or ")} on the chart` : null
+        chart.kind === "body" ? "sizes guessed from the store's body chart" : null,
+        chart.kind === "sizes" ? "sizes guessed from the size names" : null,
+        chart.missing.length ? `the chart doesn't show the ${listed(chart.missing.map(m => (PART_NAMES[m] ?? m.replace("_", " ")).toLowerCase()))}` : null,
+        garment.cut?.details?.length ? `the 3D view doesn't show its ${listed(garment.cut.details)}` : null
       ].filter(Boolean)
       const thumb = garment.photo
         ? `<img class="swatch swatch--photo" src="${escape(garment.photo)}" alt="">`
         : `<span class="swatch" style="background:${escape(garment.color)}"></span>`
-      const source = garment.source_url ? ` <a href="${escape(garment.source_url)}" target="_blank" rel="noopener noreferrer">View page</a>` : ""
+      const source = garment.source_url ? ` <a href="${escape(garment.source_url)}" target="_blank" rel="noopener noreferrer">See it in the store</a>` : ""
       return `
         <div class="garment-card">
           ${thumb}
@@ -209,29 +284,16 @@ export default class extends Controller {
             <p class="garment-name">${escape(garment.name)}</p>
             <p class="garment-meta">${escape([garment.brand, garment.color_name, garment.fabric && garment.fabric !== "wool" ? garment.fabric : null].filter(Boolean).join(" · "))}</p>
             <p class="garment-meta">${escape(capitalize(notes.join(", ")))}.${source}</p>
-            <div class="garment-looks">
-              ${kind === "jacket" ? picker(kind, "style", "Looks like", STYLE_NAMES, garment.style ?? "tailored") : ""}
-              ${picker(kind, "fabric", "Fabric", FABRIC_NAMES, garment.fabric ?? "wool")}
-            </div>
           </div>
           <button type="button" class="text-button garment-remove" data-kind="${kind}" data-action="fitting-room#removeItem" aria-label="Remove ${KINDS[kind].toLowerCase()}">Remove</button>
         </div>`
-    }).join("") : `<p class="hint">Nothing yet. Add a jacket, coat or trousers below.</p>`
+    }).join("") : `<p class="hint">Nothing yet. Paste a link below, or try one of ours.</p>`
 
     this.stagePhotosTarget.innerHTML = items.filter(i => i.garment.photo)
       .map(i => `<img class="stage-photo" src="${escape(i.garment.photo)}" alt="Your photo of the ${KINDS[i.kind].toLowerCase()}">`).join("")
   }
 
   // A different look for an item ("Looks like" or "Fabric" on its card): only the drawing changes.
-  restyle(event) {
-    const { kind, field } = event.currentTarget.dataset
-    const item = this.outfit[kind]
-    if (!item) return
-    item.garment[field] = event.currentTarget.value
-    this.renderOutfit()
-    this.render()
-  }
-
   items() {
     return ORDER.filter(kind => this.outfit[kind]).map(kind => ({ kind, ...this.outfit[kind] }))
   }
@@ -242,29 +304,93 @@ export default class extends Controller {
     const next = event.target.value
     if (next === this.unit) return
 
+    const height = this.readHeight()
     const ownInputs = this.ownSizesTarget.querySelectorAll('input[type="number"]')
     for (const input of [...this.inputTargets, ...ownInputs]) {
+      if (input.dataset.part === "height") continue
       const value = parseFloat(input.value)
       if (!Number.isFinite(value)) continue
       const cm = toCm(value, this.unit)
       input.value = next === "in" ? round(cm / 2.54, 4) : round(cm, 2)
     }
     this.unit = next
-    this.unitLabelTargets.forEach(label => { label.textContent = next })
+    this.writeHeight(height == null ? null : toCm(height, this.unit === "in" ? "cm" : "in"))
+    this.showUnit()
     this.update()
+  }
+
+  // A slider sets its measurement (and the box shows the number); typing moves the slider.
+  slide(event) {
+    const slider = event.currentTarget
+    const value = parseFloat(slider.value)
+    if (slider.dataset.sliderFor === "height") this.writeHeight(toCm(value, this.unit))
+    else this.inputTargets.find(input => input.dataset.part === slider.dataset.sliderFor).value = value
+    this.update()
+  }
+
+  syncSliders() {
+    const values = this.readMeasurements()
+    for (const slider of this.sliderTargets) {
+      const toUnit = cm => (this.unit === "in" ? cm / 2.54 : cm)
+      slider.min = Math.floor(toUnit(+slider.dataset.minCm) * 2) / 2
+      slider.max = Math.ceil(toUnit(+slider.dataset.maxCm) * 2) / 2
+      slider.step = 0.5
+      const value = values[slider.dataset.sliderFor]
+      slider.classList.toggle("is-unset", value == null)
+      slider.value = value ?? (+slider.min + +slider.max) / 2
+    }
+  }
+
+  // Inches show height as feet and inches; centimetres as one number.
+  showUnit() {
+    this.unitLabelTargets.forEach(label => { label.textContent = this.unit })
+    this.heightImperialTarget.hidden = this.unit !== "in"
+    this.heightMetricTarget.hidden = this.unit === "in"
+  }
+
+  // Height in the current unit, or null.
+  readHeight() {
+    if (this.unit === "in") {
+      const feet = parseFloat(this.heightFeetTarget.value), inches = parseFloat(this.heightInchesTarget.value)
+      const total = (Number.isFinite(feet) ? feet * 12 : 0) + (Number.isFinite(inches) ? inches : 0)
+      return total > 0 ? total : null
+    }
+    const cm = parseFloat(this.heightMetricTarget.querySelector("input").value)
+    return Number.isFinite(cm) && cm > 0 ? cm : null
+  }
+
+  // Shows a height (cm, or null to clear it) in the current unit.
+  writeHeight(cm) {
+    const metric = this.heightMetricTarget.querySelector("input")
+    if (cm == null) {
+      this.heightFeetTarget.value = this.heightInchesTarget.value = metric.value = ""
+      return
+    }
+    const inches = Math.round((cm / 2.54) * 2) / 2
+    this.heightFeetTarget.value = Math.floor(inches / 12)
+    this.heightInchesTarget.value = inches - Math.floor(inches / 12) * 12
+    metric.value = round(cm, 2)
   }
 
   fillExample() {
     for (const input of this.inputTargets) {
-      const cm = EXAMPLE_CM[input.dataset.part]
+      if (input.dataset.part === "height") continue
+      const cm = this.example[input.dataset.part]
       input.value = this.unit === "in" ? round(cm / 2.54, 4) : round(cm, 2)
     }
+    this.writeHeight(this.example.height)
     this.update()
   }
 
   clear() {
     this.inputTargets.forEach(input => { input.value = "" })
+    this.writeHeight(null)
     this.update()
+  }
+
+  // How snug the person likes clothes ("slim", "regular" or "classic", as the API calls them).
+  get cut() {
+    return this.cutTargets.find(radio => radio.checked)?.value ?? "regular"
   }
 
   // The stage
@@ -272,6 +398,62 @@ export default class extends Controller {
   changeView(event) {
     this.legendTarget.hidden = event.target.value !== "fit"
     this.stage.setView(event.target.value)
+  }
+
+  // Man or woman: the mannequin's body, picked at the top of step 2 or over the 3D view (they stay alike).
+  // Example numbers become the other body's example numbers, and the sample T-shirt becomes the sample dress
+  // (and back); numbers and clothes the person added stay as they are.
+  changeBodyType(event) {
+    const type = event.target.value
+    const hadExample = this.showsExample(EXAMPLES_CM[this.shownBodyType ?? "men"])
+    this.shownBodyType = type
+    this.bodyTypeTargets.forEach(input => { input.checked = input.value === type })
+    this.stage.setBodyType(type)
+    const top = this.outfit.top?.garment
+    const [from, to] = type === "women" ? [this.garmentValue, this.dressValue] : [this.dressValue, this.garmentValue]
+    if (top && to?.name && top.name === from?.name) {
+      this.addItem(structuredClone(to))
+      this.renderOutfit()
+    }
+    if (hadExample) this.fillExample()
+    else this.update()
+  }
+
+  // Whether the numbers filled in are these example numbers.
+  showsExample(example) {
+    const measurements = this.readMeasurements()
+    return REQUIRED.every(key => measurements[key] > 0 && Math.abs(toCm(measurements[key], this.unit) - example[key]) < 1)
+  }
+
+  // The view, pose and body switches float with the page while the 3D view is off screen and the fitting room
+  // is on it, so they're always at hand.
+  floatSwitches() {
+    if (!this.hasSwitchesTarget || !("IntersectionObserver" in window)) return
+    const seen = new Map()
+    this.switchWatch = new IntersectionObserver(entries => {
+      for (const entry of entries) seen.set(entry.target, entry.isIntersecting)
+      const stageSeen = seen.get(this.canvasTarget) ?? true, roomSeen = seen.get(this.element) ?? false
+      this.switchesTarget.classList.toggle("is-floating", !stageSeen && roomSeen)
+    }, { threshold: 0.05 })
+    this.switchWatch.observe(this.canvasTarget)
+    this.switchWatch.observe(this.element)
+  }
+
+  useDress() {
+    this.addItem(structuredClone(this.dressValue))
+    this.update()
+  }
+
+  get bodyType() {
+    return this.bodyTypeTargets.find(input => input.checked)?.value ?? "men"
+  }
+
+  get example() {
+    return EXAMPLES_CM[this.bodyType] ?? EXAMPLES_CM.men
+  }
+
+  changeTone(event) {
+    this.stage.setTone(event.target.value)
   }
 
   changePose(event) {
@@ -286,25 +468,38 @@ export default class extends Controller {
 
   // Wait for a pause in typing, then ask the API about each item.
   update() {
+    this.syncSliders()
     clearTimeout(this.timer)
     this.requests?.forEach(r => r.abort())
 
     const measurements = this.readMeasurements()
-    const filled = REQUIRED.filter(key => measurements[key] > 0).length
-    if (filled < REQUIRED.length) {
-      for (const item of Object.values(this.outfit)) item.fit = null
-      this.stage.setBody(EXAMPLE_CM)
-      this.stage.setOutfit([])
-      this.stageNoteTarget.textContent = "Example shape. Add your measurements to see the outfit on you."
-      this.sizesTarget.innerHTML = ""
-      this.warningsTarget.hidden = true
-      this.showEmpty(`${filled} of ${REQUIRED.length} measurements`, "Fill in the first five and the outfit appears in your size.")
-      return
-    }
-
-    const given = Object.fromEntries(Object.entries(measurements).filter(([, v]) => v > 0))
+    // The clothes are always on: numbers not filled in yet are guessed from the ones that are (or are the
+    // example body's), and the page says which.
+    let given = Object.fromEntries(Object.entries(measurements).filter(([, v]) => v > 0))
+    this.guessed = REQUIRED.filter(key => !(given[key] > 0))
+    if (this.guessed.length) given = this.withGuesses(given)
     this.limited = this.stage.setBody(Object.fromEntries(Object.entries(given).map(([k, v]) => [k, toCm(v, this.unit)])))
     this.timer = setTimeout(() => this.fetchFits(given), 150)
+  }
+
+  // The numbers given (in the units shown), with the rest guessed: from height for arm and shoulders, from
+  // chest for waist and shoulders (and the other way round), else the example body's.
+  withGuesses(given) {
+    const cm = Object.fromEntries(Object.entries(given).map(([k, v]) => [k, toCm(v, this.unit)]))
+    const example = this.example
+    const tall = (cm.height ?? example.height) / example.height
+    const chest = cm.chest ?? (cm.waist ? cm.waist * (this.example.chest / this.example.waist) : null)
+    const guess = {
+      height: example.height,
+      chest: chest ?? example.chest,
+      waist: chest ? chest * (example.waist / example.chest) : example.waist,
+      shoulders: example.shoulders * (chest ? Math.sqrt(chest / example.chest) : 1) * Math.sqrt(tall),
+      arm: example.arm * tall
+    }
+    const filled = { ...cm }
+    for (const key of this.guessed) filled[key] = Math.round(guess[key] * 2) / 2
+    const back = value => (this.unit === "in" ? value / 2.54 : value)
+    return Object.fromEntries(Object.entries(filled).map(([k, v]) => [k, back(v)]))
   }
 
   async fetchFits(measurements) {
@@ -312,7 +507,7 @@ export default class extends Controller {
     if (items.length === 0) {
       this.stage.setOutfit([])
       this.sizesTarget.innerHTML = ""
-      this.showEmpty("No items", "Add a jacket, coat or trousers to see how they fit.")
+      this.showEmpty("Nothing to try on yet", "Pick clothes in step 1 to see how they fit.")
       return
     }
     this.requests = items.map(() => new AbortController())
@@ -320,17 +515,23 @@ export default class extends Controller {
       const responses = await Promise.all(items.map(({ kind, garment }, i) => fetch(this.fitsUrlValue, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ cut: this.cutTarget.value, unit: this.unit, garment: kind, sizes: garment.chart.sizes, measurements }),
+        body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: garment.cut ?? undefined,
+          sizes: garment.chart.sizes, measurements }),
         signal: this.requests[i].signal,
         cache: "no-store"
       }).then(async r => ({ ok: r.ok, data: await r.json() }))))
 
       const failed = responses.find(r => !r.ok)
       if (failed) {
-        const problems = Object.entries(failed.data.errors ?? {}).map(([part, message]) => `${capitalize(part)} ${message}.`)
+        // A size's own number (sizes.2.sleeve) is the store's, not the person's: say so plainly.
+        const problems = Object.entries(failed.data.errors ?? {}).map(([part, message]) => {
+          const [, index, name] = part.match(/^sizes\.(\d+)\.(\w+)$/) ?? []
+          if (name) return `The clothes' size chart has a ${PART_NAMES[name]?.toLowerCase() ?? name} number that doesn't look right (in its size ${Number(index) + 1}).`
+          return `${capitalize(BODY_WORDS[part]?.[0] ?? part)} ${message}.`
+        })
         this.stage.setOutfit([])
         this.sizesTarget.innerHTML = ""
-        this.showEmpty("Check your numbers", problems.join(" ") || "Something didn't add up.")
+        this.showEmpty("Check your numbers", problems.join(" ") || "One of the numbers doesn't look right.")
         return
       }
       items.forEach(({ kind }, i) => {
@@ -341,7 +542,7 @@ export default class extends Controller {
       this.warnings = responses[0].data.warnings ?? []
       this.render()
     } catch (error) {
-      if (error.name !== "AbortError") this.showEmpty("Couldn't reach Fitroom", "Check that the server is running, then try again.")
+      if (error.name !== "AbortError") this.showEmpty("Can't reach Fitroom", "Check that the server is running, then try again.")
     }
   }
 
@@ -352,6 +553,22 @@ export default class extends Controller {
     const snapshot = this.stage.snapshot()
     if (!snapshot || snapshot.items.length === 0) {
       this.showStudio("Add your measurements and at least one item first.")
+      return
+    }
+    // Tops and casual jackets are draped here on the page, so their photo is taken here too.
+    if (this.stage.hasDraped || snapshot.items.some(item => item.kind === "top" || ["zip", "bomber", "shirt"].includes(item.style))) {
+      this.closeStudio()
+      this.showStudio("Taking the photo…")
+      if (this.stage.draped && !(this.stage.draped.top.done && !this.stage.draped.posing)) {
+        this.showStudio("Wait for the cloth to finish settling, then take the photo.")
+        return
+      }
+      const box = this.canvasTarget.parentElement
+      const scale = 2000 / Math.max(box.clientWidth, box.clientHeight)
+      const blob = await this.stage.photo({ width: Math.round(box.clientWidth * scale), height: Math.round(box.clientHeight * scale) })
+      this.studioImages = { draped: URL.createObjectURL(blob) }
+      this.showStudioImage("draped")
+      this.studioStatusTarget.textContent = "Your photo. It was made on this device and isn't saved anywhere."
       return
     }
     this.closeStudio()
@@ -427,8 +644,8 @@ export default class extends Controller {
     this.studioDownloadTarget.href = url
     this.studioDownloadTarget.hidden = false
     this.studioStatusTarget.textContent = variant === "exact"
-      ? "The shops' own garments painted onto the measured drape by AI. The fit verdict is still the measured one."
-      : "Draped by cloth simulation to the measured sizes, and path-traced. Nothing was kept on the server."
+      ? "The stores' own clothes painted on by AI. The fit is still the one we measured."
+      : "Your photo, in the size you picked. Nothing was kept on the server."
   }
 
   showStudio(message) {
@@ -456,24 +673,26 @@ export default class extends Controller {
       size: garment.chart.sizes.find(s => s.name === selected),
       checks: fit.sizes.find(s => s.size === selected).checks,
       color: garment.color,
+      print: garment.print ?? null,
       fabric: garment.fabric,
-      style: garment.style
+      style: garment.style,
+      cut: garment.cut ?? null
     })))
 
-    const notes = []
-    if (this.outfit.coat) notes.push("The coat is drawn from a jacket, so long coats look shorter here.")
-    if (this.limited?.length) notes.push(`The mannequin can't go as far as your ${this.limited.join(" and ")}; it's drawn as near as it can.`)
-    this.stageNoteTarget.textContent = notes.join(" ") || "Your shape. Drag to turn it."
+    this.renderStageNote()
 
-    this.warningsTarget.hidden = !this.warnings?.length
-    this.warningsTarget.innerHTML = (this.warnings ?? []).map(w => `<p>${escape(w.message)}</p>`).join("")
+    const guessed = this.guessedText()
+    const shown = (this.warnings ?? []).filter(w => !this.guessed?.includes(w.part)).map(warningText)
+    if (guessed) shown.unshift(guessed)
+    this.warningsTarget.hidden = !shown.length
+    this.warningsTarget.innerHTML = shown.map(text => `<p>${escape(text)}</p>`).join("")
 
     this.sizesTarget.innerHTML = items.map(({ kind, garment, fit, selected }) => {
       const order = garment.chart.sizes.map(s => s.name)
       const sizes = [...fit.sizes].sort((a, b) => order.indexOf(a.size) - order.indexOf(b.size))
       return `
         <div class="size-row" role="radiogroup" aria-label="${KINDS[kind]} size">
-          <span class="size-row-label mono">${KINDS[kind]}</span>
+          <span class="size-row-label">${KINDS[kind]}</span>
           ${sizes.map(r => `
             <button type="button" role="radio" aria-checked="${r.size === selected}"
                     class="size-chip size-chip--${r.verdict}${r.size === fit.best ? " size-chip--best" : ""}"
@@ -485,11 +704,11 @@ export default class extends Controller {
     this.resultsTarget.innerHTML = items.map(({ kind, garment, fit, selected }) => {
       const result = fit.sizes.find(s => s.size === selected)
       const badge = fit.sizes.length === 1 ? '<span class="best-badge">Only size</span>'
-        : result.size === fit.best ? '<span class="best-badge">Best fit</span>'
-        : `<button type="button" class="text-button" data-kind="${kind}" data-size="${escape(fit.best)}" data-action="fitting-room#pickSize">Best fit is ${escape(fit.best)}</button>`
+        : result.size === fit.best ? '<span class="best-badge">Best size</span>'
+        : `<button type="button" class="text-button" data-kind="${kind}" data-size="${escape(fit.best)}" data-action="fitting-room#pickSize">Size ${escape(fit.best)} fits better</button>`
       return `
         <section class="result">
-          <p class="results-kicker">${KINDS[kind]} · ${escape(this.cutTarget.selectedOptions[0].textContent)} cut · ${escape(garment.name)}</p>
+          <p class="results-kicker">${KINDS[kind]} · ${escape(garment.name)} · ${FIT_NAMES[this.cut]} fit</p>
           <div class="results-headline">
             <p class="results-size${items.length > 1 ? " results-size--compact" : ""}">${escape(result.size)}</p>
             ${badge}
@@ -498,6 +717,26 @@ export default class extends Controller {
           <ul class="checks">${result.checks.map(check => checkRow(check, this.unit)).join("")}</ul>
         </section>`
     }).join("")
+  }
+
+  // Which numbers are guesses, in plain words, or null when all are the person's own.
+  guessedText() {
+    const guessed = this.guessed ?? []
+    if (!guessed.length) return null
+    if (guessed.length === REQUIRED.length) return "This is an example body. Add your numbers in step 2 to see the clothes on you."
+    const names = guessed.map(key => BODY_WORDS[key][0])
+    return `We guessed your ${listed(names)}. Add ${guessed.length === 1 ? "it" : "them"} in step 2 to see a truer fit.`
+  }
+
+  renderStageNote() {
+    if (!this.hasStageNoteTarget || !this.items().some(i => i.fit)) return
+    const notes = []
+    if (this.guessed?.length) notes.push(this.guessed.length === REQUIRED.length ? "An example body." : "Some of your numbers are guesses.")
+    if (this.draping) notes.push(this.draping)
+    if (this.outfit.coat) notes.push("The coat is drawn from a jacket, so long coats look shorter here.")
+    if (this.stage.hiddenTop) notes.push("The top is under the jacket.")
+    if (this.limited?.length) notes.push(`The mannequin can't go as far as your ${this.limited.join(" and ")}; it's drawn as near as it can.`)
+    this.stageNoteTarget.textContent = notes.join(" ") || "Your shape. Drag to turn it."
   }
 
   showEmpty(kicker, text) {
@@ -509,21 +748,23 @@ export default class extends Controller {
   }
 
   readMeasurements() {
-    return Object.fromEntries(this.inputTargets.map(input => {
+    const values = Object.fromEntries(this.inputTargets.map(input => {
       const value = parseFloat(input.value)
       return [input.dataset.part, Number.isFinite(value) && value > 0 ? value : null]
     }))
+    values.height = this.readHeight()
+    return values
   }
 }
 
 function summary(result) {
   const fixes = result.checks.filter(c => c.fix)
   switch (result.verdict) {
-    case "fits": return "Fits as it comes. No tailoring needed."
-    case "alter": return fixes.length === 1 ? "Fits with one small change from a tailor." : `Fits with ${fixes.length} small changes from a tailor.`
+    case "fits": return "This size fits you. Nothing needs to change."
+    case "alter": return fixes.length === 1 ? "This size fits after one small change from a tailor." : `This size fits after ${fixes.length} small changes from a tailor.`
     default: {
-      const parts = result.checks.filter(c => !c.fixable).map(c => c.label.toLowerCase())
-      return `The ${parts.join(" and ")} won't be right, and a tailor can't fix that.`
+      const parts = result.checks.filter(c => !c.fixable).map(c => partName(c).toLowerCase())
+      return `The ${listed(parts)} won't fit well, and a tailor can't fix that.`
     }
   }
 }
@@ -531,31 +772,55 @@ function summary(result) {
 function checkRow(check, unit) {
   return `
     <li class="check">
-      <span class="check-label">${escape(check.label)}</span>
+      <span class="check-label">${escape(partName(check))}</span>
       <span class="chip chip--${check.status}">${STATUS_TEXT[check.status]}</span>
       <span class="check-detail">${escape(detail(check, unit))}</span>
     </li>`
 }
 
+function partName(check) {
+  return PART_NAMES[check.part] ?? check.label
+}
+
 function detail(check, unit) {
   if (check.note) return check.note
-  if (check.status === "unknown") return "Not on this size chart"
-  if (check.fix) return `${check.fix.text} ${formatLength(check.fix.amount_cm, unit)}`
+  if (check.status === "unknown") return "The size chart doesn't say."
+  if (check.fix) return `A tailor can fix this: ${check.fix.text.toLowerCase()} by ${formatAbout(check.fix.amount_cm, unit)}.`
 
-  const amount = formatLength(check.ease_cm, unit)
+  const amount = formatAbout(check.ease_cm, unit)
   switch (check.part) {
     case "sleeve":
     case "length":
     case "inseam":
-      return check.status === "good" ? "Right length" : `${amount} too ${check.status}, can't be fixed`
+      return check.status === "good" ? "Just right." : `${capitalize(amount)} too ${check.status}. A tailor can't fix this.`
     case "shoulders":
-      if (check.status === "good") return "Seam sits on your shoulder bone"
-      return check.status === "tight" ? `${amount} narrower than you, can't be fixed` : `${amount} past your shoulder, can't be fixed`
+      if (check.status === "good") return "The seam sits on your shoulder."
+      return check.status === "tight" ? `${capitalize(amount)} too narrow. A tailor can't fix this.` : `${capitalize(amount)} too wide. A tailor can't fix this.`
     default:
-      if (check.ease_cm < 0) return `${amount} smaller than you`
-      if (check.status === "good") return `${amount} of room`
-      return check.status === "tight" ? `Only ${amount} of room` : `${amount} of room, too much`
+      if (check.ease_cm < 0) return `${capitalize(amount)} smaller than you.`
+      if (check.status === "good") return `${capitalize(amount)} of room. Good.`
+      return check.status === "tight" ? `Only ${amount} of room.` : `${capitalize(amount)} of room. That's too much.`
   }
+}
+
+// A warning about a measurement that looks unusual, in plain words.
+function warningText(warning) {
+  const [name, how] = BODY_WORDS[warning.part] ?? [warning.part, ""]
+  const way = /larger/.test(warning.message) ? "big" : "small"
+  return `Your ${name} number looks very ${way}. Please measure it again. ${how}`
+}
+
+// "a", "a and b", "a, b and c".
+function listed(words) {
+  return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`
+}
+
+// How long a garment's front is for its width (length over half the chest), from the middle size of its chart.
+function frontShape(chart) {
+  const sizes = (chart?.sizes ?? []).filter(s => s.chest && s.length)
+  if (!sizes.length) return null
+  const size = sizes[Math.floor(sizes.length / 2)]
+  return size.length / (size.chest / 2)
 }
 
 // The item's colour from a photo: the average of the middle of the picture, leaving out the near-white
@@ -606,16 +871,69 @@ function capitalize(text) {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function picker(kind, field, label, names, value) {
-  return `
-    <label class="garment-pick">
-      <span>${label}</span>
-      <select data-kind="${kind}" data-field="${field}" data-action="fitting-room#restyle">
-        ${Object.entries(names).map(([key, name]) => `<option value="${key}"${key === value ? " selected" : ""}>${name}</option>`).join("")}
-      </select>
-    </label>`
-}
-
 function escape(text) {
   return String(text ?? "").replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`)
+}
+
+// Many shops run on Shopify, which answers a product's details as small public JSON. Some big ones (Kith)
+// answer a browser at once but make an app wait, so this browser reads them and hands them to Fitroom: the
+// product, its shop's Shopify name, and its Kiwi Sizing chart when it has one. Null for other links, or when
+// the shop doesn't answer quickly; Fitroom then reads the link itself.
+async function readShop(link) {
+  let url
+  try { url = new URL(link) } catch { return null }
+  const handle = url.pathname.match(/\/products\/([a-z0-9][a-z0-9_-]*)/i)?.[1]
+  if (!handle || url.protocol !== "https:") return null
+  const json = async (address, ms = 6000) => {
+    try {
+      const response = await fetch(address, { signal: AbortSignal.timeout(ms), credentials: "omit", headers: { Accept: "application/json" } })
+      return response.ok ? await response.json() : null
+    } catch { return null }
+  }
+  const [answer, meta] = await Promise.all([json(`${url.origin}/products/${handle}.json`), json(`${url.origin}/meta.json`)])
+  const product = answer?.product, shop = meta?.myshopify_domain
+  if (!product?.title || !/\.myshopify\.com$/.test(shop ?? "")) return null
+  const query = new URLSearchParams({ shop, product: String(product.id), title: product.title, tags: [product.tags].flat().join(","),
+    type: product.product_type ?? "", vendor: product.vendor ?? "" })
+  const sizing = await json(`https://app.kiwisizing.com/api/getSizingChart?${query}`)
+  const { id, handle: name, title, vendor, product_type, tags, body_html, images, options } = product
+  const variants = (product.variants ?? []).slice(0, 40).map(v => ({ title: v.title }))
+  return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
+    photo: await readShopPhoto(images?.[0]?.src) }
+}
+
+// The product's photo, small, as a data: URL (Shopify's image host lets pages read its photos).
+async function readShopPhoto(src) {
+  if (!src) return null
+  try {
+    const url = new URL(src.startsWith("//") ? `https:${src}` : src)
+    url.searchParams.set("width", "800")
+    const response = await fetch(url, { signal: AbortSignal.timeout(6000), credentials: "omit" })
+    const blob = await response.blob()
+    if (!response.ok || !/^image\/(jpeg|png|webp)$/.test(blob.type) || blob.size > 2_500_000) return null
+    return await new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch { return null }
+}
+
+// A photo the person picked, made small enough to keep and read quickly, as a data: URL.
+async function smallPhoto(file) {
+  const url = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = url
+    await image.decode()
+    const scale = Math.min(1, 900 / Math.max(image.naturalWidth, image.naturalHeight))
+    const canvas = document.createElement("canvas")
+    canvas.width = Math.round(image.naturalWidth * scale)
+    canvas.height = Math.round(image.naturalHeight * scale)
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL("image/jpeg", 0.88)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }

@@ -1,11 +1,12 @@
 require "test_helper"
 
 class SizeChartTest < ActiveSupport::TestCase
-  test "every chart has every measurement for every size" do
+  test "every chart has every measurement for every size (a top's chest and length at least)" do
     SizeChart.all.each do |chart|
       assert chart.sizes.any?, "#{chart.key} has no sizes"
+      needed = chart.garment == "top" ? %w[chest length] : SizeChart::MEASUREMENTS
       chart.sizes.each do |size|
-        SizeChart::MEASUREMENTS.each do |m|
+        needed.each do |m|
           assert size[m].is_a?(Numeric) && size[m].positive?, "#{chart.key} #{size['name']} is missing #{m}"
         end
       end

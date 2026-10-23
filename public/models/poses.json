@@ -1,10 +1,199 @@
 {
   "about": "Poses for Fitroom's mannequin, read by the page (app/javascript/lib/stage.js) and the studio renderer (script/render/studio.py). Each turn rotates a bone of the rig about the world's side-to-side (x) or front-to-back (z) axis, in radians, as seen by the page (y up, facing +z; the character's left is +x). Parents come before children.",
   "poses": {
-    "standing": { "label": "Standing", "turns": [["upperarm_l", "z", -0.68], ["upperarm_r", "z", 0.68], ["lowerarm_l", "x", -0.08], ["lowerarm_r", "x", -0.08]] },
-    "relaxed": { "label": "Relaxed", "turns": [["upperarm_l", "z", -0.62], ["upperarm_r", "z", 0.62], ["lowerarm_l", "x", -0.4], ["lowerarm_r", "x", -0.3], ["thigh_r", "x", -0.07], ["calf_r", "x", 0.16], ["thigh_l", "z", 0.03]] },
-    "walking": { "label": "Walking", "turns": [["upperarm_l", "z", -0.68], ["upperarm_r", "z", 0.68], ["upperarm_l", "x", 0.32], ["upperarm_r", "x", -0.32], ["lowerarm_l", "x", -0.2], ["lowerarm_r", "x", -0.4], ["thigh_l", "x", -0.36], ["calf_l", "x", 0.12], ["thigh_r", "x", 0.26], ["calf_r", "x", 0.42]] },
-    "arms_out": { "label": "Arms out", "turns": [["upperarm_l", "z", -0.15], ["upperarm_r", "z", 0.15]] }
+    "standing": {
+      "label": "Standing",
+      "turns": [
+        [
+          "upperarm_l",
+          "z",
+          -0.66
+        ],
+        [
+          "upperarm_r",
+          "z",
+          0.66
+        ],
+        [
+          "lowerarm_l",
+          "x",
+          0.68
+        ],
+        [
+          "lowerarm_r",
+          "x",
+          0.68
+        ],
+        [
+          "thigh_l",
+          "z",
+          -0.12
+        ],
+        [
+          "thigh_r",
+          "z",
+          0.12
+        ]
+      ]
+    },
+    "relaxed": {
+      "label": "Relaxed",
+      "turns": [
+        [
+          "upperarm_l",
+          "z",
+          -0.63
+        ],
+        [
+          "upperarm_r",
+          "z",
+          0.63
+        ],
+        [
+          "lowerarm_l",
+          "x",
+          0.62
+        ],
+        [
+          "lowerarm_r",
+          "x",
+          0.3
+        ],
+        [
+          "thigh_l",
+          "z",
+          -0.11
+        ],
+        [
+          "thigh_r",
+          "z",
+          0.11
+        ],
+        [
+          "thigh_r",
+          "x",
+          -0.07
+        ],
+        [
+          "calf_r",
+          "x",
+          0.16
+        ]
+      ]
+    },
+    "walking": {
+      "label": "Walking",
+      "turns": [
+        [
+          "upperarm_l",
+          "z",
+          -0.66
+        ],
+        [
+          "upperarm_r",
+          "z",
+          0.66
+        ],
+        [
+          "upperarm_l",
+          "x",
+          0.3
+        ],
+        [
+          "upperarm_r",
+          "x",
+          -0.3
+        ],
+        [
+          "lowerarm_l",
+          "x",
+          0.45
+        ],
+        [
+          "lowerarm_r",
+          "x",
+          0.2
+        ],
+        [
+          "thigh_l",
+          "z",
+          -0.1
+        ],
+        [
+          "thigh_r",
+          "z",
+          0.1
+        ],
+        [
+          "thigh_l",
+          "x",
+          -0.36
+        ],
+        [
+          "calf_l",
+          "x",
+          0.12
+        ],
+        [
+          "thigh_r",
+          "x",
+          0.26
+        ],
+        [
+          "calf_r",
+          "x",
+          0.42
+        ]
+      ]
+    },
+    "arms_out": {
+      "label": "Arms out",
+      "turns": [
+        [
+          "upperarm_l",
+          "z",
+          -0.15
+        ],
+        [
+          "upperarm_r",
+          "z",
+          0.15
+        ],
+        [
+          "lowerarm_l",
+          "x",
+          0.6
+        ],
+        [
+          "lowerarm_r",
+          "x",
+          0.6
+        ],
+        [
+          "thigh_l",
+          "z",
+          -0.12
+        ],
+        [
+          "thigh_r",
+          "z",
+          0.12
+        ]
+      ]
+    }
   },
-  "fingers": { "bones": ["index", "middle", "ring", "pinky"], "curl": { "01": 0.2, "02": 0.35, "03": 0.3 }, "thumb_02": 0.15 }
+  "fingers": {
+    "bones": [
+      "index",
+      "middle",
+      "ring",
+      "pinky"
+    ],
+    "curl": {
+      "01": 0.2,
+      "02": 0.35,
+      "03": 0.3
+    },
+    "thumb_02": 0.15
+  }
 }

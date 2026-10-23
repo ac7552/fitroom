@@ -1,0 +1,201 @@
+// Where each piece of cloth starts before it's sewn, the way garment tools lay patterns round an avatar: body
+// panels curved round the torso in front and behind, sleeves rolled round the arms, a hood round the head, and
+// bands, cuffs and collars laid along the edges they're sewn to. Everything starts a little off the body, so
+// the sewing can pull it in without anything passing through.
+import { add3, cross, normalize, scale, sub } from "lib/garments/body"
+
+const GAP = 0.022          // metres off the body to start
+const SLEEVE_START = 0.03  // how far down the arm from the shoulder joint the top of the sleeve starts
+
+// cloth: from cloth.js. pattern: from pattern.js. frame: from body.js. Returns { positions (Float32Array, metres),
+// lift, attach (see the bands, below) }.
+export function placeCloth(cloth, pattern, frame) {
+  const n = cloth.points.length
+  const out = new Float32Array(3 * n)
+  const done = new Uint8Array(n)
+  const m = pattern.measures
+  // A long garment (a dress) is lifted whole (see torso): fading the lift out would stretch it below the arms,
+  // and as it springs back while it's sewn it hauls the skirt up the legs.
+  const long = m.length > 85
+  const radius = m.chest / (2 * Math.PI) / 100
+  const hpsY = frame.hps[1]
+
+  // How far each row (by cm down from the shoulder's high point) of the body panels reaches out to the side.
+  const rowWidth = new Map()
+  cloth.points.forEach(([px, py], i) => {
+    const name = cloth.panels[cloth.panel[i]]
+    if (name !== "front" && name !== "back") return
+    const row = Math.round(py)
+    rowWidth.set(row, Math.max(rowWidth.get(row) ?? 0, Math.abs(px)))
+  })
+
+  // Lift the body panels so their shoulder seams start above the shoulders.
+  let lift = 0
+  for (const name of ["front/shoulder_L", "front/shoulder_R", "back/shoulder_L", "back/shoulder_R"]) {
+    for (const i of cloth.edges[name] ?? []) {
+      const side = cloth.panels[cloth.panel[i]]
+      const [x] = torso(cloth.points[i], side, 0)
+      const y = hpsY + cloth.points[i][1] / 100
+      lift = Math.max(lift, frame.shoulderTop.at(x) + 0.025 - y)
+    }
+  }
+
+  // The lift fades out below the armholes, so the hem starts where it'll hang. Where the round would run into
+  // an arm (the armholes, beside the arm's root), the front moves forward and the back backward, clear of it.
+  function torso([px, py], side, raise) {
+    const fade = long ? 1 : Math.min(Math.max(1 - (-py - m.armhole) / 15, 0), 1)
+    const y = hpsY + py / 100 + raise * fade
+    // Each row goes half way round, front or back: a row wider than the chest (a flared skirt) is wrapped on
+    // a wider round, so it doesn't run past the side into the other panel.
+    const half = (rowWidth.get(Math.round(py)) ?? 0) / 100
+    const round = Math.max(radius, half / (Math.PI / 2) * 1.04)
+    const angle = (side === "back" ? Math.PI : 0) + px / 100 / round
+    // Below the crotch, cloth goes round both legs together (their convex outline): the reach table fills the
+    // gap between them with the widest reach nearby, which would start a skirt far too wide, to shrink and ride
+    // up the legs.
+    const reach = y < frame.crotch ? frame.torso.envelope(y, angle) : frame.torso.at(y, angle)
+    const r = Math.max(round, reach + GAP)
+    const q = [r * Math.sin(angle), y, frame.torso.centreAt(y) + r * Math.cos(angle)]
+    if (side === "front" || side === "back") clearOfArms(q, side === "front" ? 1 : -1)
+    return q
+  }
+
+  function clearOfArms(q, towards) {
+    for (const a of [frame.arms.L, frame.arms.R]) {
+      for (let k = 0; k < 40; k++) {
+        const { t, distance } = a.locate(q)
+        if (t < 0.005 || t > a.lengths[1] || distance >= a.reachAt(t) + GAP) break
+        q[2] += 0.005 * towards
+      }
+    }
+  }
+
+  // Each arm's frame: along it, the top of the arm ("up") and its front. The sleeve is rolled round the arm
+  // row by row, each row's width going once round (the cap's rows as wide as the bicep), so its underarm
+  // seam starts closed all the way down to the wrist.
+  function arm([px, py], side, widthAt, squeeze) {
+    const a = frame.arms[side]
+    const t = Math.min(squeeze(-py / 100) + SLEEVE_START, a.total)
+    const { point, direction } = a.along(t)
+    const up = normalize(sub([0, 1, 0], scale(direction, direction[1])))
+    let front = normalize(cross(direction, up))
+    if (front[2] < 0) front = scale(front, -1)
+    // Seen from outside, +x on the sleeve runs towards the back on the left arm and the front on the right.
+    const across = side === "L" ? scale(front, -1) : front
+    const half = widthAt(py)
+    const rs = half / Math.PI / 100
+    const r = Math.max(rs, a.reachAt(t) + GAP)
+    const angle = (px / half) * Math.PI
+    return add3(point, add3(scale(up, r * Math.cos(angle)), scale(across, r * Math.sin(angle))))
+  }
+
+  // A sleeve's half width at a pattern row: the bicep's through the cap, then along its underarm seams.
+  function sleeveWidth(panel) {
+    const seam = panel.edges.find(e => e.name === "seam_front").points
+    const [top, bottom] = seam[0][1] > seam[seam.length - 1][1] ? [seam[0], seam[seam.length - 1]] : [seam[seam.length - 1], seam[0]]
+    return py => {
+      if (py >= top[1]) return Math.abs(top[0])
+      const u = Math.min((top[1] - py) / (top[1] - bottom[1] || 1), 1)
+      return Math.abs(top[0]) + (Math.abs(bottom[0]) - Math.abs(top[0])) * u
+    }
+  }
+
+  function head([px, py], side, width, tall) {
+    const h = frame.head
+    const t = Math.min(Math.max(py / tall, 0), 1.08)
+    const neckY = hpsY + lift - 0.01
+    const y = neckY + t * (h.top + 0.03 - neckY)
+    const fromFront = Math.min(Math.max((side === "L" ? px : -px) / width, 0), 1)
+    const open = 1.15 * smoothstep(0.1, 0.8, t)   // the face opening sits round the sides of the face
+    const angle = (side === "L" ? 1 : -1) * (open + (Math.PI - open) * fromFront)
+    const neckR = frame.neckSide + 0.035, headR = Math.max(h.rx, h.rz) + 0.03
+    let r = neckR + (headR - neckR) * smoothstep(0, 0.45, t)
+    if (t > 0.6) r *= Math.sqrt(Math.max(0.04, 1 - ((t - 0.6) / 0.48) ** 2))
+    return [h.centre[0] + r * Math.sin(angle), y, h.centre[2] + r * Math.cos(angle)]
+  }
+
+  cloth.panels.forEach((name, panelIndex) => {
+    const place = pattern.panels[name].place
+    if (place.at === "band") return
+    let width = 0, tall = 0
+    if (place.at === "head") {
+      tall = Math.max(...pattern.panels[name].edges.flatMap(e => e.points).map(p => p[1]))
+      width = pattern.panels[name].edges.filter(e => e.name.startsWith("sewn_")).reduce((s, e) => s + Math.abs(e.points[e.points.length - 1][0] - e.points[0][0]), 0)
+    }
+    const widthAt = place.at === "arm" ? sleeveWidth(pattern.panels[name]) : null
+    // A sleeve (and its cuff) longer than the arm starts gathered up the forearm, the way extra length bunches
+    // above a cuff, so the cuff begins at the wrist; the upper arm keeps its length.
+    let squeeze = s => s
+    if (place.at === "arm") {
+      const cuff = pattern.panels[`cuff_${place.side}`]
+      const cuffLength = cuff ? Math.max(...cuff.edges.flatMap(e => e.points).map(q => Math.abs(q[1]))) / 100 : 0
+      const room = frame.arms[place.side].lengths[2] - SLEEVE_START - cuffLength - 0.01
+      const length = m.sleeve / 100
+      if (length > room) {
+        const free = 0.45 * room, k = (room - free) / (length - free)
+        squeeze = s => (s <= free ? s : free + (s - free) * k)
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (cloth.panel[i] !== panelIndex) continue
+      const p = cloth.points[i]
+      const q = place.at === "torso" ? torso(p, place.side, lift) : place.at === "arm" ? arm(p, place.side, widthAt, squeeze) : head(p, place.side, width, tall)
+      out.set(q, 3 * i)
+      done[i] = 1
+    }
+  })
+
+  // Bands go along the edges they're sewn to, then off them in their own direction. Each band point is kept
+  // as an attachment (between which two points of the edge it's sewn to, how far off it, and which way), so
+  // the drape can hold bands on their edges while the body's seams close and only then let them go.
+  const sewnTo = new Map()
+  for (const [a, b] of cloth.sewing) {
+    sewnTo.set(a, b)
+    sewnTo.set(b, a)
+  }
+  const attach = { points: [], from: [], to: [], u: [], offset: [], direction: [] }
+  for (let pass = 0; pass < 3; pass++) {
+    cloth.panels.forEach((name, panelIndex) => {
+      const panel = pattern.panels[name]
+      if (panel.place.at !== "band") return
+      // The sewn edge's points in order along the band (by x), with the placed points they're sewn to.
+      const along = []
+      for (const e of panel.edges) {
+        if (!e.name.startsWith("sewn_")) continue
+        for (const i of cloth.edges[`${name}/${e.name}`]) {
+          const host = sewnTo.get(i)
+          if (host !== undefined && done[host]) along.push([cloth.points[i][0], host])
+        }
+      }
+      if (along.length < 2) return
+      along.sort((a, b) => a[0] - b[0])
+      const direction = panel.place.toward === "up" ? [0, 1, 0] : panel.place.toward === "down" ? [0, -1, 0]
+        : frame.arms[panel.place.side].along(frame.arms[panel.place.side].total).direction
+      for (let i = 0; i < n; i++) {
+        if (cloth.panel[i] !== panelIndex || done[i]) continue
+        const [px, py] = cloth.points[i]
+        let k = 1
+        while (k < along.length - 1 && along[k][0] < px) k++
+        const [x0, h0] = along[k - 1], [x1, h1] = along[k]
+        const u = x1 === x0 ? 0 : Math.min(Math.max((px - x0) / (x1 - x0), 0), 1)
+        const base = [0, 1, 2].map(c => out[3 * h0 + c] * (1 - u) + out[3 * h1 + c] * u)
+        out.set(add3(base, scale(direction, Math.abs(py) / 100)), 3 * i)
+        attach.points.push(i); attach.from.push(h0); attach.to.push(h1); attach.u.push(u)
+        attach.offset.push(Math.abs(py) / 100); attach.direction.push(...direction)
+        done[i] = 1
+      }
+    })
+  }
+  return {
+    positions: out, lift,
+    attach: {
+      points: Int32Array.from(attach.points), from: Int32Array.from(attach.from), to: Int32Array.from(attach.to),
+      u: Float32Array.from(attach.u), offset: Float32Array.from(attach.offset), direction: Float32Array.from(attach.direction)
+    }
+  }
+}
+
+function smoothstep(a, b, x) {
+  const t = Math.min(Math.max((x - a) / (b - a), 0), 1)
+  return t * t * (3 - 2 * t)
+}

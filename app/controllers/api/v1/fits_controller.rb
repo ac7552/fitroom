@@ -23,7 +23,8 @@ module Api
         return render(json: { error: "invalid", errors: }, status: :unprocessable_entity) if errors.any?
 
         response.headers["Cache-Control"] = "no-store"
-        results = Fit.rank(body, sizes, cut, garment)
+        details = params[:details].respond_to?(:to_unsafe_h) ? params[:details].to_unsafe_h.slice("stretch", "sleeves", "fit") : {}
+        results = Fit.rank(body, sizes, cut, garment, style: params[:style].to_s.presence, details:)
         render json: {
           size_chart: chart&.summary,
           cut:,
@@ -55,6 +56,7 @@ module Api
       # trousers) is required; the rest can be missing.
       def read_sizes(garment, errors)
         keys = GarmentImport::ChartReader.measures(garment)
+        keys += [ "hips" ] if garment == "top"   # a dress's
         required = keys.first
         given = params[:sizes]
         unless given.is_a?(Array) && given.size.between?(1, MAX_SIZES)
@@ -69,7 +71,7 @@ module Api
           keys.to_h do |key|
             value = size[key].nil? ? nil : Float(size[key], exception: false)
             errors[:"sizes.#{index}.#{key}"] = "must be a number" if value.nil? && !size[key].nil?
-            errors[:"sizes.#{index}.#{key}"] = "must be between 20 and 200 cm" if value && !value.between?(20, 200)
+            errors[:"sizes.#{index}.#{key}"] = "must be between 5 and 250 cm" if value && !value.between?(5, 250)
             [ key, value ]
           end.merge("name" => name).tap do |out|
             errors[:"sizes.#{index}.#{required}"] ||= "is required" if out[required].nil?

@@ -6,8 +6,8 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 // The home page's opening scene. In cold mist, Fitroom's jacket starts as a technical drawing (its seams,
 // lapels and pocket edges, and a scatter of points); scrolling through the section sweeps a glowing line
 // down from the collar that turns it into frosted cloth, then its measurements appear across it, numbered,
-// like a tailor's chalk lines. The jacket never comes apart.
-const MIST = 0xc4c8cf
+// each marked with a dot. The jacket never comes apart.
+const MIST = 0x15171b   // the page's graphite, so the scene fades into it
 const MEASURES = [
   { key: "shoulder", label: "Shoulder", value: "18" },
   { key: "chest", label: "Chest", value: "44½" },
@@ -36,15 +36,14 @@ export default class extends Controller {
     pmrem.dispose()
     const key = new THREE.DirectionalLight(0xf2f6ff, 1.4)
     key.position.set(-2, 3, 3)
-    this.scene.add(key, new THREE.HemisphereLight(0xffffff, 0xb9bec8, 0.6))
+    this.scene.add(key, new THREE.HemisphereLight(0xdfe5ef, 0x1b1e24, 0.55))
 
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 40)
     this.camera.position.set(0, 0.05, 4.4)
     this.stage = new THREE.Group()
     this.scene.add(this.stage)
     this.dust = dust()
-    this.web = constellation()
-    this.scene.add(this.dust, this.web)
+    this.scene.add(this.dust)
 
     this.resize()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -168,8 +167,6 @@ export default class extends Controller {
     this.stage.rotation.y = -0.45 + this.progress * 0.45 + Math.sin(time * 0.15) * 0.05 + this.pointer.x * 0.18
     this.stage.rotation.x = -this.pointer.y * 0.06
     this.dust.material.userData.time.value = time
-    this.web.material.opacity = 0.45 * (1 - measured * 0.5)
-    this.web.rotation.y = time * 0.01
 
     if (this.lines) {
       for (const material of this.lines.materials) material.opacity = measured * 0.9
@@ -195,20 +192,45 @@ export default class extends Controller {
   }
 }
 
-// Pale, frosted cloth whose edges glow, like ice blocks in a snowfield. Above the reveal line it's cloth;
+// Slate cloth whose edges glow, like ice at night. Above the reveal line it's cloth;
 // below, it isn't drawn yet, and a bright band marks the line itself.
 function frostedCloth(reveal) {
   const material = new THREE.MeshPhysicalMaterial({
-    color: 0xc4c9d1, roughness: 0.72, sheen: 0.7, sheenColor: 0xe8ecf2, sheenRoughness: 0.45, side: THREE.DoubleSide
+    color: 0x5b626d, roughness: 0.72, sheen: 0.7, sheenColor: 0xaab3c2, sheenRoughness: 0.45, side: THREE.DoubleSide
   })
   material.onBeforeCompile = shader => {
     shader.uniforms.uReveal = reveal
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying float vHeight;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvHeight = position.y;")
+      .replace("#include <common>", "#include <common>\nvarying float vHeight;\nvarying vec3 vCloth;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvHeight = position.y;\nvCloth = position;")
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform float uReveal;\nvarying float vHeight;")
+      .replace("#include <common>", `#include <common>
+        uniform float uReveal;
+        varying float vHeight;
+        varying vec3 vCloth;
+        // Soft folds, as a worn jacket has: long ones falling down the body and the sleeves, a few
+        // pulling from under the arms, and bunching at the elbows and above the cuffs.
+        float folds(vec3 p) {
+          float side = smoothstep(0.26, 0.36, abs(p.x));
+          float hang = sin(p.x * 34.0 + sin(p.y * 6.0 + p.x * 4.0) * 1.8) * 0.55 + sin(p.x * 21.0 - p.y * 5.0) * 0.3;
+          float pull = sin((abs(p.x) * 0.8 + p.y) * 26.0) * smoothstep(0.35, 0.15, abs(p.y - 0.35)) * (1.0 - side);
+          // At the elbow the folds run on a slant and break up, as a bent sleeve's do; above the cuff they're fewer.
+          float twist = sin(p.y * 9.0 + p.x * 40.0) * 1.6 + sin(p.z * 30.0) * 0.8;
+          float bunch = sin(p.y * 34.0 + p.x * 26.0 * sign(p.x) + twist) * side
+            * (smoothstep(0.13, 0.0, abs(p.y + 0.05)) * (0.6 + 0.4 * sin(p.x * 50.0 + p.z * 20.0)) + smoothstep(0.08, 0.0, abs(p.y + 0.5)) * 0.5);
+          return hang * (1.0 - side * 0.5) * smoothstep(0.75, 0.2, p.y) + pull * 0.5 + bunch * 0.45;
+        }`)
       .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vHeight < uReveal) discard;")
+      .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+        {
+          // The folds as a bump on the surface (as three.js's bump map does it).
+          float h = folds(vCloth) * 0.009;
+          vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition);
+          vec3 r1 = cross(sy, normal), r2 = cross(normal, sx);
+          float det = dot(sx, r1) * faceDirection;
+          vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+          normal = normalize(abs(det) * normal - grad);
+        }`)
       .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
         float rim = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.5);
         float band = 1.0 - smoothstep(0.0, 0.07, vHeight - uReveal);
@@ -217,8 +239,8 @@ function frostedCloth(reveal) {
   return material
 }
 
-// The jacket as a drawing: its creases and edges as fine lines, and a sprinkle of its points, shown only
-// below the reveal line.
+// The jacket as a drawing, shown only below the reveal line: a soft dark shape of it (so it reads as a solid
+// thing, and hides the lines on its far side), its main edges as fine lines, and a light sprinkle of points.
 function technicalDrawing(geometry, reveal) {
   const below = material => {
     material.onBeforeCompile = shader => {
@@ -234,20 +256,49 @@ function technicalDrawing(geometry, reveal) {
   }
 
   const group = new THREE.Group()
-  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 10),
-    below(new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, fog: false }))))
+  // The shape: dark, with its outline glowing where the cloth turns away from you, as a pen would draw it.
+  const shape = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
+    uniforms: { uReveal: reveal, uFill: { value: new THREE.Color(0x323843) }, uLine: { value: new THREE.Color(0xe9eef6) } },
+    vertexShader: `
+      varying float vHeight; varying vec3 vNormal; varying vec3 vView;
+      void main() {
+        vHeight = position.y;
+        vec4 view = modelViewMatrix * vec4(position, 1.0);
+        vNormal = normalize(normalMatrix * normal);
+        vView = -view.xyz;
+        gl_Position = projectionMatrix * view;
+      }`,
+    fragmentShader: `
+      uniform float uReveal; uniform vec3 uFill; uniform vec3 uLine;
+      varying float vHeight; varying vec3 vNormal; varying vec3 vView;
+      void main() {
+        if (vHeight >= uReveal) discard;
+        float facing = abs(dot(normalize(vNormal), normalize(vView)));
+        float outline = smoothstep(0.38, 0.12, facing);
+        gl_FragColor = vec4(mix(uFill, uLine, outline * 0.85), 0.92);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+  }))
+  group.add(shape)
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 24),
+    below(new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, fog: false })))
+  edges.renderOrder = 1
+  group.add(edges)
 
   const position = geometry.attributes.position
   const sample = []
-  for (let i = 0; i < position.count; i += 7) sample.push(position.getX(i), position.getY(i), position.getZ(i))
+  for (let i = 0; i < position.count; i += 13) sample.push(position.getX(i), position.getY(i), position.getZ(i))
   const points = new THREE.BufferGeometry()
   points.setAttribute("position", new THREE.Float32BufferAttribute(sample, 3))
-  group.add(new THREE.Points(points,
-    below(new THREE.PointsMaterial({ color: 0xffffff, size: 0.016, transparent: true, opacity: 1, map: softDot(), depthWrite: false, fog: false }))))
+  const dots = new THREE.Points(points,
+    below(new THREE.PointsMaterial({ color: 0xffffff, size: 0.014, transparent: true, opacity: 0.6, map: softDot(), depthWrite: false, fog: false })))
+  dots.renderOrder = 1
+  group.add(dots)
   return group
 }
 
-// Chalk lines across the finished jacket, with an anchor for each label.
+// A small mark at the edge of the finished jacket for each label (no lines across it).
 function measurementLines(geometry) {
   const position = geometry.attributes.position
   const box = geometry.boundingBox
@@ -272,27 +323,19 @@ function measurementLines(geometry) {
 
   const z = Math.max(chest.front, waist.front) + 0.04
   const v = (x, height) => new THREE.Vector3(x, height, z)
+  // Each mark stands a little way out from the jacket, so it reads as a note beside it.
+  const out = 0.14
   const anchors = {
-    shoulder: v(shoulder.max, y(0.93)),
-    chest: v(chest.max, y(0.68)),
-    waist: v(waist.max, y(0.45)),
-    sleeve: v(cuff.x, cuff.y),
-    length: v(0, box.min.y)
+    shoulder: v(shoulder.max + out * 0.8, y(0.93) + 0.04),
+    chest: v(Math.max(chest.max, cuff.x) + out, y(0.68)),
+    waist: v(Math.max(waist.max, cuff.x) + out, y(0.45)),
+    sleeve: v(cuff.x + out * 0.6, cuff.y - 0.09),
+    length: v(-0.12, box.min.y - 0.1)
   }
-  const points = [
-    v(shoulder.min, y(0.93)), anchors.shoulder,
-    v(chest.min, y(0.68)), anchors.chest,
-    v(waist.min, y(0.45)), anchors.waist,
-    anchors.shoulder, anchors.sleeve,
-    v(0, box.max.y - 0.02), anchors.length
-  ]
-
-  const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthTest: false })
-  const dotMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.035, transparent: true, opacity: 0, depthTest: false })
+  const dotMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.035, transparent: true, opacity: 0, depthTest: false, map: softDot() })
   const group = new THREE.Group()
-  group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), lineMaterial))
-  group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints(points), dotMaterial))
-  return { group, anchors, materials: [lineMaterial, dotMaterial] }
+  group.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints(Object.values(anchors)), dotMaterial))
+  return { group, anchors, materials: [dotMaterial] }
 }
 
 // Fine motes drifting down through the mist.
@@ -316,19 +359,6 @@ function dust() {
         transformed.x += sin(uTime * 0.2 + position.z * 2.0) * 0.08;`)
   }
   return new THREE.Points(geometry, material)
-}
-
-// A faint web of points and lines behind the jacket, as on a star chart.
-function constellation() {
-  const random = seeded(11)
-  const stars = Array.from({ length: 70 }, () => new THREE.Vector3((random() - 0.5) * 10, (random() - 0.5) * 6, -1.5 - random() * 4))
-  const points = []
-  for (const a of stars) {
-    const near = stars.filter(b => b !== a).sort((p, q) => a.distanceTo(p) - a.distanceTo(q)).slice(0, 2)
-    for (const b of near) points.push(a, b)
-  }
-  return new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false, fog: false }))
 }
 
 function softDot() {

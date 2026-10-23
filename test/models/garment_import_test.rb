@@ -48,9 +48,28 @@ class GarmentImportTest < ActiveSupport::TestCase
   end
 
   test "turns away things it can't fit yet" do
-    html = page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", "Navy Oxford Shirt").gsub("Suit jackets", "Shirts")
+    html = page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", "Navy Wool Scarf").gsub("Suit jackets", "Accessories")
     error = assert_raises(GarmentImport::Error) { GarmentImport.new.from_page(html, source_url: "x") }
     assert_equal "not_supported", error.code
+  end
+
+  def top(name, category = "Tops")
+    html = page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", name).gsub("Suit jackets", category)
+    GarmentImport.new.from_page(html, source_url: "x")
+  end
+
+  test "a T-shirt is a top drawn as a tee, never as a button-up shirt" do
+    assert_equal [ "top", "tee" ], top("Ocra Arctic T-Shirt").values_at(:garment, :style)
+    assert_equal "tee", top("Ocra Arctic T-Shirt", "Shirts")[:style]
+    assert_equal "tee", top("Pima Tee")[:style]
+    assert_equal "longsleeve", top("Long Sleeve T-Shirt")[:style]
+  end
+
+  test "shirts, sweatshirts and hoodies are tops in their own styles" do
+    assert_equal [ "top", "shirt" ], top("Navy Oxford Shirt", "Shirts").values_at(:garment, :style)
+    assert_equal "shirt", top("Linen Shirt")[:style]
+    assert_equal "sweatshirt", top("Heavyweight Crewneck Sweatshirt")[:style]
+    assert_equal "hoodie", top("Pullover Hoodie")[:style]
   end
 
   test "reads a resale listing's own measurements, skipping style tags between label and value" do
@@ -143,11 +162,81 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_in_delta 40 * 2.54 + 11, chart[:sizes][1]["chest"], 0.01
   end
 
-  test "a sweatshirt hoodie is still turned away" do
+  test "a listing with only its size gets that size's usual measurements, marked as a guess" do
+    garment = GarmentImport.new.from_page(page("resale-tee"), source_url: "https://shop.example/tee")
+
+    assert_equal [ "top", "longsleeve", "cotton" ], garment.values_at(:garment, :style, :fabric)
+    assert_equal "https://images.example/tee_1.jpg", garment[:image_url]
+    chart = garment[:chart]
+    assert_equal [ "sizes", [ "waist" ] ], chart.values_at(:kind, :missing)
+    size = chart[:sizes].sole
+    assert_equal "M", size["name"]
+    assert_in_delta 108, size["chest"], 0.01
+    assert_operator size["sleeve"], :>, 55
+  end
+
+  test "a utility jacket that zips is drawn as a zip-up" do
+    garment = GarmentImport.new.from_page(resale("Utility Jacket", "Nylon utility jacket. Two-way zipper closure."), source_url: outerwear)
+    assert_equal [ "jacket", "zip", "nylon" ], garment.values_at(:garment, :style, :fabric)
+  end
+
+  test "a Shopify shop's product is read from its JSON, with its Kiwi Sizing chart" do
+    asked = []
+    answers = {
+      "https://shop.example/products/graphic-tee.json" => { "product" => {
+        "id" => 42, "title" => "Graphic Tee - White", "vendor" => "Sample Label", "product_type" => "Short Sleeve Tees",
+        "tags" => "tees, mens", "body_html" => "<p>Logo print on the front</p><p>Material: 100% Cotton</p>",
+        "images" => [ { "src" => "https://cdn.example/tee.jpg" } ] } },
+      "https://shop.example/meta.json" => { "myshopify_domain" => "sample-shop.myshopify.com" }
+    }
+    import = GarmentImport.new(fetch_json: ->(url) { asked << url; answers.fetch(url) { KIWI_CHART } })
+    garment = import.from_shopify("https://shop.example/collections/tops/products/graphic-tee")
+
+    assert_equal [ "top", "tee", "cotton" ], garment.values_at(:garment, :style, :fabric)
+    assert_equal [ "Graphic Tee - White", "https://cdn.example/tee.jpg" ], garment.values_at(:name, :image_url)
+    assert_equal GarmentImport::COLORS["white"], garment[:color]
+    kiwi = Rack::Utils.parse_query(URI(asked.last).query)
+    assert_equal [ "sample-shop.myshopify.com", "42", "tees,mens" ], kiwi.values_at("shop", "product", "tags")
+  end
+
+  test "a Shopify product the browser read, with only a size conversion table, gets guessed sizes named as the shop names them" do
+    cell = ->(value) { { "type" => "single", "value" => value } }
+    sizing = { "sizings" => [ { "tables" => { "a" => { "data" => [
+      [ "S/M/L", "1/2/3", "US" ].map(&cell), [ "S", "1", "38" ].map(&cell), [ "M", "2", "40" ].map(&cell), [ "L", "3", "42" ].map(&cell)
+    ] } } } ] }
+    given = { "shop" => "sample-shop.myshopify.com", "sizing" => sizing, "product" => {
+      "id" => 7, "handle" => "label-tee-2", "title" => "Label Cindy Tee - White", "vendor" => "Label", "product_type" => "Short Sleeve Tees",
+      "body_html" => "<p>Graphic printed at front</p>", "images" => [ { "src" => "//cdn.shopify.com/tee.jpg" } ] } }
+    import = GarmentImport.new(fetch_json: ->(_) { raise "the browser's answers are used, not fetched again" })
+    garment = import.from_shopify("https://shop.example/collections/tops/products/label-tee-2", given:)
+
+    assert_equal [ "top", "tee", "https://cdn.shopify.com/tee.jpg" ], garment.values_at(:garment, :style, :image_url)
+    assert_equal "sizes", garment[:chart][:kind]
+    assert_includes garment[:chart][:sizes].map { it["name"] }, "M (2)"
+    assert_nil import.from_shopify("https://shop.example/products/other-tee", given:), "details for another product are ignored"
+  end
+
+  test "a site that turns away every app says so at once, without asking it" do
+    error = assert_raises(GarmentImport::Error) { GarmentImport.from_url("https://www.therealreal.com/products/men/clothing/shirts/a-shirt-x1") }
+    assert_match(/therealreal\.com doesn't let apps read its pages.*just its size/, error.message)
+  end
+
+  test "a link that isn't a Shopify product is left to the page" do
+    assert_nil GarmentImport.new(fetch_json: ->(_) { raise GarmentImport::Fetcher::Error, "no" }).from_shopify("https://shop.example/item/1")
+  end
+
+  test "a pasted size on its own gets that size's usual measurements" do
+    garment = GarmentImport.from_text("M", garment: "top")
+    assert_equal [ "top", "tee" ], garment.values_at(:garment, :style)
+    assert_equal "sizes", garment[:chart][:kind]
+    assert_in_delta 106, garment[:chart][:sizes].sole["chest"], 0.01
+  end
+
+  test "a sweatshirt hoodie is a top, drawn as a hoodie" do
     import = GarmentImport.new(fetch_json: ->(_) { KIWI_CHART })
-    html = page("kiwi-hoodie").gsub(/Nylon\. .*?Color: Black/, "Cotton fleece. Kangaroo pocket.")
-    error = assert_raises(GarmentImport::Error) { import.from_page(html, source_url: "x") }
-    assert_equal "not_supported", error.code
+    html = page("kiwi-hoodie").gsub(/Nylon\. .*?Color: Black/, "Cotton fleece. Kangaroo pocket.").gsub("Sample Down Hoodie", "Sample Fleece Hoodie")
+    garment = import.from_page(html, source_url: "x")
+    assert_equal [ "top", "hoodie", "cotton" ], garment.values_at(:garment, :style, :fabric)
   end
 
   test "a Kiwi shop whose chart service is down says there's no chart" do
@@ -188,5 +277,27 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "trousers", garment[:garment]
     assert_equal "garment", garment[:chart][:kind]
     assert_in_delta 33.5 * 2.54, garment[:chart][:sizes].first["waist"], 0.01
+  end
+
+  test "clothes read from a photo get every usual size of that kind" do
+    hoodie = GarmentImport.from_photo(kind: "top", style: "hoodie")
+    assert_equal [ "top", "hoodie", "Hoodie from your photo" ], hoodie.values_at(:garment, :style, :name)
+    assert_equal "sizes", hoodie[:chart][:kind]
+    assert_equal %w[XS S M L XL XXL XXXL], hoodie[:chart][:sizes].map { it["name"] }
+
+    pants = GarmentImport.from_photo(kind: "trousers")
+    assert_equal "trousers", pants[:garment]
+    assert_in_delta 81.3, pants[:chart][:sizes].find { it["name"] == "32" }["waist"], 0.1
+  end
+
+  test "a dress is a dress, not a jacket, with long sleeves when its listing says so" do
+    import = GarmentImport.new(fetch_json: ->(_) { raise GarmentImport::Fetcher::Error, "no chart" })
+    page = resale("Cut-Out Long-Sleeve Maxi Dress", "Ribbed knit maxi dress with long sleeves.")
+    garment = import.from_page(page, source_url: "x")
+    assert_equal [ "top", "dress" ], garment.values_at(:garment, :style)
+    assert_operator garment[:chart][:sizes].sole["sleeve"], :>, 40
+
+    assert_equal "top", GarmentImport.new.send(:kind_of, { name: "Oxford Dress Shirt" })
+    assert_not_equal "dress", GarmentImport.new.send(:top_style_of, { name: "Oxford Dress Shirt" })
   end
 end

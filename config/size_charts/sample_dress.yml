@@ -1,0 +1,52 @@
+# A made-up dress size chart for development. Not any real brand's measurements.
+# Finished garment measurements in centimetres: chest all the way around under the arms, waist all the way
+# around at its narrowest, shoulders seam to seam, sleeve from the shoulder seam, length from the high point
+# of the shoulder to the hem.
+name: Sample dress
+garment: top
+style: dress
+fabric: cotton
+color: "#7a2e3b"
+color_name: Wine
+source: Made-up sample data
+# How it's cut (see GarmentImport::DressCut): on wide straps, a scoop neck, to the knee, slim.
+cut:
+  sleeves: straps
+  neckline: scoop
+  length: knee
+  fit: slim
+  stretch: false
+  fabric: jersey
+  printed: false
+  details: []
+sizes:
+  - name: XS
+    chest: 88.0
+    waist: 72.0
+    shoulders: 36.0
+    sleeve: 14.0
+    length: 94.0
+  - name: S
+    chest: 93.0
+    waist: 77.0
+    shoulders: 37.5
+    sleeve: 14.5
+    length: 95.5
+  - name: M
+    chest: 98.0
+    waist: 82.0
+    shoulders: 39.0
+    sleeve: 15.0
+    length: 97.0
+  - name: L
+    chest: 104.0
+    waist: 88.0
+    shoulders: 40.5
+    sleeve: 15.5
+    length: 98.5
+  - name: XL
+    chest: 110.0
+    waist: 94.0
+    shoulders: 42.0
+    sleeve: 16.0
+    length: 100.0

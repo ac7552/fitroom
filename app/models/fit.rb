@@ -1,4 +1,4 @@
-# Fit math for jackets, coats and trousers. Everything is in centimetres.
+# Fit math for tops (T-shirts, shirts, sweatshirts), jackets, coats and trousers. Everything is in centimetres.
 #
 # Ease is the garment's measurement minus the body's. A jacket needs some ease to move in; how much
 # depends on the cut. Parts a tailor can change (sleeves, waist) cost little when they're off; parts
@@ -67,8 +67,27 @@ module Fit
     [ 0.0, "at the ankle" ]
   ].freeze
 
+  # Tops are worn closer or looser than tailoring, and how much is mostly style: these are the usual
+  # ranges. Their shoulder seam may drop past the shoulder bone; their length is checked against where a
+  # top usually ends (about 41% of height from the collar seam), with more leeway than a jacket's.
+  TOP_CUTS = {
+    "slim"    => { chest: 4..9,   waist: 4..10 },
+    "regular" => { chest: 8..15,  waist: 8..18 },
+    "classic" => { chest: 14..26, waist: 14..30 }
+  }.freeze
+  # A dress sits closer than a T-shirt.
+  DRESS_CUTS = {
+    "slim"    => { chest: 2..6,  waist: 2..7 },
+    "regular" => { chest: 4..9,  waist: 4..11 },
+    "classic" => { chest: 7..14, waist: 8..16 }
+  }.freeze
+  TOP_SHOULDER_EASE = -1..5
+  TOP_LENGTH_PER_HEIGHT = 0.41
+  TOP_LENGTH_TOLERANCE = 4
+  SHORT_SLEEVE = 40   # a sleeve shorter than this (cm, from the shoulder seam) is a short sleeve
+
   # Penalty per centimetre outside the target, plus a flat cost when no tailor can fix it.
-  WEIGHT = { shoulders: 4, chest: 3, length: 2, waist: 1, sleeve: 0.5, trouser_waist: 2, seat: 2, inseam: 0.4 }.freeze
+  WEIGHT = { shoulders: 4, chest: 3, length: 2, waist: 1, sleeve: 0.5, trouser_waist: 2, seat: 2, inseam: 0.4, hips: 2 }.freeze
   UNFIXABLE = 6
 
   Fix = Data.define(:action, :text, :amount)
@@ -125,10 +144,124 @@ module Fit
     Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
   end
 
+  # A stretch dress is made smaller than the body and stretches onto it: its chest, waist and hips as a share
+  # of the body's, by how close it's worn.
+  STRETCH_SHARE = { "slim" => -0.12..-0.03, "regular" => -0.09..0.01, "classic" => -0.05..0.05 }.freeze
+  DRESS_HIPS = { "slim" => 2..6, "regular" => 3..10, "classic" => 6..16 }.freeze
+  NO_SLEEVES = { "none" => "Sleeveless", "straps" => "Straps, no sleeves", "thin_straps" => "Thin straps, no sleeves",
+                 "strapless" => "Strapless", "one_shoulder" => "One shoulder" }.freeze
+  STRAPLESS_TOP = 18   # cm: a strapless dress's length is measured from its top edge, this far below the shoulder
+
+  # A dress: bust, waist and hips (it sits on all three), sleeves and shoulders only when it has sleeves, and
+  # its length as where it ends. A stretch dress may be smaller than the body; a flared one free at the hips.
+  def check_dress(body, size, cut = "regular", details = {})
+    stretch = details["stretch"] == true || details["stretch"].to_s == "true"
+    sleeves = details["sleeves"].to_s
+    flared = details["fit"].to_s == "flared"
+    ranges = DRESS_CUTS.fetch(cut)
+    around = lambda do |rule, label, value, own, plain|
+      next needs(rule, label, rule.to_s) unless own
+
+      range = if stretch then STRETCH_SHARE.fetch(cut).then { (own * it.min)..(own * it.max) }
+              else plain
+              end
+      found = range_check(rule, label, value - own, range)
+      stretch && found.status == "good" && value < own ? found.with(note: "Stretches to fit close to the body") : found
+    end
+    checks = [
+      given(size, "chest", "Bust") { around.(:chest, "Bust", it, body["chest"], ranges[:chest]) },
+      given(size, "waist", "Waist") { flared && !stretch ? range_check(:waist, "Waist", it - body["waist"], ranges[:waist]) : around.(:waist, "Waist", it, body["waist"], ranges[:waist]) },
+      size["hips"] ? given(size, "hips", "Hips") { around.(:hips, "Hips", it, body["hips"], flared ? 2..80 : DRESS_HIPS.fetch(cut)) } : nil,
+      *(NO_SLEEVES.key?(sleeves) ? [ Check.new(part: "sleeve", label: "Sleeves", ease: nil, status: "good", fix: nil, penalty: 0, note: NO_SLEEVES[sleeves]) ] : [
+        given(size, "shoulders", "Shoulders") { range_check(:shoulders, "Shoulders", it - body["shoulders"], TOP_SHOULDER_EASE) },
+        given(size, "sleeve", "Sleeves") do |sleeve|
+          next Check.new(part: "sleeve", label: "Sleeves", ease: nil, status: "good", fix: nil, penalty: 0, note: "Short sleeves") if sleeve < SHORT_SLEEVE
+
+          sleeve_check(sleeve - body["arm"])
+        end
+      ]),
+      given(size, "length", "Length") { coat_length(it + (sleeves == "strapless" ? STRAPLESS_TOP : 0), body["height"]) }
+    ].compact
+    Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
+  end
+
+  # Some tops are made roomy on purpose (oversized, boxy), often with a dropped shoulder: the seam sits
+  # down the arm. Their chart is much bigger than the body each size is for, so they're judged against
+  # how they're meant to be worn. The usual body for each letter size: [chest, shoulders] in cm.
+  LETTER_BODY = { "XS" => [ 86, 41 ], "S" => [ 91, 43 ], "M" => [ 97, 45 ], "L" => [ 104, 47 ], "XL" => [ 112, 49 ],
+                  "XXL" => [ 120, 51 ], "XXXL" => [ 128, 53 ] }.freeze
+  ROOMY = 30          # this much more chest than its size's usual body (cm): made roomy
+  DROPPED = 8         # this much wider shoulders than its size's usual body: a dropped shoulder
+  ROOMY_CUT = { "slim" => -6, "regular" => 0, "classic" => 6 }.freeze   # Snug sizes down, Loose sizes up
+  ROOMY_EASE = -5..7  # around the room it's made with
+  BOXY_SHORT = 10     # a roomy top may be cut this much shorter than usual (boxy)
+
+  # How a top's sizes are cut: { roomy: the extra chest it's made with (cm), or nil; dropped: true/false }.
+  def design(sizes)
+    known = sizes.filter_map do |size|
+      letter = size["name"].to_s.upcase[/\A(XXXL|3XL|XXL|2XL|XL|XS|S|M|L)\b/, 1]&.sub("3XL", "XXXL")&.sub("2XL", "XXL")
+      [ size, LETTER_BODY[letter] ] if letter
+    end
+    chest = known.filter_map { |size, (c, _)| size["chest"] && size["chest"] - c }.sort
+    shoulders = known.filter_map { |size, (_, s)| size["shoulders"] && size["shoulders"] - s }.sort
+    roomy = chest.any? && chest[chest.size / 2] >= ROOMY ? chest[chest.size / 2] : nil
+    { roomy:, dropped: shoulders.any? && shoulders[shoulders.size / 2] >= DROPPED }
+  end
+
+  # A T-shirt, shirt, sweatshirt or other top. Short sleeves end on the upper arm, so they aren't checked
+  # against the arm. design: how its sizes are cut (see design).
+  def check_top(body, size, cut = "regular", design = {}, style: nil)
+    ranges = (style == "dress" ? DRESS_CUTS : TOP_CUTS).fetch(cut)
+    roomy, dropped = design.values_at(:roomy, :dropped)
+    checks = [
+      given(size, "shoulders", "Shoulders") do |shoulders|
+        next check(:shoulders, "Shoulders", shoulders - body["shoulders"], "good").with(note: "The shoulder seam is made to sit down the arm.") if dropped
+
+        range_check(:shoulders, "Shoulders", shoulders - body["shoulders"], TOP_SHOULDER_EASE)
+      end,
+      given(size, "chest", "Chest") do |chest|
+        next range_check(:chest, "Chest", chest - body["chest"], ranges[:chest]) unless roomy
+
+        aim = roomy + ROOMY_CUT.fetch(cut)
+        found = range_check(:chest, "Chest", chest - body["chest"], (aim + ROOMY_EASE.min)..(aim + ROOMY_EASE.max))
+        # The size nearest the room it's made with wins a tie.
+        found = found.with(penalty: (found.penalty + (chest - body["chest"] - aim).abs * 0.05).round(2))
+        found.status == "good" ? found.with(note: "Made to be big and loose. On you, it's loose the way it should be.") : found
+      end,
+      given(size, "waist", "Waist") { range_check(:waist, "Waist", it - body["waist"], roomy ? (ranges[:waist].min + roomy)..(ranges[:waist].max + roomy) : ranges[:waist]) },
+      given(size, "sleeve", "Sleeves") do |sleeve|
+        next Check.new(part: "sleeve", label: "Sleeves", ease: nil, status: "good", fix: nil, penalty: 0, note: "Short sleeves") if sleeve < SHORT_SLEEVE
+
+        # Long sleeves end at the wrist bone. A dropped shoulder's sleeve starts down the arm.
+        start = dropped && size["shoulders"] ? (size["shoulders"] - body["shoulders"]) / 2.0 : 0
+        sleeve_check(sleeve + start - body["arm"])
+      end,
+      given(size, "length", "Length") do |length|
+        next coat_length(length, body["height"]) if style == "dress"
+
+        diff = length - body["height"] * TOP_LENGTH_PER_HEIGHT
+        next check(:length, "Length", diff, "good") if diff.abs <= TOP_LENGTH_TOLERANCE
+        if roomy && diff.negative? && diff >= -BOXY_SHORT
+          next check(:length, "Length", diff, "good").with(note: "Made short and boxy. It ends at your hips.")
+        end
+
+        check(:length, "Length", diff, diff.positive? ? "long" : "short", nil, (diff.abs - TOP_LENGTH_TOLERANCE) * WEIGHT[:length])
+      end
+    ]
+    Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
+  end
+
   # Every size, best first.
-  def rank(body, sizes, cut = "regular", garment = "jacket")
+  # style: how a top is cut, when it changes what fits ("dress": its length is where it ends, not right or wrong).
+  # details: a dress's cut ({ "stretch", "sleeves", "fit" }, see GarmentImport::DressCut).
+  def rank(body, sizes, cut = "regular", garment = "jacket", style: nil, details: {})
+    cuts = nil
     results = sizes.map do |size|
-      garment == "trousers" ? check_trousers(body, size, cut) : check_size(body, size, cut, garment)
+      case garment
+      when "trousers" then check_trousers(body, size, cut)
+      when "top" then style == "dress" ? check_dress(body, size, cut, details.to_h) : check_top(body, size, cut, cuts ||= design(sizes), style:)
+      else check_size(body, size, cut, garment)
+      end
     end
     results.sort_by(&:penalty)
   end

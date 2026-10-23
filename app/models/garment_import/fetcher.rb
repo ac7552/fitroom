@@ -8,10 +8,17 @@ class GarmentImport
   # it checked, re-checks every redirect, and stops at a size and time limit.
   class Fetcher
     class Error < StandardError; end
+    # The site didn't answer in time; asking it again (for another address on it) would only wait as long.
+    class TooSlow < Error; end
+
+    # Sites known to turn away every app (they answer only people's browsers), so there's no waiting on them.
+    TURNS_AWAY = %w[therealreal.com].freeze
 
     MAX_BYTES = 3_000_000
     MAX_REDIRECTS = 3
     TIMEOUT = 8
+    # However the site answers (slowly, a little at a time, through redirects), one fetch gives up after this.
+    DEADLINE = 15
     USER_AGENT = "Fitroom/1.0 (reads one product page's size chart when a person asks)"
     BLOCKED = %w[
       0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16
@@ -20,6 +27,7 @@ class GarmentImport
 
     ACCEPT = { page: "text/html,application/xhtml+xml", image: "image/webp,image/jpeg,image/png", json: "application/json" }.freeze
     IMAGE_TYPES = %r{\Aimage/(jpeg|png|webp)\z}
+    BOT_CHECK = /bm-verify|_Incapsula_Resource|cf-chl|challenge-platform|px-captcha|Pardon Our Interruption|Access to this page has been denied/i
     MAX_IMAGE_BYTES = 2_500_000
 
     def self.get(url) = new.get(url)
@@ -32,7 +40,27 @@ class GarmentImport
     def self.get_json(url) = JSON.parse(new.get(url, json: true))
 
     def get(url, redirects = 0, image: false, json: false)
+      @deadline ||= Process.clock_gettime(Process::CLOCK_MONOTONIC) + DEADLINE
+      Timeout.timeout([ @deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0.5 ].max) { fetch(url, redirects, image:, json:) }
+    rescue Timeout::Error
+      raise TooSlow, "That page took too long to answer. Try again, or paste its size chart, or just its size (like M), " \
+                     "under \"Other ways to add clothes\"."
+    end
+
+    def self.turned_away(host)
+      TURNS_AWAY.find { host.to_s.downcase == it || host.to_s.downcase.end_with?(".#{it}") }
+    end
+
+    def self.turned_away_message(host)
+      "#{host.to_s.delete_prefix('www.')} doesn't let apps read its pages. Paste its size chart, or just its size (like M), " \
+        "under \"Other ways to add clothes\"."
+    end
+
+    private
+
+    def fetch(url, redirects, image:, json:)
       uri = parse(url)
+      raise Error, self.class.turned_away_message(uri.hostname) if self.class.turned_away(uri.hostname)
       http = connect(uri, resolve(uri.hostname))
 
       request = Net::HTTP::Get.new(uri)
@@ -44,13 +72,13 @@ class GarmentImport
           case response
           when Net::HTTPRedirection
             raise Error, "That page redirects too many times." if redirects >= MAX_REDIRECTS
-            return get(URI.join(uri, response["location"]).to_s, redirects + 1, image:, json:)
+            return fetch(URI.join(uri, response["location"]).to_s, redirects + 1, image:, json:)
           when Net::HTTPSuccess
             return image ? read_image(response) : read_body(response, json:)
           when Net::HTTPForbidden, Net::HTTPUnauthorized, Net::HTTPTooManyRequests, Net::HTTPServiceUnavailable
             # Big shops often turn away any reader that isn't a person's browser. Fitroom doesn't pretend to be one.
-            raise Error, "#{uri.hostname.delete_prefix('www.')} doesn't let apps read its pages. Paste its size chart, " \
-                         "or use a photo of the jacket and its measurements."
+            raise Error, "#{uri.hostname.delete_prefix('www.')} doesn't let apps read its pages. Paste its size chart, or just " \
+                         "its size (like M), under \"Other ways to add clothes\"."
           else
             raise Error, "The shop's site answered #{response.code}. Check the link, or paste the size chart instead."
           end
@@ -61,8 +89,6 @@ class GarmentImport
     rescue Timeout::Error, SocketError, OpenSSL::SSL::SSLError, SystemCallError, Net::HTTPBadResponse => e
       raise Error, "Couldn't load that page (#{e.class.name.demodulize})."
     end
-
-    private
 
     def parse(url)
       uri = URI.parse(url.to_s.strip)
@@ -129,7 +155,13 @@ class GarmentImport
         raise Error, "That page is too big to read." if body.bytesize > MAX_BYTES
       end
       encoding = Encoding.find(response.type_params["charset"] || "UTF-8") rescue Encoding::UTF_8
-      body.force_encoding(encoding).encode("UTF-8", invalid: :replace, undef: :replace)
+      body = body.force_encoding(encoding).encode("UTF-8", invalid: :replace, undef: :replace)
+      # Some shops answer with a bot check instead of the page (and a 200). Fitroom doesn't try to pass them.
+      if !json && body.size < 20_000 && body.match?(BOT_CHECK)
+        raise Error, "#{response.uri&.host.to_s.delete_prefix('www.')} doesn't let apps read its pages. Paste its size chart, or just " \
+                     "its size (like M), under \"Other ways to add clothes\"."
+      end
+      body
     end
   end
 end

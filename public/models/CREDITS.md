@@ -12,3 +12,6 @@ Everything here is CC0 1.0 (public domain) at its source:
 
 The build's changes (the jacket and trousers split apart, marks for where each covers the body, smoothing, the tintable
 cloth texture, baked ambient occlusion and Fitroom's shape keys) are MIT like the rest of the project.
+- `women.bin`: the women's body, MakeHuman's female macro targets (CC0, from
+  [makehumancommunity/makehuman](https://github.com/makehumancommunity/makehuman)) at the same settings as the base body,
+  scaled to its height and stored as an offset for each of the body mesh's vertices.

@@ -3,13 +3,25 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
+import { DrapedTop, bodySnapshot, garmentWeights, prepareBody, skinPoints } from "lib/garments/dress"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
-// script/mannequin/build.py) wearing an outfit (a jacket, a coat over it, trousers) in the chosen sizes,
-// in soft studio light on a pale seamless backdrop. Three views: on the mannequin, the clothes alone
-// ("ghost"), and the fit map; and a few poses. Drag to turn it.
+// script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
+// soft studio light on a pale seamless backdrop. Tops and casual jackets are cut from sewing patterns and
+// draped with cloth simulation (lib/garments); the suit's jacket, coats and trousers are shaped from the
+// model. Three views: on the mannequin, the clothes alone ("ghost"), and the fit map; and a few poses. Drag
+// to turn it.
 const MODELS = "/models"
-const BACKDROP = 0xeceef1
+const MANNEQUIN_WHITE = "#f4f2ee"
+// The studio: graphite, lit from above the figure, like the page round it.
+// The neck, in the body's own (rest pose) space: cut level at this height, and the egg's neck piece reaching
+// a little below the cut, about as round as the neck there.
+// The pose garments are sewn in: the rig's rest pose (arms out, as garment tools do it) with the legs brought
+// together, so a long garment fits round them (in the rest pose they stand so far apart that a straight dress
+// can't go round the knees, and rides up).
+const SEWING_POSE = [["thigh_l", "z", -0.16], ["thigh_r", "z", 0.16]]
+const NECK = { cut: 1.5, bottom: 1.484, centreZ: 0.032, radii: [0.066, 0.057] }
+const BACKDROP = ["#2b2f36", "#1a1c21", "#0f1013"]
 const WOOL_REPEAT = 46     // how many times the wool grain tiles across the suit's texture
 
 // How each kind of cloth catches light: roughness, sheen, how much the weave shows, and (leather) a coat;
@@ -21,12 +33,11 @@ const FABRICS = {
   leather: { roughness: 0.55, sheen: 0, weave: 0.05, clearcoat: 0.15, thread: "tone", metal: "#8d8f93" },
   nylon: { roughness: 0.4, sheen: 0.15, weave: 0.05, clearcoat: 0.15, thread: "tone", metal: "#8d8f93" }
 }
-// Jacket styles: "tailored" is the suit's jacket; the rest are the casual jacket with their own details
-// (script/mannequin/casual_jacket.py) and collar (1, a stand; 2, a point collar).
+// Jacket styles: "tailored" is the suit's jacket, shaped from the model; the casual ones are cut from a
+// pattern and draped like tops (lib/garments).
 export const STYLES = ["tailored", "zip", "bomber", "shirt"]
-const COLLARS = { zip: 1, bomber: 1, shirt: 2 }
-// The casual jacket is built long and cut to length; its hem is stitched (0), rib knit (1) or a waistband (2).
-const HEMS = { zip: 0, bomber: 1, shirt: 2 }
+// Tops, and casual jackets, cut from a sewing pattern and draped on the mannequin with cloth simulation.
+export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "dress"]
 
 export const STATUS_COLORS = {
   good: "#3fa672", tight: "#de4f37", short: "#de4f37", loose: "#4f63f0", long: "#4f63f0", unknown: "#9a9ca3"
@@ -50,6 +61,7 @@ export class FittingStage {
     this.pose = "standing"
     this.outfit = []
     this.lastEase = {}
+    this.drapeBudget = 20   // milliseconds of draping per frame
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
@@ -58,7 +70,7 @@ export class FittingStage {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(BACKDROP)
+    this.scene.background = backdrop()
     this.addLights()
 
     this.camera = new THREE.PerspectiveCamera(22, 1, 0.05, 50)
@@ -84,11 +96,12 @@ export class FittingStage {
   }
 
   async load() {
-    const [gltf, calibration, poses, studio] = await Promise.all([
+    const [gltf, calibration, poses, studio, women] = await Promise.all([
       new GLTFLoader().loadAsync(`${MODELS}/mannequin.glb`),
       fetch(`${MODELS}/mannequin.json`).then(r => r.json()),
       fetch(`${MODELS}/poses.json`).then(r => r.json()),
-      new RGBELoader().loadAsync(`${MODELS}/studio.hdr`)
+      new RGBELoader().loadAsync(`${MODELS}/studio.hdr`),
+      fetch(`${MODELS}/women.bin`).then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null)
     ])
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromEquirectangular(studio).texture
@@ -97,6 +110,7 @@ export class FittingStage {
     pmrem.dispose()
 
     this.calibration = calibration
+    this.bodyCalibration = calibration
     this.poses = poses
     this.model = gltf.scene
     this.meshes = {}
@@ -108,9 +122,12 @@ export class FittingStage {
         object.frustumCulled = false   // morphs and skinning move it beyond its stored bounds
       }
     })
+    // The women's body: a shape key on the body (see mannequin.json's "women").
+    this.hasWomen = Boolean(women && calibration.women) && addShapeKey(this.meshes.body, "women", new Float32Array(women))
+    // The model's casual jacket isn't used: casual jackets are draped (see dressDraped).
+    if (this.meshes.casual) this.meshes.casual.visible = false
     // A coat is the jacket again, on its own copy of the geometry (it gets its own fit-map colours),
     // drawn a little bigger so it always sits outside the jacket.
-    if (!this.meshes.casual) throw new Error("mannequin.glb has no casual jacket; rebuild the model")
     const coat = this.meshes.jacket.clone()
     coat.geometry = this.meshes.jacket.geometry.clone()
     coat.name = "coat"
@@ -122,6 +139,8 @@ export class FittingStage {
 
     await this.dress(calibration.textures)
     this.addEggHead(calibration.head)
+    if (this.tone) this.setTone(this.tone)
+    if (this.bodyType) this.setBodyType(this.bodyType)
     this.scene.add(this.model)
     this.applyPose()
     this.frame()
@@ -133,14 +152,34 @@ export class FittingStage {
   // Returns the measurements the model couldn't reach, if any.
   setBody(body) {
     if (!this.model) { this.pendingBody = body; return [] }
-    this.fitted = fitBody(this.calibration, body)
+    this.measures = body
+    this.fitted = fitBody(this.bodyCalibration, body)
+    this.fitted.influences.women = this.bodyType === "women" && this.hasWomen ? 1 : 0
     this.model.scale.setScalar(this.fitted.scale)
     for (const mesh of Object.values(this.meshes)) applyInfluences(mesh, this.fitted.influences)
     this.redraw()
     return this.fitted.limited
   }
 
-  // items: [{ kind: "jacket" | "coat" | "trousers", size (cm), checks (the API's), color, fabric }]
+  // "men" or "women": which body the mannequin has. Its measurements then start from that body's.
+  setBodyType(type) {
+    this.bodyType = type
+    if (!this.model) return
+    const women = type === "women" && this.hasWomen
+    this.bodyCalibration = women ? { ...this.calibration, body: this.calibration.women.body } : this.calibration
+    // That body's neck piece, and the women's mannequin's smaller head.
+    if (this.eggNeck) {
+      this.eggNeck.geometry = this.necks[women ? "women" : "men"]
+      this.egg.scale.copy(this.eggScale).multiplyScalar(women ? this.calibration.women.head ?? 1 : 1)
+    }
+    // Clothes draped on the other body don't fit this one: take them off now, rather than leave them on
+    // until the new drape is ready.
+    if (this.draped && this.draped.bodyType !== type) this.removeDraped()
+    this.applyPose()
+    if (this.measures) this.setBody(this.measures)
+  }
+
+  // items: [{ kind: "top" | "jacket" | "coat" | "trousers", size (cm), checks (the API's), color, fabric, style }]
   setOutfit(items) {
     this.outfit = items
     this.redraw()
@@ -152,28 +191,48 @@ export class FittingStage {
     this.redraw()
   }
 
+  // The mannequin's shade: white fibreglass, or a skin tone (a colour).
+  setTone(color) {
+    this.tone = color
+    if (!this.meshes) return
+    const white = color.toLowerCase() === MANNEQUIN_WHITE
+    for (const material of [this.meshes.body.material, this.meshes.body.material.userData.plain]) {
+      material.color.set(color)
+      // Fibreglass is glossy; skin is soft, with a little sheen.
+      material.clearcoat = white ? 0.3 : 0.05
+      material.roughness = white ? 0.5 : 0.62
+      material.sheen = white ? 0 : 0.25
+      material.sheenColor.set(color).offsetHSL(0, 0, 0.15)
+    }
+  }
+
   setPose(name) {
     this.pose = name
     this.applyPose()
+    // A draped garment follows by settling again in the new pose (see tick).
+    if (this.draped) this.draped.posedAs = null
+    this.start()
   }
 
   redraw() {
     if (!this.meshes || !this.fitted) return
     const worn = Object.fromEntries(this.outfit.map(item => [item.kind, item]))
 
-    const casual = worn.jacket && casualStyle(worn.jacket)
+    // A casual jacket is draped like a top; the suit's jacket and a coat are drawn from the model.
+    const drapedJacket = Boolean(worn.jacket && DRAPED_STYLES.includes(worn.jacket.style))
+    const tailored = Boolean(worn.jacket && !drapedJacket)
     const body = this.meshes.body
     body.visible = this.view !== "ghost"
-    body.material.userData.hideJacket.value = (worn.jacket && !casual) || worn.coat ? 1 : 0
-    body.material.userData.hideCasual.value = casual ? 1 : 0
+    for (const part of [this.egg, this.eggNeck]) if (part) part.visible = body.visible
+    body.material.userData.hideJacket.value = tailored || worn.coat ? 1 : 0
+    body.material.userData.hideCasual.value = 0
     body.material.userData.hideTrousers.value = worn.trousers ? 1 : 0
 
     let under = null
-    if (worn.jacket) {
-      const layer = casual ? "casual" : "jacket"
-      const ease = fitJacket(this.calibration, this.fitted, worn.jacket.size, { layer })
-      this.dressMesh(layer, worn.jacket, ease, "jacket")
-      under = drawnSize(this.calibration, this.fitted, ease, layer)
+    if (tailored) {
+      const ease = fitJacket(this.calibration, this.fitted, worn.jacket.size, { layer: "jacket" })
+      this.dressMesh("jacket", worn.jacket, ease, "jacket")
+      under = drawnSize(this.calibration, this.fitted, ease, "jacket")
     }
     if (worn.coat) {
       const ease = fitJacket(this.calibration, this.fitted, worn.coat.size, { over: under })
@@ -187,9 +246,162 @@ export class FittingStage {
       this.dressMesh("coat", worn.coat, ease)
     }
     if (worn.trousers) this.dressMesh("trousers", worn.trousers, fitTrousers(this.calibration, this.fitted, worn.trousers.size))
-    this.meshes.jacket.visible = Boolean(worn.jacket && !casual)
-    this.meshes.casual.visible = Boolean(casual)
+    this.meshes.jacket.visible = tailored
     for (const kind of ["coat", "trousers"]) this.meshes[kind].visible = Boolean(worn[kind])
+
+    // What's draped: a casual jacket, or else the top, unless the suit's jacket or a coat is over it.
+    const draped = drapedJacket ? worn.jacket : worn.top && !tailored && !worn.coat ? worn.top : null
+    this.hiddenTop = Boolean(worn.top && !(draped === worn.top))
+    this.dressDraped(draped, worn.trousers ? this.lastEase.trousers : null)
+  }
+
+  // Draping
+
+  // item: an outfit item drawn by draping (or null for none). trousers: the trousers' ease, when they're worn
+  // (the cloth hangs over them, so a change to them is a new drape).
+  dressDraped(item, trousers) {
+    if (!item) { this.removeDraped(); return }
+    const style = DRAPED_STYLES.includes(item.style) ? item.style : "tee"
+    const key = JSON.stringify([style, item.size, item.fabric, item.cut ?? null, this.fitted.scale, this.fitted.influences, trousers])
+    if (this.draped?.key !== key) {
+      // The garment shown stays until the new one is sewn and in the pose shown, so nothing jumps about.
+      this.removeDraped({ keepShown: true })
+      this.startDrape({ style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null }, key)
+    }
+    const { top } = this.draped
+    top.setColor(item.color)
+    top.setPrint(item.print ?? null)
+    top.mesh.visible = this.draped.shown
+    if (this.view === "fit") top.paintFit(item.checks ?? [], STATUS_COLORS)
+    top.setFitMap(this.view === "fit")
+  }
+
+  // The cloth is sewn and settled on the mannequin in its rest pose (arms out, as garment tools do it), then
+  // moved into the pose shown and settled again there.
+  startDrape(item, key) {
+    const rest = this.restSnapshot()
+    const { frame, field } = prepareBody(rest.body, rest.egg, rest.over)
+    const top = new DrapedTop({ item, body: rest.body, frame, field, measures: this.measures, renderer: this.renderer })
+    top.mesh.visible = false
+    this.scene.add(top.mesh)
+    this.draped = { key, top, rest, frame, posedAs: null, posing: null, shown: false, bodyType: this.bodyType }
+    this.start()
+  }
+
+  // keepShown: leave the garment on screen (as this.leaving) until the next one is ready to show.
+  removeDraped({ keepShown = false } = {}) {
+    const d = this.draped
+    this.draped = null
+    if (!d) { if (!keepShown) this.dropLeaving(); return }
+    if (keepShown && d.shown) {
+      this.dropLeaving()
+      this.leaving = d
+      return
+    }
+    this.scene.remove(d.top.mesh)
+    d.top.dispose()
+    if (!keepShown) this.dropLeaving()
+  }
+
+  dropLeaving() {
+    if (!this.leaving) return
+    this.scene.remove(this.leaving.top.mesh)
+    this.leaving.top.dispose()
+    this.leaving = null
+  }
+
+  // The body (and the trousers, when worn) and the egg head in the pose garments are sewn in (see SEWING_POSE),
+  // with how each bone then maps bind space to world space. The pose shown is put back afterwards.
+  restSnapshot() {
+    for (const [bone, quaternion] of this.rest) bone.quaternion.copy(quaternion)
+    this.turnBones(SEWING_POSE, 1)
+    this.model.updateMatrixWorld(true)
+    const snapshot = this.snapshotNow()
+    const mesh = this.meshes.body
+    snapshot.skin = mesh.skeleton.bones.map((bone, i) => new THREE.Matrix4().multiplyMatrices(bone.matrixWorld, mesh.skeleton.boneInverses[i]).multiply(mesh.bindMatrix))
+    this.applyPose()
+    return snapshot
+  }
+
+  snapshotNow() {
+    const body = bodySnapshot(this.meshes.body)
+    const over = this.meshes.trousers.visible ? [bodySnapshot(this.meshes.trousers)] : []
+    return { body, over, egg: this.eggShape() }
+  }
+
+  // The egg head as an ellipsoid in world space.
+  eggShape() {
+    const egg = this.egg
+    if (!egg) return null
+    egg.updateWorldMatrix(true, false)
+    const centre = new THREE.Vector3().setFromMatrixPosition(egg.matrixWorld)
+    const scale = new THREE.Vector3().setFromMatrixScale(egg.matrixWorld)
+    return { centre: centre.toArray(), radii: scale.toArray() }
+  }
+
+  // Once the drape has settled, and whenever the pose changes: the garment, skinned from its rest drape into
+  // the pose shown, settles there on the posed body.
+  reposeDraped() {
+    const d = this.draped
+    const { top } = d
+    const drape = top.drape
+    if (!d.restX) {
+      d.restX = Float32Array.from(drape.x)
+      const pieces = new Array(drape.x.length / 3)
+      top.cloth.panel.forEach((p, i) => { pieces[drape.map[i]] ??= top.cloth.panels[p] })
+      // Without sleeves, the garment doesn't follow the arms (its straps stay on the shoulders).
+      const bones = this.meshes.body.skeleton.bones
+      const sleeveless = !Object.keys(top.pattern.panels).some(name => name.startsWith("sleeve"))
+      const still = sleeveless ? new Set(bones.flatMap((b, i) => (/^(upperarm|lowerarm|hand|thumb|index|middle|ring|pinky)_/.test(b.name) ? [i] : []))) : null
+      const fallback = Math.max(0, bones.findIndex(b => /^spine_?0?3|^spine3|chest/i.test(b.name)))
+      d.weights = garmentWeights(d.restX, pieces, d.rest.body, d.frame, { still, fallback })
+      // Each point back into bind space, through the bones it follows as they were when it was sewn.
+      d.restBind = new Float32Array(d.restX.length)
+      const blend = new THREE.Matrix4(), point = new THREE.Vector3()
+      const { skinIndex, skinWeight } = d.weights
+      for (let i = 0; i < d.restX.length / 3; i++) {
+        const e = blend.elements.fill(0)
+        for (let k = 0; k < 4; k++) {
+          const w = skinWeight[4 * i + k]
+          if (!w) continue
+          const m = d.rest.skin[skinIndex[4 * i + k]].elements
+          for (let j = 0; j < 16; j++) e[j] += w * m[j]
+        }
+        point.set(d.restX[3 * i], d.restX[3 * i + 1], d.restX[3 * i + 2]).applyMatrix4(blend.invert())
+        d.restBind[3 * i] = point.x; d.restBind[3 * i + 1] = point.y; d.restBind[3 * i + 2] = point.z
+      }
+    }
+    d.final = false
+    d.posing = this.posing(d)
+    d.posedAs = this.pose
+  }
+
+  // Into the pose a little at a time, settling between, as a person moves: an arm swung down in one jump
+  // lands inside the shirt's side and pushes the cloth out over itself; moved in steps, it pushes the cloth
+  // aside. The garment on screen stays as it was until the last step (d.final).
+  * posing(d) {
+    const drape = d.top.drape
+    const long = d.top.pattern.style === "dress" || d.top.pattern.measures.length > 85   // more to push aside, further to fall
+    const steps = long ? 6 : 3
+    let before = null
+    for (let s = 1; s <= steps; s++) {
+      this.applyPose(s / steps)
+      const posed = skinPoints(d.restBind, d.weights.skinIndex, d.weights.skinWeight, this.meshes.body)
+      const now = this.snapshotNow()
+      const { field } = prepareBody(now.body, now.egg, now.over)
+      if (s < steps) this.applyPose()
+      if (!before) drape.repose(posed, field)
+      else {
+        for (let i = 0; i < posed.length; i++) drape.x[i] += posed[i] - before[i]
+        drape.v.fill(0)
+        drape.field = field
+      }
+      before = posed
+      if (s < steps) { yield* drape.settle(14, 6); continue }
+      d.final = true
+      d.top.update()
+      yield* (long ? drape.settle(180, 50) : drape.settle(70, 25))
+    }
   }
 
   // What a studio render needs to reproduce the screen: the body's shape keys and scale, each item's
@@ -198,16 +410,17 @@ export class FittingStage {
     if (!this.fitted) return null
     return {
       scale: this.fitted.scale,
-      body: this.fitted.influences,
+      // The studio renderer has only the base body's shape keys (its own build is the men's body).
+      body: Object.fromEntries(Object.entries(this.fitted.influences).filter(([name]) => name !== "women")),
       pose: this.pose,
       items: this.outfit.map(item => ({
-        kind: item.kind, style: item.kind === "jacket" ? (item.style ?? "tailored") : undefined,
+        kind: item.kind, style: item.kind === "jacket" ? (item.style ?? "tailored") : item.kind === "top" ? (item.style ?? "tee") : undefined,
         color: item.color, fabric: item.fabric ?? "wool", ease: this.lastEase[item.kind] ?? {}
       }))
     }
   }
 
-  // kind: the mesh ("jacket", "casual", "coat" or "trousers"); slot: the outfit's ("jacket" for either jacket).
+  // kind: the mesh ("jacket", "coat" or "trousers"); slot: the outfit's.
   dressMesh(kind, item, ease, slot = kind) {
     this.lastEase[slot] = ease
     const mesh = this.meshes[kind]
@@ -215,20 +428,6 @@ export class FittingStage {
     applyInfluences(mesh, Object.fromEntries(keys.map(key => [key, ease[key] ?? 0])))
     const materials = this.materials[kind]
     const fabric = FABRICS[item.fabric] ?? FABRICS.wool
-    if (kind === "casual") {
-      const style = casualStyle(item)
-      const { cloth, fitMap } = materials
-      // Length is a cut, not a stretch: a longer jacket has more cloth at the hem, not a lower waist.
-      const length = drawnSize(this.calibration, this.fitted, ease, "casual").length
-      applyInfluences(mesh, { "ease-length": 0 })
-      cloth.userData.length.value = fitMap.userData.length.value = Math.min(Math.max(length, 50), 80) / 100
-      cloth.userData.hem.value = HEMS[style]
-      cloth.userData.details.value = this.details[style]
-      cloth.userData.collar.value = fitMap.userData.collar.value = COLLARS[style]
-      cloth.userData.thread.value.set(fabric.thread === "tone" ? item.color : fabric.thread)
-      if (fabric.thread === "tone") cloth.userData.thread.value.offsetHSL(0, 0, 0.06)
-      cloth.userData.metal.value.set(fabric.metal)
-    }
     materials.cloth.userData.tint.value.set(item.color)
     materials.cloth.sheenColor.set(item.color).offsetHSL(0, 0, 0.35)   // cloth catches light in its own colour
     materials.cloth.roughness = fabric.roughness
@@ -258,7 +457,14 @@ export class FittingStage {
     key.shadow.normalBias = 0.01
     this.scene.add(key)
 
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 64), new THREE.ShadowMaterial({ opacity: 0.16 }))
+    // A faint pool of light on the floor, so the figure stands on something, and its shadow in it.
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(1.1, 64), new THREE.MeshBasicMaterial({
+      color: 0x59606c, map: glow(), transparent: true, depthWrite: false, toneMapped: false
+    }))
+    pool.rotation.x = -Math.PI / 2
+    pool.position.y = -0.001
+    this.scene.add(pool)
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 64), new THREE.ShadowMaterial({ opacity: 0.45 }))
     floor.rotation.x = -Math.PI / 2
     floor.receiveShadow = true
     this.scene.add(floor)
@@ -277,51 +483,68 @@ export class FittingStage {
       }
       return texture
     }
-    const [suit, ao, woolNormal, woolRoughness, ...details] = await Promise.all([
+    const [suit, ao, woolNormal, woolRoughness] = await Promise.all([
       load(textures.suit),
       load(textures.suit_ao, { color: false }),
       load("textures/wool_normal.jpg", { color: false, repeat: WOOL_REPEAT }),
-      load("textures/wool_roughness.jpg", { color: false, repeat: WOOL_REPEAT }),
-      ...CASUAL_STYLES.map(style => load(textures[`casual_${style}`], { color: false }))
+      load("textures/wool_roughness.jpg", { color: false, repeat: WOOL_REPEAT })
     ])
     const maps = { map: suit, aoMap: ao, normalMap: woolNormal, roughnessMap: woolRoughness }
-    this.details = Object.fromEntries(CASUAL_STYLES.map((style, i) => [style, details[i]]))
 
     this.meshes.body.material = mannequinMaterial()
     this.materials = {
       jacket: { cloth: tintableFabric(maps), fitMap: fitMapFabric(maps) },
-      casual: { cloth: casualFabric(this.details.zip, maps), fitMap: casualFitMap() },
       coat: { cloth: tintableFabric(maps, { clothOnly: true }), fitMap: fitMapFabric(maps, { clothOnly: true }) },
       trousers: { cloth: tintableFabric(maps), fitMap: fitMapFabric(maps) }
     }
-    for (const kind of ["jacket", "casual", "coat", "trousers"]) this.meshes[kind].material = this.materials[kind].cloth
+    for (const kind of ["jacket", "coat", "trousers"]) this.meshes[kind].material = this.materials[kind].cloth
   }
 
-  // A faceless egg in place of MakeHuman's head, as on a shop's display mannequin. It hangs from the head
-  // bone, so it follows the pose and the mannequin's height.
+  // A faceless egg in place of MakeHuman's head, as on a shop's display mannequin, on a smooth oval neck that
+  // rises from a level cut on the body's neck (see NECK) up inside the egg. Both hang from the head bone, so
+  // they follow the pose and the mannequin's height.
   addEggHead({ centre, radii }) {
-    const egg = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), this.meshes.body.material.userData.plain)
-    egg.scale.set(radii[0], radii[1] * 1.04, radii[2] * 0.96)
+    const material = this.meshes.body.material.userData.plain
+    const egg = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), material)
+    // A little longer at the bottom than the head it replaces.
+    egg.scale.set(radii[0], radii[1] * 1.1, radii[2] * 0.96)
     egg.position.fromArray(centre)
-    egg.castShadow = egg.receiveShadow = true
-    this.model.add(egg)
+    egg.position.y -= radii[1] * 0.1
+    egg.position.z -= 0.018   // back a little, over the neck
+    // The neck leans forward a little, from the body's neck into the middle of the egg (which sits forward of
+    // it). Each body has its own (the women's is slimmer); both are kept, in the model's space.
+    const neckAt = ({ radii, centreZ, flare = 1.04 }) => {
+      const from = new THREE.Vector3(0, NECK.bottom, centreZ), to = egg.position
+      const geometry = new THREE.CylinderGeometry(1, flare, from.distanceTo(to), 48, 1, true)
+      geometry.scale(radii[0], 1, radii[1])
+      geometry.rotateX(Math.atan2(to.z - from.z, to.y - from.y))
+      geometry.translate(...from.clone().lerp(to, 0.5).toArray())
+      return geometry
+    }
+    const neck = new THREE.Mesh(neckAt(NECK), material)
+    const women = this.calibration.women?.neck
+    this.necks = { men: neck.geometry, women: women ? neckAt({ ...NECK, ...women }) : neck.geometry }
+    for (const part of [egg, neck]) {
+      part.castShadow = part.receiveShadow = true
+      this.model.add(part)
+    }
     this.model.updateMatrixWorld(true)
-    this.model.getObjectByName("head")?.attach(egg)
+    const head = this.model.getObjectByName("head")
+    head?.attach(egg)
+    head?.attach(neck)
+    this.eggScale = egg.scale.clone()
+    this.egg = egg
+    this.eggNeck = neck
   }
 
-  applyPose() {
+  // amount: how far from the rest pose into it (0 to 1), for moving into it in steps (see posing).
+  applyPose(amount = 1) {
     if (!this.model) return
     for (const [bone, quaternion] of this.rest) bone.quaternion.copy(quaternion)
-    const axes = { x: new THREE.Vector3(1, 0, 0), z: new THREE.Vector3(0, 0, 1) }
     const pose = this.poses.poses[this.pose] ?? this.poses.poses.standing
-    for (const [name, axis, angle] of pose.turns) {
-      const bone = this.model.getObjectByName(name)
-      if (!bone) continue
-      // Turn about a world axis, expressed in the bone's parent space.
-      this.model.updateMatrixWorld(true)
-      const local = axes[axis].clone().applyQuaternion(bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert())
-      bone.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(local, angle))
-    }
+    // Part of the way (while a garment moves into the pose): from the pose it was sewn in.
+    if (amount < 1) this.turnBones(SEWING_POSE, 1 - amount)
+    this.turnBones(pose.turns, amount)
     // Relaxed hands: fingers gently curled, as on a display mannequin.
     const { bones, curl, thumb_02: thumb } = this.poses.fingers
     for (const side of ["l", "r"]) {
@@ -333,6 +556,23 @@ export class FittingStage {
     this.model.updateMatrixWorld(true)
   }
 
+  // Turns bones from where they are: [bone, world axis "x" or "z", radians], `amount` of the way.
+  turnBones(turns, amount) {
+    const axes = { x: new THREE.Vector3(1, 0, 0), z: new THREE.Vector3(0, 0, 1) }
+    // The women's mannequin holds its arms a little further from its body (as display mannequins do), clear of
+    // a skirt.
+    const armsOut = this.bodyType === "women" && this.hasWomen ? (this.calibration.women.arms ?? 1) : 1
+    for (const [name, axis, turn] of turns) {
+      const angle = turn * amount * (axis === "z" && name.startsWith("upperarm_") ? armsOut : 1)
+      const bone = this.model.getObjectByName(name)
+      if (!bone) continue
+      // Turn about a world axis, expressed in the bone's parent space.
+      this.model.updateMatrixWorld(true)
+      const local = axes[axis].clone().applyQuaternion(bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert())
+      bone.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(local, angle))
+    }
+  }
+
   // Head to toe, a little from the side, like a lookbook photo.
   frame() {
     const H = this.calibration.body.height / 100
@@ -342,6 +582,46 @@ export class FittingStage {
     this.controls.target.set(0, H * 0.52, 0)
     this.camera.position.set(Math.sin(0.25) * distance, H * 0.56, Math.cos(0.25) * distance)
     this.controls.update()
+  }
+
+  // A still picture of what's on screen, sharper than the screen: drawn once at `width` by `height` pixels
+  // with finer shadows, then the view goes back as it was. Returns a PNG Blob. Nothing leaves the device.
+  async photo({ width = 1600, height = 2000 } = {}) {
+    const renderer = this.renderer
+    const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
+    const aspect = this.camera.aspect
+    const key = this.scene.children.find(o => o.isDirectionalLight)
+    const mapSize = key?.shadow.mapSize.clone()
+    if (key) {
+      key.shadow.mapSize.set(4096, 4096)
+      key.shadow.map?.dispose()
+      key.shadow.map = null
+    }
+    renderer.setPixelRatio(1)
+    renderer.setSize(width, height, false)
+    // Framed a little closer than the screen, like a lookbook photo.
+    const fov = this.camera.fov
+    this.camera.fov = fov * 0.85
+    this.camera.aspect = width / height
+    this.camera.updateProjectionMatrix()
+    renderer.render(this.scene, this.camera)
+    this.camera.fov = fov
+    const blob = await new Promise(resolve => renderer.domElement.toBlob(resolve, "image/png"))
+    if (key) {
+      key.shadow.mapSize.copy(mapSize)
+      key.shadow.map?.dispose()
+      key.shadow.map = null
+    }
+    renderer.setPixelRatio(ratio)
+    renderer.setSize(size.x, size.y, false)
+    this.camera.aspect = aspect
+    this.camera.updateProjectionMatrix()
+    return blob
+  }
+
+  // Whether what's worn includes a draped garment (a top or casual jacket), which only the page can draw.
+  get hasDraped() {
+    return Boolean(this.draped)
   }
 
   resize() {
@@ -360,12 +640,44 @@ export class FittingStage {
 
   tick = () => {
     this.controls.update()
+    this.advanceDrape()
     this.renderer.render(this.scene, this.camera)
     this.frameId = this.visible ? requestAnimationFrame(this.tick) : null
   }
 
+  // A few milliseconds of draping per frame, so the page stays smooth while the cloth settles.
+  advanceDrape() {
+    const d = this.draped
+    if (!d) return
+    if (!d.top.done) {
+      d.top.advance(this.drapeBudget)
+      this.onDrape?.(d.top.phase, d.top.done)
+      return
+    }
+    if (d.posedAs !== this.pose) {
+      this.reposeDraped()
+      return
+    }
+    if (d.posing) {
+      const end = performance.now() + this.drapeBudget
+      while (performance.now() < end) {
+        if (d.posing.next().done) { d.posing = null; d.top.shade(); break }
+      }
+      if (!d.final) return
+      d.top.update()
+      // It's sewn and moved into the pose shown: show it in place of the one before.
+      if (!d.shown) {
+        d.shown = true
+        d.top.mesh.visible = true
+        this.dropLeaving()
+      }
+      if (!d.posing) this.onDrape?.("done", true)
+    }
+  }
+
   dispose() {
     cancelAnimationFrame(this.frameId)
+    this.removeDraped()
     this.resizeObserver.disconnect()
     this.intersectionObserver.disconnect()
     this.controls.dispose()
@@ -379,13 +691,6 @@ export class FittingStage {
     this.scene.environment?.dispose()
     this.renderer.dispose()
   }
-}
-
-const CASUAL_STYLES = STYLES.filter(style => style !== "tailored")
-
-// The casual style to draw a jacket in, or null for the suit's tailored jacket.
-function casualStyle(item) {
-  return CASUAL_STYLES.includes(item.style) ? item.style : null
 }
 
 function applyInfluences(mesh, influences) {
@@ -404,7 +709,8 @@ function mannequinMaterial() {
   const hideJacket = { value: 0 }
   const hideCasual = { value: 0 }
   const hideTrousers = { value: 0 }
-  const finish = { color: 0xf4f2ee, roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.35 }
+  // Both sides drawn, so where the neck is cut and meets the egg's neck, any sliver of the inside is white too.
+  const finish = { color: 0xf4f2ee, roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.35, side: THREE.DoubleSide }
   const material = new THREE.MeshPhysicalMaterial(finish)
   material.userData = { hideJacket, hideCasual, hideTrousers, plain: new THREE.MeshPhysicalMaterial(finish) }
   material.onBeforeCompile = shader => {
@@ -418,14 +724,17 @@ function mannequinMaterial() {
         attribute float _cover_trousers;
         attribute float _head;
         varying float vCovered;
+        varying float vNeck;
         uniform float uHideJacket;
         uniform float uHideCasual;
         uniform float uHideTrousers;`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
-        vCovered = max(max(max(_cover_jacket * uHideJacket, _cover_casual * uHideCasual), _cover_trousers * uHideTrousers), _head);`)
+        vCovered = max(max(max(_cover_jacket * uHideJacket, _cover_casual * uHideCasual), _cover_trousers * uHideTrousers), _head);
+        vNeck = position.y;`)
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vCovered;")
-      .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vCovered > 0.5) discard;")
+      .replace("#include <common>", "#include <common>\nvarying float vCovered;\nvarying float vNeck;")
+      .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
+        if (vCovered > 0.5 || vNeck > ${NECK.cut.toFixed(4)}) discard;`)
   }
   return material
 }
@@ -458,128 +767,6 @@ function tintableFabric({ map, aoMap, normalMap, roughnessMap }, { clothOnly = f
   }
   return material
 }
-
-// The casual jacket: plain cloth in the item's colour with the style's painted details (red: seams and
-// shadows, green: stitching, blue: the zip and buttons), the weave, a dark lining, and only its own collar.
-function casualFabric(details, { normalMap, roughnessMap }) {
-  const uniforms = {
-    tint: { value: new THREE.Color("#2a3552") }, thread: { value: new THREE.Color("#c58b45") },
-    metal: { value: new THREE.Color("#8d8f93") }, details: { value: details }, collar: { value: 1 },
-    length: { value: 0.64 }, hem: { value: 0 }
-  }
-  const material = new THREE.MeshPhysicalMaterial({
-    normalMap, normalScale: new THREE.Vector2(0.35, 0.35), roughnessMap,
-    roughness: 0.92, sheen: 0.35, sheenRoughness: 0.6, side: THREE.DoubleSide
-  })
-  material.userData = { ...uniforms, inflate: { value: 0 } }
-  material.onBeforeCompile = shader => {
-    Object.assign(shader.uniforms, {
-      fabricTint: uniforms.tint, threadColor: uniforms.thread, metalColor: uniforms.metal,
-      detailMap: uniforms.details, uCollar: uniforms.collar, uLength: uniforms.length, uHem: uniforms.hem
-    })
-    standOut(shader, material.userData.inflate)
-    keepCollar(shader)
-    cutToLength(shader)
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec2 vDetailUv;")
-      .replace("#include <uv_vertex>", "#include <uv_vertex>\nvDetailUv = uv;")
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>
-        uniform vec3 fabricTint;
-        uniform vec3 threadColor;
-        uniform vec3 metalColor;
-        uniform sampler2D detailMap;
-        uniform int uHem;
-        varying vec2 vDetailUv;
-        float seamLine( float value, float at, float halfWidth, float px ) {
-          return smoothstep( halfWidth + px, halfWidth - px, abs( value - at ) );
-        }`)
-      .replace("#include <map_fragment>", `
-        vec3 detail = texture2D( detailMap, vDetailUv ).rgb;
-        ${HEM_DETAILS}
-        diffuseColor.rgb = fabricTint * ( 1.0 - 0.6 * detail.r );
-        diffuseColor.rgb = mix( diffuseColor.rgb, threadColor, detail.g );
-        diffuseColor.rgb = mix( diffuseColor.rgb, metalColor, detail.b );
-        if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.28;   // the lining
-      `)
-      .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-        roughnessFactor = mix( roughnessFactor, 0.3, detail.b );`)
-  }
-  return material
-}
-
-// The casual jacket's fit map: verdict colours, and only its own collar.
-function casualFitMap() {
-  const collar = { value: 1 }
-  const length = { value: 0.64 }
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide })
-  material.userData = { collar, length, inflate: { value: 0 } }
-  material.onBeforeCompile = shader => {
-    shader.uniforms.uCollar = collar
-    shader.uniforms.uLength = length
-    keepCollar(shader)
-    cutToLength(shader)
-    shader.fragmentShader = shader.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
-      if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.35;`)
-  }
-  return material
-}
-
-// The casual jacket has both a stand collar and a point collar (its _collar attribute is 1 and 2 on them);
-// a style shows only its own.
-function keepCollar(shader) {
-  shader.uniforms.uCollar ??= { value: 1 }
-  shader.vertexShader = shader.vertexShader
-    .replace("#include <common>", "#include <common>\nattribute float _collar;\nvarying float vCollar;")
-    .replace("#include <begin_vertex>", "#include <begin_vertex>\nvCollar = _collar;")
-  shader.fragmentShader = shader.fragmentShader
-    .replace("#include <common>", "#include <common>\nuniform float uCollar;\nvarying float vCollar;")
-    .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
-      if ( vCollar > 0.5 && abs( vCollar - uCollar ) > 0.5 ) discard;`)
-}
-
-// Cuts the casual jacket's body to uLength (metres below the collar seam at the back; its _drop attribute
-// says how far below it each vertex is, and is 0 on the sleeves and collar).
-function cutToLength(shader) {
-  shader.vertexShader = shader.vertexShader
-    .replace("#include <common>", "#include <common>\nattribute float _drop;\nvarying float vDrop;")
-    .replace("#include <begin_vertex>", "#include <begin_vertex>\nvDrop = _drop;")
-  shader.fragmentShader = shader.fragmentShader
-    .replace("#include <common>", "#include <common>\nuniform float uLength;\nvarying float vDrop;")
-    .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
-      if ( vDrop > uLength ) discard;`)
-}
-
-// The hem's details, drawn where the cut falls (the texture has everything else; see
-// paint_casual_details in script/mannequin/casual_jacket.py): stitching 2.5 cm up, a rib-knit band, or a
-// waistband with its buttons. x is metres across the front or back, from its middle.
-const HEM_DETAILS = `
-  if ( vDrop > 0.0 ) {
-    float above = uLength - vDrop;
-    float x = ( vDetailUv.x < 0.5 ? vDetailUv.x - 0.25 : 0.75 - vDetailUv.x ) * 1.5;
-    float px = fwidth( above ) + 1e-5;
-    float stitch = step( fract( x / 0.0042 ), 0.62 );
-    if ( uHem == 0 ) {
-      detail.g = max( detail.g, seamLine( above, 0.025, 0.00055, px ) * stitch );
-    } else if ( uHem == 1 ) {
-      if ( above < 0.065 ) detail = vec3( max( detail.r, 0.32 * ( cos( x / 0.0045 * 6.2832 ) * 0.5 + 0.5 ) ), 0.0, detail.b );
-      detail.r = max( detail.r, 0.55 * seamLine( above, 0.065, 0.0011, px ) );
-    } else {
-      if ( above < 0.045 ) detail = vec3( 0.0 );
-      detail.r = max( detail.r, 0.55 * seamLine( above, 0.045, 0.0011, px ) );
-      detail.g = max( detail.g, max( seamLine( above, 0.04, 0.00055, px ), seamLine( above, 0.005, 0.00055, px ) ) * stitch );
-      if ( vDetailUv.x < 0.5 ) {
-        for ( int i = 0; i < 3; i++ ) {
-          float bx = i == 0 ? 0.0 : ( i == 1 ? 0.21 : -0.21 );
-          float radius = i == 0 ? 0.0075 : 0.0065;
-          float d = length( vec2( x - bx, above - 0.022 ) );
-          float pd = fwidth( d ) + 1e-5;
-          detail.b = max( detail.b, smoothstep( radius + pd, radius - pd, d ) );
-          detail.r = max( detail.r, 0.6 * seamLine( d, radius * 0.72, 0.0006, pd ) );
-        }
-      }
-    }
-  }`
 
 // The fit map: the verdict colours where the texture marks cloth, and the real shirt, tie and buttons
 // everywhere else.
@@ -649,4 +836,50 @@ function paintFitMap(mesh, checks, regions) {
     colors.set([out.r, out.g, out.b], i * 3)
   }
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3))
+}
+
+// The backdrop: lightest just above the middle, darkening to the edges.
+function backdrop() {
+  const canvas = document.createElement("canvas")
+  canvas.width = canvas.height = 512
+  const context = canvas.getContext("2d")
+  const gradient = context.createRadialGradient(256, 215, 0, 256, 215, 400)
+  gradient.addColorStop(0, BACKDROP[0])
+  gradient.addColorStop(0.55, BACKDROP[1])
+  gradient.addColorStop(1, BACKDROP[2])
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 512, 512)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+// A round soft-edged spot, as a texture.
+function glow() {
+  const canvas = document.createElement("canvas")
+  canvas.width = canvas.height = 128
+  const context = canvas.getContext("2d")
+  const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64)
+  gradient.addColorStop(0, "rgba(255,255,255,0.55)")
+  gradient.addColorStop(0.6, "rgba(255,255,255,0.18)")
+  gradient.addColorStop(1, "rgba(255,255,255,0)")
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 128, 128)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+// Adds a shape key to a mesh: offsets (x, y, z per vertex) from its base shape, as glTF's are.
+function addShapeKey(mesh, name, offsets) {
+  const geometry = mesh.geometry
+  const count = geometry.attributes.position.count
+  if (offsets.length !== count * 3 || !geometry.morphAttributes.position || !geometry.morphTargetsRelative) return false
+  const attribute = new THREE.Float32BufferAttribute(offsets, 3)
+  attribute.name = name
+  geometry.morphAttributes.position.push(attribute)
+  if (geometry.morphAttributes.normal) geometry.morphAttributes.normal.push(new THREE.Float32BufferAttribute(new Float32Array(count * 3), 3))
+  mesh.morphTargetDictionary[name] = geometry.morphAttributes.position.length - 1
+  mesh.morphTargetInfluences.push(0)
+  return true
 }

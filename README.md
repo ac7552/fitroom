@@ -1,10 +1,50 @@
 # Fitroom
 
-See how clothes fit before you buy them. Build an outfit (a jacket, a coat over it, trousers) from links,
-pasted size charts, or photos with their measurements; enter your own measurements, and Fitroom shows the jacket on a 3D model shaped like you, in every size: your best size,
-part by part, what a tailor could change, and what they couldn't.
+See how clothes fit before you buy them. Paste a product link (or a size chart, or just a photo), enter a few
+of your own measurements, and Fitroom puts the clothes on a 3D display mannequin shaped like you, man's or
+woman's, in every size: your best size, part by part, what a tailor could change, and what they couldn't.
+Tops, dresses and casual jackets are sewn from a real pattern and draped with a cloth simulation in the
+browser; suit jackets, coats and trousers are fitted from a tailored 3D model.
 
-It's a personal tool. Fitroom keeps nothing about the person using it.
+**Who it's for:** anyone buying clothes online who's tired of guessing sizes and sending things back. The page
+is written for a 4th to 6th grade reading level: plain words, sliders for every measurement, and example
+numbers to start from. It's a personal tool I'm building for myself first.
+
+**Built with:** Ruby on Rails 8 (the fit math, the link importer and a JSON API), Hotwire Stimulus and
+Three.js on the page (the mannequin, the cloth simulation and the fabrics), and Blender with MakeHuman's CC0
+assets for the 3D model. No accounts, and nothing about the person using it is kept.
+
+**Run it:**
+
+```bash
+bundle install
+bin/rails db:prepare
+bin/dev            # http://localhost:3000
+```
+
+Optional settings are environment variables, listed in `.env.example`; Fitroom runs without any of them.
+
+## What works today
+
+- **Clothes from a link:** Shopify shops (read through the shop's product data and its Kiwi Sizing chart),
+  pages with a size chart table, resale listings with an item's own measurements, and size-only listings.
+  Shops that turn apps away (The RealReal) say so straight away, with the other ways to add clothes.
+- **Or a pasted chart, typed-in sizes, or just a photo:** the photo's outline tells a T-shirt from a
+  long-sleeve top, sweatshirt, hoodie, zip-up jacket, dress or pants, which then come in their usual sizes.
+- **Tops and dresses drawn as they're cut:** T-shirts, long sleeves, sweatshirts, hoodies, shirts, zip-ups and
+  bombers; dresses sleeveless, on wide or thin straps, strapless or over one shoulder, from mini to maxi, fitted
+  to flared, in stretch, jersey, cotton, leather or silk, read from the listing's description.
+- **Fit for men's and women's sizes:** letter sizes, US dress sizes (00 to 16), suit sizes and waist sizes;
+  stretch dresses that are made smaller than the body; clothes made big on purpose (oversized, dropped
+  shoulders) judged as they're meant to be worn.
+- **The 3D view:** four poses, a fit map, the clothes alone, six mannequin shades, the store photo's colour and
+  print on the cloth, and a photo button.
+
+## To do
+
+The plans are in [ROADMAP.md](ROADMAP.md). The next ones: rompers and jumpsuits; the details of complicated
+dresses (belts, ties, scarves, cut-outs); trousers and skirts draped like the tops; women's blazers and coats;
+and a wider test set of real listings (shirts, pants, dresses) checked on every change.
 
 ## What it stores, and what it doesn't
 
@@ -76,7 +116,31 @@ two sets of shape keys:
   longer in the leg. The page sets them from the difference between a size's chart measurements and
   the modelled jacket, so every size looks as big or small as it really is.
 
-Most outerwear isn't a suit jacket, so the build also makes a **casual jacket**
+### Tops and casual jackets: sewn and draped on the page
+
+T-shirts, long sleeves, sweatshirts, hoodies, button-up shirts and casual jackets (zip-up, bomber, shirt
+jacket) aren't shaped from the model. They're made the way garment tools like CLO make them, in the
+browser, in `app/javascript/lib/garments/`:
+
+- `pattern.js` drafts the sewing pattern for one size from its chart (front, back, sleeves, and the
+  collar, cuffs, waistband or hood the style has), filling in what the chart doesn't give from your body.
+- `cloth.js` cuts each piece into a triangle mesh about 1.6 cm across and lists which edges are sewn
+  together.
+- `body.js` reads the mannequin as it's shaped (joints, how far it reaches out at each height, a distance
+  field of its skin for collisions); `place.js` lays the pieces round it, sleeves round the arms.
+- `drape.js` sews and settles the cloth with position-based dynamics: seams pull together with gravity
+  off (bands held on their edges until the body is sewn), then it hangs for a couple of seconds. Hems are
+  heavier and stiffer, as turned-up hems are. It runs a few milliseconds per frame, so you see it settle.
+- `dress.js` turns it into the garment on screen, follows the poses by skinning it to the mannequin and
+  settling it again, shades its folds, and paints its fit map by part.
+- `fabric.js` draws the cloth: knit, rib, fleece, twill or nylon at real scale, with seams, hem stitching,
+  zips, buttons and a hoodie's pocket.
+- `print.js` reads the shop's photo for the garment's colour and any print on its front, which is laid on
+  the cloth. Only the front: sleeves and backs stay plain.
+
+A top under the suit's jacket or a coat isn't drawn (the model's jacket has its own shirt).
+
+The model also has a **casual jacket**, no longer drawn (casual jackets are draped, above):
 (`script/mannequin/casual_jacket.py`). It's cut from the mannequin's own body, from the neckline to the
 hips and down the arms, so it has the body's rig and measurement keys and follows any shape. It's stood off
 the body and smoothed, and it hangs straight from the chest. It has a stand collar and a point collar, and
@@ -104,7 +168,10 @@ To rebuild it you need Blender 5.2+, the MPFB extension and MakeHuman's CC0 syst
 
 ## Studio photos
 
-The real-time view imitates cloth; **Studio photo** does it properly. The page sends what's on screen (the
+With a top or casual jacket on, **Take a photo** draws what's on screen at about 2000 pixels, with finer
+shadows, right in the page, to save. Nothing is sent anywhere.
+
+For the suit's jacket, coats and trousers, the real-time view imitates cloth and the studio does it properly. The page sends what's on screen (the
 mannequin's shape keys and height, each item's size adjustments and colour, and the pose) to
 `POST /api/v1/studio_photos`, and the server runs Blender in the background (`script/render/studio.py`):
 it shapes the mannequin and refits the suit to it, sizes each garment, poses the rig, drapes the clothes by
@@ -145,11 +212,13 @@ Rails 8 · SQLite · Hotwire (Turbo + Stimulus) · importmap · Three.js r170 (v
 `vendor/javascript`, so the page loads nothing from a CDN) · Nokogiri · Blender + MPFB for the 3D model.
 Ruby 3.4.3.
 
-The home page hero is a small physics toy: suit buttons and thread spools pulled toward the centre,
-bumping each other and pushed away by the cursor (`app/javascript/controllers/hero_controller.js`).
-Click to scatter them. It pauses when it's off screen and stays still for people who prefer reduced motion.
+The home page opens on a blazer drawn as a technical sketch that turns into cloth as you scroll, with its
+measurements beside it (`app/javascript/controllers/hero_controller.js`). It stays still for people who
+prefer reduced motion.
 
 ## Run it
+
+Ruby 3.4.3 and Node 22 (for the JavaScript tests only).
 
 ```bash
 bundle install
@@ -157,11 +226,14 @@ bin/rails db:prepare
 bin/dev            # http://localhost:3000
 ```
 
+Optional: `FASHN_API_KEY` turns on the studio photo's "Use store photos (AI)" try-on, and `FITROOM_BLENDER`
+points at Blender for the path-traced studio photos (see `.env.example`).
+
 ## Tests
 
 ```bash
 bin/rails test                            # fit math, link importer, the API and the page
-node --test test/javascript/*.test.mjs    # body solver and display formatting (Node 22+, no packages)
+node --test test/javascript/*.test.mjs    # body solver, photo reading, display formatting (Node 22+, no packages)
 ```
 
 ## Plans

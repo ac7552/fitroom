@@ -55,4 +55,25 @@ class FitTest < ActiveSupport::TestCase
     as_jacket = Fit.check_size(BODY, coat, "regular", "jacket")
     assert_equal "loose", as_jacket.checks.find { it.part == "chest" }.status
   end
+  test "a top made big on purpose, with dropped shoulders, is judged as it's meant to be worn" do
+    # A boxy crewneck's chart (cm): every size about 47 cm bigger round the chest than its usual body.
+    sizes = [ [ "XS", 135.3, 69.2, 54.0, 62.2 ], [ "S", 140.3, 70.5, 54.3, 63.5 ], [ "M", 145.4, 71.8, 54.6, 64.8 ],
+              [ "L", 150.5, 73.0, 54.9, 66.0 ], [ "XL", 158.1, 74.9, 55.2, 68.0 ] ].map do |name, chest, shoulders, sleeve, length|
+      { "name" => name, "chest" => chest, "waist" => nil, "shoulders" => shoulders, "sleeve" => sleeve, "length" => length }
+    end
+    assert Fit.design(sizes)[:dropped]
+
+    best = Fit.rank(BODY, sizes, "regular", "top").first
+    assert_equal "M", best.size
+    assert_equal %w[good good], best.checks.select { it.part.in?(%w[shoulders chest]) }.map(&:status)
+    assert_equal "S", Fit.rank(BODY, sizes, "slim", "top").first.size
+  end
+
+  test "a dress sits closer than a T-shirt, and its length is where it ends" do
+    woman = { "chest" => 91.5, "waist" => 74, "shoulders" => 39.5, "arm" => 58, "height" => 165 }
+    sizes = SizeChart.find("sample_dress").sizes
+    best = Fit.rank(woman, sizes, "regular", "top", style: "dress").first
+    assert_equal "M", best.size
+    assert_match(/knee/, best.checks.find { it.part == "length" }.note)
+  end
 end

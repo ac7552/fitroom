@@ -655,5 +655,27 @@
     "casual_zip": "textures/casual_zip.png",
     "casual_bomber": "textures/casual_bomber.png",
     "casual_shirt": "textures/casual_shirt.png"
+  },
+  "women": {
+    "about": "A women's body: a slender display mannequin from MakeHuman's female shapes (CC0): slim, with ideal proportions, a fuller bust, a smaller waist, longer legs and neck, and slender arms, scaled to the base body's height so the rig fits it. women.bin holds its offset from the base body for each of the body mesh's vertices (float32 x, y, z, in order), as a shape key the page adds. body: what it measures (cm) at the base body's height; neck: its neck at the head cut; head: how big its egg head is next to the men's; arms: how far down each pose brings its arms, next to the men's (a little less, clear of a skirt).",
+    "body": {
+      "height": 173.66,
+      "chest": 92.75,
+      "waist": 74.71,
+      "shoulders": 39.94,
+      "arm": 48.93,
+      "hips": 98.31,
+      "inseam": 82.89
+    },
+    "neck": {
+      "radii": [
+        0.041,
+        0.043
+      ],
+      "centreZ": 0.031,
+      "flare": 1.16
+    },
+    "head": 0.9,
+    "arms": 0.84
   }
 }

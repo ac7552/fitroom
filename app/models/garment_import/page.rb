@@ -23,7 +23,7 @@ class GarmentImport
         category: data["category"].to_s.squish.presence,
         description: data["description"].to_s.squish.truncate(400),
         fabric: labelled("Fabric")&.truncate(80),
-        image: Array(data["image"]).map { it.is_a?(Hash) ? it["url"] : it }.find { it.to_s.start_with?("http") } || meta("og:image")
+        image: Array(data["image"]).map { it.is_a?(Hash) ? it["url"] || it["contentUrl"] : it }.find { it.to_s.start_with?("http") } || meta("og:image")
       }
     end
 
@@ -46,6 +46,31 @@ class GarmentImport
       return unless shop&.end_with?(".myshopify.com") && fields["product"].to_s.match?(/\A\d+\z/)
 
       { "shop" => shop, **fields.compact }
+    end
+
+    # A link to the shop's size guide on the same site, as an absolute URL, or nil.
+    def size_guide_link(page_url)
+      base = URI(page_url.to_s)
+      guide = /size[\s_-]*(guide|chart)/i
+      links = @doc.css("a[href]").select { "#{it.text} #{it['href']}".match?(guide) }
+      # Links whose address says size guide first; a "Size guide" button that opens a pop-up goes nowhere.
+      links.sort_by { it["href"].match?(guide) ? 0 : 1 }.each do |a|
+        url = URI.join(base, a["href"].strip) rescue next
+        next unless url.is_a?(URI::HTTP) && url.host == base.host
+
+        url.fragment = nil
+        return url.to_s unless url.to_s == base.dup.tap { it.fragment = nil }.to_s
+      end
+      nil
+    rescue URI::InvalidURIError
+      nil
+    end
+
+    # The size a single-item listing says it is ("Size: M" on resale listings), or nil.
+    def stated_size
+      label = @doc.css("body *").lazy.map { it.element_children.empty? ? it.text.squish : nil }
+                  .find { it&.match?(/\ASize:\s*\S/) }
+      label&.delete_prefix("Size:")&.strip&.tr("|", "/")&.squish&.truncate(20, omission: "")
     end
 
     # A single item's measurements as a one-row table: [["Size", "Chest", ...], ["XXL", "50.5\"", ...]].
@@ -88,11 +113,7 @@ class GarmentImport
     end
 
     # "Size: XXL | US44, IT54" on resale listings, else "One size".
-    def item_size
-      label = @doc.css("body *").lazy.map { it.element_children.empty? ? it.text.squish : nil }
-                  .find { it&.match?(/\ASize:\s*\S/) }
-      label ? label.delete_prefix("Size:").strip.tr("|", "/").squish.truncate(20, omission: "") : "One size"
-    end
+    def item_size = stated_size || "One size"
 
     def product_json_ld
       @doc.css('script[type="application/ld+json"]').each do |script|

@@ -68,8 +68,10 @@ class GarmentImport
       return unless columns.key?(@key) && body.size >= (@single ? 1 : 2)
 
       unit = detect_unit(header, columns, body)
-      raw = body.filter_map { |row| raw_size(row, columns) }
+      raw = body.filter_map { |row| raw_size(row, columns, header) }
       return if raw.size < (@single ? 1 : 2)
+
+      raw = flat_widths(raw, unit)
 
       kind = @single ? "garment" : detect_kind(raw, unit)
       sizes = raw.map { |size| to_garment_cm(size, unit, kind) }
@@ -88,11 +90,16 @@ class GarmentImport
       rows = @rows.map { |row| row + [ "" ] * (width - row.size) }
       return rows if measurement_labels(rows.first) >= 2
       return rows.transpose if measurement_labels(rows.map(&:first)) >= 2
+      # A table of sizes with just the one measurement that matters (a chest, or a waist), as conversion
+      # tables in size guides often have.
+      return rows if key_label?(rows.first)
+      return rows.transpose if key_label?(rows.map(&:first))
 
       nil
     end
 
     def measurement_labels(cells) = cells.count { |cell| @columns.values.any? { it.match?(cell) } }
+    def key_label?(cells) = cells.drop(1).any? { @columns[@key].match?(it) } && @rows.size >= 3
 
     def map_columns(header)
       columns = {}
@@ -108,9 +115,24 @@ class GarmentImport
       columns
     end
 
-    def raw_size(row, columns)
+    # Charts often give chests and waists measured flat, straight across, without saying so. When the main
+    # measurement is too small for a whole way round but right for half of it, double the widths.
+    def flat_widths(raw, unit)
+      key = raw.filter_map { it[@key] }.sort[raw.size / 2]
+      return raw unless key && to_cm(key, unit) < @scheme[:plausible].min && (to_cm(key, unit) * 2).between?(*@scheme[:plausible].minmax)
+
+      raw.map { |size| size.to_h { |k, v| [ k, %w[chest waist seat thigh leg_opening].include?(k) && v ? v * 2 : v ] } }
+    end
+
+    LETTER_SIZE = /\A(X{0,3}S|M|X{0,3}L|[2-6]XL)\z/i
+
+    def raw_size(row, columns, header = [])
       name = row.first.to_s.truncate(20, omission: "")
       return if name.blank? || @columns.values.any? { it.match?(name) }
+
+      # Size guides list several systems side by side; lead with the letter size shops sell by.
+      letter = row.each_with_index.find { |cell, i| i.positive? && !columns.values.any? { it[:index] == i } && cell.match?(LETTER_SIZE) }
+      name = "#{letter.first} / #{[ header[0].to_s[/\b(FR|IT|EU|UK|US)\b/], name ].compact.join(' ')}".truncate(20, omission: "") if letter && !name.match?(LETTER_SIZE)
 
       values = columns.to_h { |key, col| [ key, number(row[col[:index]]).then { |n| n && col[:half] ? n * 2 : n } ] }
       return if values[@key].nil?

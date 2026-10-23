@@ -11,16 +11,16 @@
         <div>
           <a class="wordmark" href="<%= root_path %>">FITROOM</a>
           <p class="mono">// Try it on before it ships</p>
-          <p class="mono mono--muted">Measurements kept: none.</p>
+          <p class="mono mono--muted">We keep none of your numbers.</p>
         </div>
         <div class="hero-manifesto">
-          <p class="mono">////// Manifesto</p>
-          <p class="mono">Paste a jacket. Measure once.<br>See every size on a form<br>shaped like you, before you buy.</p>
+          <p class="mono">////// How it works</p>
+          <p class="mono">Paste a link to clothes.<br>Measure yourself once.<br>See every size on a body like yours.</p>
         </div>
       </header>
 
       <footer class="hero-bottom">
-        <p class="mono">Scroll down to fit.</p>
+        <p class="mono">Scroll down to start.</p>
         <nav class="hero-nav">
           <a class="button button--dark" href="#fit">Find my size</a>
           <a class="button" href="#how">How it works</a>
@@ -31,25 +31,25 @@
 
   <section class="statement">
     <p class="mono">// 00 &nbsp;What it does</p>
-    <p class="statement-text">Paste a jacket. Measure once. See it on a form your shape, in every size, before you buy.
-      <span class="statement-muted">Nothing you type or upload is ever saved.</span></p>
+    <p class="statement-text">See clothes on a body shaped like yours, in every size, before you buy.
+      <span class="statement-muted">Nothing you type or upload is saved.</span></p>
   </section>
 
   <section class="steps" id="how">
     <article class="step">
       <p class="mono">// 01</p>
-      <h2>Bring a jacket</h2>
-      <p>Paste a link, paste its size chart, or use a photo and its measurements.</p>
+      <h2>Pick clothes</h2>
+      <p>Paste a link from a store. You can also paste a size chart, or type in the sizes.</p>
     </article>
     <article class="step">
       <p class="mono">// 02</p>
-      <h2>Measure</h2>
-      <p>Five numbers with a tape measure. They shape a display form like you.</p>
+      <h2>Measure yourself</h2>
+      <p>You need five numbers and a soft tape measure. They shape a body like yours.</p>
     </article>
     <article class="step">
       <p class="mono">// 03</p>
       <h2>See it on</h2>
-      <p>Every size on your form, where it&rsquo;s tight or loose, and what a tailor would change.</p>
+      <p>Try every size. See where it's tight or loose, and which size fits best.</p>
     </article>
   </section>
 
@@ -58,123 +58,194 @@
            data-fitting-room-fits-url-value="<%= api_v1_fits_path %>"
            data-fitting-room-import-url-value="<%= api_v1_garment_imports_path %>"
            data-fitting-room-studio-url-value="<%= api_v1_studio_photos_path %>"
-           data-fitting-room-garment-value="<%= @garment.to_json %>">
+           data-fitting-room-garment-value="<%= @garment.to_json %>"
+           data-fitting-room-dress-value="<%= @dress.to_json %>">
     <div class="fit-panel fit-panel--inputs">
-      <div class="fit-head">
-        <h2>The outfit</h2>
-      </div>
-      <p class="hint hint--first">A jacket, a coat over it, and trousers: add any of them. A new item replaces the one of the same kind.</p>
-      <div class="outfit" data-fitting-room-target="outfitList"></div>
-
-      <form class="link-form" data-action="submit->fitting-room#importLink">
-        <label class="field-label" for="product-link">Add an item from a link</label>
-        <div class="link-row">
-          <input id="product-link" type="url" inputmode="url" autocomplete="off" spellcheck="false"
-                 placeholder="https://shop.example/navy-blazer" data-fitting-room-target="link">
-          <button type="submit" class="button button--dark" data-fitting-room-target="importButton">Add it</button>
+      <section class="fit-step" aria-labelledby="step-clothes">
+        <div class="step-head">
+          <span class="step-number" aria-hidden="true">1</span>
+          <h2 id="step-clothes">Pick clothes to try on</h2>
         </div>
-        <p class="link-samples">
-          Try a sample:
-          <button type="button" class="text-button" data-action="fitting-room#useSample" data-path="/samples/navy-suit-jacket.html">navy suit jacket</button> ·
-          <button type="button" class="text-button" data-action="fitting-room#useSample" data-path="/samples/charcoal-blazer.html">charcoal blazer</button> ·
-          <button type="button" class="text-button" data-action="fitting-room#useSample" data-path="/samples/grey-trousers.html">grey trousers</button>
-        </p>
-      </form>
+        <div class="outfit" data-fitting-room-target="outfitList"></div>
 
-      <label class="field field--compact">
-        <span class="field-label">Item type</span>
-        <select autocomplete="off" data-fitting-room-target="itemType" data-action="fitting-room#changeItemType">
-          <option value="jacket">Jacket or blazer</option>
-          <option value="coat">Coat</option>
-          <option value="trousers">Trousers</option>
-        </select>
-        <span class="field-help">For a pasted chart or a photo. Links work it out for themselves.</span>
-      </label>
+        <form class="link-form" data-action="submit->fitting-room#importLink">
+          <label class="field-label" for="product-link">Paste a link from a store</label>
+          <div class="link-row">
+            <input id="product-link" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                   placeholder="https://store.com/t-shirt" data-fitting-room-target="link">
+            <button type="submit" class="button button--dark" data-fitting-room-target="importButton">Add</button>
+          </div>
+          <p class="link-samples">
+            No link? Try one of ours:
+            <button type="button" class="text-button" data-action="fitting-room#useSample" data-path="/samples/grey-t-shirt.html">T-shirt</button> ·
+            <button type="button" class="text-button" data-action="fitting-room#useDress">dress</button> ·
+            <button type="button" class="text-button" data-action="fitting-room#useSample" data-path="/samples/navy-suit-jacket.html">suit jacket</button> ·
+            <button type="button" class="text-button" data-action="fitting-room#useSample" data-path="/samples/grey-trousers.html">pants</button>
+          </p>
+        </form>
+        <p class="import-error" role="alert" data-fitting-room-target="importError" hidden></p>
+        <p class="tip">You can wear one of each: a top, a jacket, a coat and pants. Adding a new one swaps out the old one.</p>
 
-      <details class="paste-chart">
-        <summary>Or paste a size chart</summary>
-        <textarea rows="5" autocomplete="off" spellcheck="false" data-fitting-room-target="chartText"
-                  placeholder="Size&#9;Chest&#9;Waist&#9;Sleeve&#10;40R&#9;44.5&#9;39.5&#9;25"></textarea>
-        <button type="button" class="button" data-action="fitting-room#importText">Add chart</button>
-      </details>
+        <details class="more-ways">
+          <summary>Other ways to add clothes</summary>
+          <div class="more-way more-way--first">
+            <p class="more-way-title">Just add a photo</p>
+            <p class="tip">Take or pick a photo of the clothes, flat or on a hanger, on a plain background.
+              Fitroom works out what it is and puts it on in the usual sizes. The photo stays on your device.</p>
+            <label class="photo-pick photo-pick--big">
+              <input type="file" accept="image/*" data-fitting-room-target="snapInput" data-action="change->fitting-room#importPhoto">
+              <span data-fitting-room-target="snapLabel">+ Add a photo of the clothes</span>
+            </label>
+          </div>
 
-      <details class="own-jacket">
-        <summary>Or use a photo and its measurements</summary>
-        <p class="hint">Measure the item lying flat, or copy the numbers from the shop. The photo stays on this device;
-          it's never uploaded.</p>
-        <label class="photo-pick">
-          <input type="file" accept="image/*" data-fitting-room-target="photoInput" data-action="change->fitting-room#pickPhoto">
-          <img alt="" data-fitting-room-target="photoPreview" hidden>
-          <span class="mono" data-fitting-room-target="photoLabel">+ Choose a photo (optional)</span>
-        </label>
-        <div class="own-sizes" data-fitting-room-target="ownSizes"></div>
-        <label class="check-line">
-          <input type="checkbox" autocomplete="off" data-fitting-room-target="measuredFlat">
-          Widths measured flat, straight across (Fitroom doubles them)
-        </label>
-        <div class="fit-actions fit-actions--tight">
-          <button type="button" class="button" data-action="fitting-room#addOwnSize">+ Add a size</button>
-          <button type="button" class="button button--dark" data-action="fitting-room#useOwnItem">Add these measurements</button>
+          <p class="more-way-title more-way-title--or">Or give its sizes</p>
+          <label class="field field--compact">
+            <span class="field-label">What is it?</span>
+            <select autocomplete="off" data-fitting-room-target="itemType" data-action="fitting-room#changeItemType">
+              <option value="top">Shirt or top</option>
+              <option value="jacket">Jacket</option>
+              <option value="coat">Coat</option>
+              <option value="trousers">Pants</option>
+            </select>
+          </label>
+
+          <div class="more-way">
+            <p class="more-way-title">Paste a size chart</p>
+            <p class="tip">Copy the size table from the store's page, then paste it here. If the store only shows a size, like M, type just that.</p>
+            <textarea rows="4" autocomplete="off" spellcheck="false" data-fitting-room-target="chartText"
+                      aria-label="Size chart" placeholder="Size&#9;Chest&#9;Length&#10;M&#9;40&#9;28"></textarea>
+            <button type="button" class="button" data-action="fitting-room#importText">Add chart</button>
+          </div>
+
+          <div class="more-way">
+            <p class="more-way-title">Type in the sizes</p>
+            <p class="tip">Lay the clothes flat and measure them, or copy the numbers from the store.
+              A photo is optional. It stays on your device.</p>
+            <label class="photo-pick">
+              <input type="file" accept="image/*" data-fitting-room-target="photoInput" data-action="change->fitting-room#pickPhoto">
+              <img alt="" data-fitting-room-target="photoPreview" hidden>
+              <span data-fitting-room-target="photoLabel">+ Add a photo</span>
+            </label>
+            <div class="own-sizes" data-fitting-room-target="ownSizes"></div>
+            <label class="check-line">
+              <input type="checkbox" autocomplete="off" data-fitting-room-target="measuredFlat">
+              I measured straight across, from one side to the other. (We will double it.)
+            </label>
+            <div class="fit-actions fit-actions--tight">
+              <button type="button" class="button" data-action="fitting-room#addOwnSize">+ Another size</button>
+              <button type="button" class="button button--dark" data-action="fitting-room#useOwnItem">Add these sizes</button>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="fit-step" aria-labelledby="step-body">
+        <div class="step-head">
+          <span class="step-number" aria-hidden="true">2</span>
+          <h2 id="step-body">Measure yourself</h2>
+          <div class="segmented" role="radiogroup" aria-label="Units">
+            <label><input type="radio" name="unit" autocomplete="off" value="in" checked data-fitting-room-target="unit" data-action="fitting-room#changeUnit"><span>inches</span></label>
+            <label><input type="radio" name="unit" autocomplete="off" value="cm" data-fitting-room-target="unit" data-action="fitting-room#changeUnit"><span>cm</span></label>
+          </div>
         </div>
-      </details>
-
-      <p class="import-error" role="alert" data-fitting-room-target="importError" hidden></p>
-
-      <div class="fit-head fit-head--second">
-        <h2>Your measurements</h2>
-        <div class="segmented" role="radiogroup" aria-label="Units">
-          <label><input type="radio" name="unit" autocomplete="off" value="in" checked data-fitting-room-target="unit" data-action="fitting-room#changeUnit"><span>in</span></label>
-          <label><input type="radio" name="unit" autocomplete="off" value="cm" data-fitting-room-target="unit" data-action="fitting-room#changeUnit"><span>cm</span></label>
+        <p class="tip tip--lead">Use a soft tape measure. It's easier if someone helps you. Slide to a number, or type it in.</p>
+        <div class="field field--compact">
+          <span class="field-label">Your body</span>
+          <div class="segmented segmented--big" role="radiogroup" aria-label="Your body">
+            <label><input type="radio" name="body-type" value="men" checked autocomplete="off" data-fitting-room-target="bodyType" data-action="fitting-room#changeBodyType"><span>Man</span></label>
+            <label><input type="radio" name="body-type" value="women" autocomplete="off" data-fitting-room-target="bodyType" data-action="fitting-room#changeBodyType"><span>Woman</span></label>
+          </div>
         </div>
-      </div>
 
-      <% body_parts.each do |part| %>
-        <label class="field">
-          <span class="field-label"><%= part[:label] %><% if part[:optional] %> <small class="mono mono--muted">optional</small><% end %></span>
-          <span class="field-input">
-            <input type="number" inputmode="decimal" min="0" step="0.25" autocomplete="off"
-                   data-part="<%= part[:key] %>" <%= "data-optional" if part[:optional] %>
-                   data-fitting-room-target="input" data-action="input->fitting-room#update">
-            <span class="field-unit" data-fitting-room-target="unitLabel">in</span>
-          </span>
-          <span class="field-help"><%= part[:help] %></span>
-        </label>
-      <% end %>
+        <% body_parts.each do |part| %>
+          <div class="field<%= " field--optional" if part[:optional] %>" <%= "data-fitting-room-target=pantsOnly" if part[:optional] %> <%= "data-also-dress=true" if part[:key] == "hips" %>>
+            <label class="field-label" for="body-<%= part[:key] %>">
+              <%= part[:label] %><% if part[:optional] %> <small><%= part[:key] == "hips" ? "for pants and dresses" : "for pants" %></small><% end %>
+            </label>
+            <% if part[:key] == "height" %>
+              <span class="height-feet" data-fitting-room-target="heightImperial">
+                <span class="field-input">
+                  <input id="body-height" type="number" inputmode="numeric" min="0" max="8" step="1" autocomplete="off"
+                         aria-label="Height, feet" data-fitting-room-target="heightFeet" data-action="input->fitting-room#update">
+                  <span class="field-unit">ft</span>
+                </span>
+                <span class="field-input">
+                  <input type="number" inputmode="decimal" min="0" max="11.5" step="0.5" autocomplete="off"
+                         aria-label="Height, inches" data-fitting-room-target="heightInches" data-action="input->fitting-room#update">
+                  <span class="field-unit">in</span>
+                </span>
+              </span>
+              <span class="field-input" data-fitting-room-target="heightMetric" hidden>
+                <input type="number" inputmode="decimal" min="0" step="0.5" autocomplete="off" aria-label="Height, cm"
+                       data-part="height" data-fitting-room-target="input" data-action="input->fitting-room#update">
+                <span class="field-unit">cm</span>
+              </span>
+            <% else %>
+              <span class="field-input">
+                <input id="body-<%= part[:key] %>" type="number" inputmode="decimal" min="0" step="0.25" autocomplete="off"
+                       data-part="<%= part[:key] %>" <%= "data-optional" if part[:optional] %>
+                       data-fitting-room-target="input" data-action="input->fitting-room#update">
+                <span class="field-unit" data-fitting-room-target="unitLabel">in</span>
+              </span>
+            <% end %>
+            <input type="range" class="slider" min="<%= part[:usual].min %>" max="<%= part[:usual].max %>" step="0.5" autocomplete="off"
+                   aria-label="<%= part[:label] %> slider" data-min-cm="<%= part[:usual].min %>" data-max-cm="<%= part[:usual].max %>"
+                   data-slider-for="<%= part[:key] %>" data-fitting-room-target="slider" data-action="input->fitting-room#slide">
+            <span class="field-help"><%= part[:tip] %></span>
+          </div>
+        <% end %>
 
-      <label class="field">
-        <span class="field-label">Cut</span>
-        <select data-fitting-room-target="cut" data-action="fitting-room#update" autocomplete="off">
-          <% Fit::CUTS.each do |key, cut| %>
-            <option value="<%= key %>" <%= "selected" if key == "regular" %>><%= cut[:label] %></option>
-          <% end %>
-        </select>
-      </label>
+        <fieldset class="field fit-choice">
+          <legend class="field-label">How do you like clothes to fit?</legend>
+          <div class="segmented segmented--big" role="radiogroup">
+            <% fit_choices.each do |key, label| %>
+              <label><input type="radio" name="fit" value="<%= key %>" <%= "checked" if key == "regular" %> autocomplete="off"
+                            data-fitting-room-target="cut" data-action="fitting-room#update"><span><%= label %></span></label>
+            <% end %>
+          </div>
+        </fieldset>
 
-      <div class="fit-actions">
-        <button type="button" class="button" data-action="fitting-room#fillExample">Try example numbers</button>
-        <button type="button" class="button button--quiet" data-action="fitting-room#clear">Clear</button>
-      </div>
+        <div class="fit-actions">
+          <button type="button" class="button" data-action="fitting-room#fillExample">Use example numbers</button>
+          <button type="button" class="button button--quiet" data-action="fitting-room#clear">Clear</button>
+        </div>
+      </section>
     </div>
 
     <div class="fit-panel fit-panel--results">
+      <div class="step-head step-head--dark">
+        <span class="step-number" aria-hidden="true">3</span>
+        <h2>See it on and pick a size</h2>
+      </div>
       <div class="stage" data-fitting-room-target="stage">
-        <canvas data-fitting-room-target="canvas" aria-label="3D display mannequin in your shape, wearing the outfit in the chosen sizes. Drag to turn it."></canvas>
+        <canvas data-fitting-room-target="canvas" aria-label="A 3D body shaped like you, wearing the clothes in the size you pick. Drag to turn it."></canvas>
         <div class="stage-top">
-          <div class="segmented segmented--dark" role="radiogroup" aria-label="View">
-            <label><input type="radio" name="view" value="mannequin" checked autocomplete="off" data-action="fitting-room#changeView"><span>Mannequin</span></label>
-            <label><input type="radio" name="view" value="ghost" autocomplete="off" data-action="fitting-room#changeView"><span>Ghost</span></label>
-            <label><input type="radio" name="view" value="fit" autocomplete="off" data-action="fitting-room#changeView"><span>Fit map</span></label>
+          <div class="stage-switches" data-fitting-room-target="switches">
+            <div class="segmented segmented--dark" role="radiogroup" aria-label="What to show">
+              <label><input type="radio" name="view" value="mannequin" checked autocomplete="off" data-action="fitting-room#changeView"><span>On the body</span></label>
+              <label><input type="radio" name="view" value="ghost" autocomplete="off" data-action="fitting-room#changeView"><span>Clothes only</span></label>
+              <label><input type="radio" name="view" value="fit" autocomplete="off" data-action="fitting-room#changeView"><span>Fit colors</span></label>
+            </div>
+            <div class="segmented segmented--dark" role="radiogroup" aria-label="Pose">
+              <% { "standing" => "Standing", "relaxed" => "Relaxed", "walking" => "Walking", "arms_out" => "Arms out" }.each_with_index do |(key, label), i| %>
+                <label><input type="radio" name="pose" value="<%= key %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changePose"><span><%= label %></span></label>
+              <% end %>
+            </div>
+            <div class="segmented segmented--dark" role="radiogroup" aria-label="Mannequin">
+              <label><input type="radio" name="body-type-stage" value="men" checked autocomplete="off" data-fitting-room-target="bodyType" data-action="fitting-room#changeBodyType"><span>Man</span></label>
+              <label><input type="radio" name="body-type-stage" value="women" autocomplete="off" data-fitting-room-target="bodyType" data-action="fitting-room#changeBodyType"><span>Woman</span></label>
+            </div>
           </div>
-          <div class="segmented segmented--dark" role="radiogroup" aria-label="Pose">
-            <% { "standing" => "Standing", "relaxed" => "Relaxed", "walking" => "Walking", "arms_out" => "Arms out" }.each_with_index do |(key, label), i| %>
-              <label><input type="radio" name="pose" value="<%= key %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changePose"><span><%= label %></span></label>
+          <div class="tone-pick" role="radiogroup" aria-label="Body color">
+            <% { "#f4f2ee" => "White", "#ecd0b6" => "Light", "#cfa07a" => "Medium", "#a8724c" => "Tan", "#7c4e31" => "Brown", "#4b2f20" => "Deep" }.each_with_index do |(color, label), i| %>
+              <label title="<%= label %>"><input type="radio" name="tone" value="<%= color %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changeTone"><span style="background: <%= color %>" aria-hidden="true"></span><span class="visually-hidden"><%= label %></span></label>
             <% end %>
           </div>
           <div class="studio-start">
-            <label class="studio-exact" title="Sends the shops' photos and the render to FASHN's try-on service, which deletes them afterwards">
-              <input type="checkbox" checked autocomplete="off" data-fitting-room-target="exact"> Exact item (AI)
+            <label class="studio-exact" title="Sends the stores' photos and the picture to FASHN's try-on service, which deletes them afterward">
+              <input type="checkbox" checked autocomplete="off" data-fitting-room-target="exact"> Use store photos (AI)
             </label>
-            <button type="button" class="button button--dark" data-action="fitting-room#studioPhoto">Studio photo</button>
+            <button type="button" class="button button--dark" data-action="fitting-room#studioPhoto">Take a photo</button>
           </div>
           <p class="stage-note" data-fitting-room-target="stageNote"></p>
         </div>
@@ -182,16 +253,16 @@
           <div class="studio-frame" data-fitting-room-target="studioFrame"></div>
           <div class="studio-bar">
             <div class="segmented" role="radiogroup" aria-label="Which photo" data-fitting-room-target="studioSwitch" hidden>
-              <label><input type="radio" name="studio-view" value="draped" checked data-action="fitting-room#switchStudio"><span>Measured drape</span></label>
-              <label><input type="radio" name="studio-view" value="exact" data-action="fitting-room#switchStudio"><span>Exact item</span></label>
+              <label><input type="radio" name="studio-view" value="draped" checked data-action="fitting-room#switchStudio"><span>Our fit</span></label>
+              <label><input type="radio" name="studio-view" value="exact" data-action="fitting-room#switchStudio"><span>Store photos</span></label>
             </div>
             <p class="mono" data-fitting-room-target="studioStatus"></p>
-            <a class="button" data-fitting-room-target="studioDownload" download="fitroom-studio.png" hidden>Download</a>
+            <a class="button" data-fitting-room-target="studioDownload" download="fitroom-photo.png" hidden>Save</a>
             <button type="button" class="button button--dark" data-action="fitting-room#closeStudio">Close</button>
           </div>
         </div>
         <div class="stage-legend" data-fitting-room-target="legend" hidden>
-          <span><i class="dot dot--good"></i>Fits</span><span><i class="dot dot--tight"></i>Tight or short</span><span><i class="dot dot--loose"></i>Loose or long</span>
+          <span><i class="dot dot--good"></i>Fits</span><span><i class="dot dot--tight"></i>Too tight or short</span><span><i class="dot dot--loose"></i>Too loose or long</span>
         </div>
         <div class="stage-photos" data-fitting-room-target="stagePhotos"></div>
         <div class="size-rows" data-fitting-room-target="sizes"></div>
@@ -203,6 +274,6 @@
 </main>
 
 <footer class="site-footer">
-  <p>// Fitroom keeps nothing about you. Measurements are used to work out the fit, then forgotten; photos never leave your device.</p>
+  <p>// Fitroom keeps nothing about you. Your numbers are used to check the fit, then forgotten. Photos never leave your device.</p>
   <p>Sample pages and charts are made up. MIT licensed.</p>
 </footer>
