@@ -49,4 +49,4 @@ group :test do
 end
 
 # Rails 8.0 calls JSON with options json 3 removed.
-gem "json", "~> 2.10"
+gem "json", "~> 3.1"
