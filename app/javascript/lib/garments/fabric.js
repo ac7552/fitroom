@@ -17,8 +17,9 @@ const CLOTHS = {
   fleece: { surface: "fleece", tile: 0.025, roughness: 0.97, sheen: 0.75, sheenRoughness: 0.85, normal: 0.4 },
   twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5 },
   shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25 },
-  // Nylon pants: a soft satin sheen, far less glossy than a jacket's shell.
-  satin: { surface: "fine", tile: 0.012, roughness: 0.62, sheen: 0.35, sheenRoughness: 0.4, normal: 0.1, clearcoat: 0.04, clearcoatRoughness: 0.6 },
+  // Nylon pants (track pants, technical trousers): a tight plain weave, matte, with only a faint sheen along
+  // the folds; nothing like a jacket's glossy shell.
+  matte: { surface: "plain", tile: 0.006, roughness: 0.82, sheen: 0.16, sheenRoughness: 0.55, normal: 0.12 },
   wool: { surface: "felt", tile: 0.03, roughness: 0.95, sheen: 0.4, sheenRoughness: 0.6, normal: 0.35 },
   // Leather: a fine grain, mostly matte with a soft sheen, not a plastic shine.
   leather: { surface: "grain", tile: 0.04, roughness: 0.62, sheen: 0.2, sheenRoughness: 0.45, normal: 0.22, clearcoat: 0.12, clearcoatRoughness: 0.7 },
@@ -87,6 +88,12 @@ function heightField(kind) {
           // Diagonal ridges of the weave, with the yarns' slubs.
           const ridge = 0.5 + 0.5 * Math.cos((u + v) * 2 * Math.PI * 16)
           value = ridge * 0.7 + noise(u, v, 16) * 0.2 + noise(u, v, 3) * 0.1
+          break
+        }
+        case "plain": {
+          // Over-under: each crossing of warp and weft is a little bump, in a checkerboard.
+          const weave = Math.sin(u * 2 * Math.PI * 24) * Math.sin(v * 2 * Math.PI * 24)
+          value = 0.5 + weave * 0.3 + noise(u, v, 12) * 0.2
           break
         }
         case "ripstop": {

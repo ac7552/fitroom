@@ -46,3 +46,12 @@ test("polos, tank tops, sweaters and cardigans have their own patterns", () => {
   assert.ok(draftTop("sweater", { ...size, sleeve: 64 }, body).panels.waistband, "a sweater has a ribbed hem")
   assert.equal(draftTop("cardigan", { ...size, sleeve: 64 }, body).closure, "buttons")
 })
+
+test("a jogger's inseam runs to the bottom of its cuff, so the leg pieces stop where the cuff starts", () => {
+  const sizes = { waist: 80, seat: 104, thigh: 62, inseam: 76, leg_opening: 26 }
+  const joggers = draftBottoms("joggers", sizes, man)
+  const trousers = draftBottoms("trousers", sizes, man)
+  const legOf = p => -Math.min(...edge(p, "front_L", "hem").map(q => q[1])) - p.measures.rise
+  assert.ok(Math.abs(legOf(trousers) - 76) < 0.01)
+  assert.ok(Math.abs(legOf(joggers) + joggers.measures.cuff - 76) < 0.01, `leg ${legOf(joggers)} + cuff ${joggers.measures.cuff}`)
+})

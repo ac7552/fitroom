@@ -308,12 +308,20 @@ function footHull(positions, part, joints, floor, side) {
     if (r >= 0 && r < rows) slices[r].push([positions[3 * i], positions[3 * i + 2]])
   }
   const hulls = slices.map(pts => (pts.length >= 3 ? convexHull(pts) : null))
+  const rounds = hulls.map(h => (h ? h.reduce((sum, [x, z], k) => sum + Math.hypot(h[(k + 1) % h.length][0] - x, h[(k + 1) % h.length][1] - z), 0) : 0))
   return {
     top, floor, step: FOOT_STEP, hulls,
     // The outline at height y, or null above the foot.
     at(y) {
       const r = Math.floor((y - floor) / FOOT_STEP)
       return r >= 0 && r < rows ? hulls[r] : null
+    },
+    // How low a ring `round` metres round can slip down the foot: the bottom of the lowest slice it still
+    // goes round, coming down from the ankle. A snug cuff stops above the ankle bone; a loose hem reaches
+    // the floor.
+    lowest(round) {
+      for (let r = rows - 1; r >= 0; r--) if (rounds[r] > round) return floor + (r + 1) * FOOT_STEP
+      return floor
     }
   }
 }

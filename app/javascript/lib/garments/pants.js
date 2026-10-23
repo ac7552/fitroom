@@ -95,7 +95,8 @@ export function bottomMeasures(styleName, size, body) {
     // The seat's fullest point, below the top; the knee, down the inseam.
     seatAt: Math.min(rise * 0.62, 18), kneeAt: Math.min(inseam, (body.inseam ?? inseam) * 0.47),
     band: style.band.height, cuff: style.cuff?.height ?? 0,
-    length: rise + inseam
+    // The leg pieces stop where a cuff starts: a chart's inseam runs to the bottom of the cuff.
+    length: rise + inseam - (style.cuff?.height ?? 0)
   }
 }
 

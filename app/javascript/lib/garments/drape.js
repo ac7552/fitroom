@@ -47,7 +47,13 @@ export class Drape {
   // ring: { points (cloth point indices round a waist) }: a waistband, which holds the garment up (see
   // holdRing).
   // feet: bodyFrame's feet, for pants: each leg's cloth stays outside its own foot's outline (see stayOffFeet).
-  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null } = {}) {
+  // snug: how far round (m) a pant leg's hem can stretch, for stayOffFeet: a cuff smaller than the foot stays
+  // above the ankle instead of being pulled down over it.
+  // hemStrip: false keeps a hem's edge in a smooth line without stiffening the strip above it. Round a pant
+  // leg, a stiff, heavy strip hinged on softer cloth rolls outwards like a turned-up cuff.
+  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, hemStrip = true } = {}) {
+    this.hemStrip = hemStrip
+    this.snug = snug
     this.envelope = envelope
     this.feet = feet
     // Which leg each pattern point is on: 1 the left, -1 the right, 0 neither.
@@ -124,7 +130,7 @@ export class Drape {
         const flatKey = i < j ? `${i},${j}` : `${j},${i}`
         const o = opposite.get(flatKey)
         if (o === undefined) opposite.set(flatKey, k)
-        else if (map[o] !== map[k]) bends.push(map[o], map[k], Math.hypot(pts[o][0] - pts[k][0], pts[o][1] - pts[k][1]) / 100, this.isHem[o] && this.isHem[k])
+        else if (map[o] !== map[k]) bends.push(map[o], map[k], Math.hypot(pts[o][0] - pts[k][0], pts[o][1] - pts[k][1]) / 100, this.hemStrip && this.isHem[o] && this.isHem[k])
       }
     }
     const count = edgeRest.size
@@ -346,6 +352,14 @@ export class Drape {
       const foot = side[i] > 0 ? this.feet.L : this.feet.R
       const y = p[3 * i + 1]
       if (y > foot.top) continue
+      // A snug hem can't slip lower than the foot lets it; there it stays put, as on the floor.
+      const low = this.snug ? ((foot.snugAt ??= new Map()).get(this.snug) ?? foot.snugAt.set(this.snug, foot.lowest(this.snug)).get(this.snug)) : -Infinity
+      if (y < low) {
+        p[3 * i + 1] = low
+        p[3 * i] = this.x[3 * i] + (p[3 * i] - this.x[3 * i]) * 0.3
+        p[3 * i + 2] = this.x[3 * i + 2] + (p[3 * i + 2] - this.x[3 * i + 2]) * 0.3
+        continue
+      }
       const hull = foot.at(y)
       if (!hull) continue
       const px = p[3 * i], pz = p[3 * i + 2]

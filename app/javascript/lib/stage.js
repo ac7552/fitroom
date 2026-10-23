@@ -404,7 +404,7 @@ export class FittingStage {
       const sleeveless = !Object.keys(top.pattern.panels).some(name => name.startsWith("sleeve"))
       const still = sleeveless ? new Set(bones.flatMap((b, i) => (/^(upperarm|lowerarm|hand|thumb|index|middle|ring|pinky)_/.test(b.name) ? [i] : []))) : null
       const fallback = Math.max(0, bones.findIndex(b => /^spine_?0?3|^spine3|chest/i.test(b.name)))
-      d.weights = garmentWeights(d.restX, pieces, d.rest.body, d.frame, { still, fallback })
+      d.weights = garmentWeights(d.restX, pieces, d.rest.body, d.frame, { still, fallback, legs: d.slot === "bottom" })
       // Each point back into bind space, through the bones it follows as they were when it was sewn.
       d.restBind = new Float32Array(d.restX.length)
       const blend = new THREE.Matrix4(), point = new THREE.Vector3()

@@ -139,16 +139,25 @@ function surfaceFor(style, fabric) {
 }
 
 // How pants look: jeans in denim twill, joggers in fleece, leggings in a fine stretch knit, the rest in
-// their shop's fabric (a nylon pant in a matte shell, wool in wool, cotton in twill).
+// their shop's fabric (a nylon pant in a matte weave, wool in wool, cotton in twill).
 function bottomSurface(style, fabric) {
   if (style === "leggings") return "stretch"
-  if (style === "joggers") return fabric === "nylon" ? "satin" : "fleece"
+  if (style === "joggers") return fabric === "nylon" ? "matte" : "fleece"
   if (style === "jeans" || fabric === "denim") return "twill"
-  if (fabric === "nylon") return "satin"
+  if (fabric === "nylon") return "matte"
   if (fabric === "wool") return "wool"
   if (fabric === "leather") return "leather"
   if (fabric === "silk") return "silk"
   return BOTTOM_STYLES[style]?.fabric === "fleece" ? "fleece" : "twill"
+}
+
+// How far round (m) a snug pant hem can stretch: a rib cuff a long way, a stretch knit (leggings) a little.
+// Null for a woven hem, which tilts to rest on the instep and drops behind the heel.
+function snugRound(style, pattern) {
+  const cuff = BOTTOM_STYLES[style]?.cuff
+  const m = pattern.measures
+  if (cuff) return (m.opening * cuff.stretch * 1.4) / 100
+  return pattern.fabric === "stretch" ? (m.opening * 1.1) / 100 : null
 }
 
 // One top on the mannequin: drafted, sewn and settled a few frames at a time.
@@ -178,7 +187,11 @@ export class DrapedTop {
     } : null
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
       fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
-      feet: this.bottoms && item.style !== "skirt" ? frame.feet : null
+      feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
+      snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
+      // A long hem (pants, skirts, dresses) keeps a smooth edge, but the strip above it is no stiffer than
+      // the rest: stiffened, it rolls out like a cuff and flicks up at the side seams.
+      hemStrip: !this.bottoms && item.style !== "dress"
     })
     // A long garment (a dress, pants) has further to fall, so it settles for longer.
     const long = this.pattern.style === "dress" || this.pattern.measures.length > 85
@@ -474,8 +487,9 @@ function merge(body, others) {
 // name; body and frame: the rest pose's.
 // still: bones the body panels shouldn't follow (a sleeveless dress's straps stay on the shoulders when the
 // arms move), with `fallback`, the bone a point follows when all it had was those.
-export function garmentWeights(points, pieces, body, frame, { still = null, fallback = 0 } = {}) {
-  const parts = name => (name.endsWith("_L") && /^(sleeve|cuff)/.test(name) ? [1] : name.endsWith("_R") && /^(sleeve|cuff)/.test(name) ? [2] : name.startsWith("hood") ? [3] : [0, 4])
+// legs: the garment is pants, whose cuffs are at the ankles (a top's are at the wrists, on the arms).
+export function garmentWeights(points, pieces, body, frame, { still = null, fallback = 0, legs = false } = {}) {
+  const parts = name => (legs ? [0, 4] : name.endsWith("_L") && /^(sleeve|cuff)/.test(name) ? [1] : name.endsWith("_R") && /^(sleeve|cuff)/.test(name) ? [2] : name.startsWith("hood") ? [3] : [0, 4])
   const cell = 0.04
   const grids = [new Map(), new Map(), new Map(), new Map(), new Map()]
   const key = (x, y, z) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`
@@ -508,7 +522,7 @@ export function garmentWeights(points, pieces, body, frame, { still = null, fall
     let total = 0
     for (let k = 0; k < 4; k++) {
       const bone = body.skinIndex[4 * best + k]
-      const w = still?.has(bone) && !/^(sleeve|cuff)/.test(pieces[j]) ? 0 : body.skinWeight[4 * best + k]
+      const w = still?.has(bone) && (legs || !/^(sleeve|cuff)/.test(pieces[j])) ? 0 : body.skinWeight[4 * best + k]
       skinIndex[4 * j + k] = bone; skinWeight[4 * j + k] = w
       total += w
     }

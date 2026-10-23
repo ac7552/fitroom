@@ -175,10 +175,12 @@ export function placeCloth(cloth, pattern, frame) {
     const below = (-py - m.rise) / 100
     // Down to just above the ankle: a hem laid round the foot would start two or three times its size and
     // snap in. From there it falls, and comes to rest on the instep and the heel (see Drape's stayOffFeet).
-    const room = frame.crotch - 0.015 - Math.max(frame.floor + 0.02, legLine.chain[2][1] + 0.02)
+    // A cuff hangs below the leg piece, so the piece itself has that much less room.
+    const room = frame.crotch - 0.015 - Math.max(frame.floor + 0.02, legLine.chain[2][1] + 0.02) - m.cuff / 100
+    const piece = (m.length - m.rise) / 100
     let drop = below
-    if (m.inseam / 100 > room) {
-      const free = 0.55 * room, k = (room - free) / (m.inseam / 100 - free)
+    if (piece > room) {
+      const free = 0.55 * room, k = (room - free) / (piece - free)
       drop = below <= free ? below : free + (below - free) * k
     }
     const y = frame.crotch - 0.015 - drop
