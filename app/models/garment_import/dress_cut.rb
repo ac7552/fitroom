@@ -17,7 +17,7 @@ class GarmentImport
     SLEEVES = [
       [ "strapless", /strapless|bandeau|\btube (?:dress|top)|off[- ]the[- ]shoulders?|off[- ]shoulder|corset bodice/i ],
       [ "one_shoulder", /one[- ]shoulder|single[- ]shoulder|asymmetric(?:al)? (?:neck|shoulder)/i ],
-      [ "long", /long[- ]sleeves?|\bl\/s\b|full[- ]length sleeves?|bishop sleeves?/i ],
+      [ "long", /long[- ]sleeves?|\bl\/s\b|full[- ]length sleeves?|bishop sleeves?|raglan sleeves?/i ],
       [ "short", /short[- ]sleeves?|cap sleeves?|puff sleeves?|t-?shirt dress|tee dress|flutter sleeves?/i ],
       [ "thin_straps", /spaghetti|thin straps?|skinny straps?|narrow straps?|slip dress|\bslip\b|cami\b|camisole|adjustable straps?/i ],
       [ "straps", /wide straps?|\bstraps?\b|halter|racer ?back|tank dress|\btank\b|square neck/i ],
@@ -76,6 +76,8 @@ class GarmentImport
     def fabric(words, stretch)
       return "leather" if words.match?(/leather|\bpu\b|polyurethane|vinyl|latex/i)
       return "silk" if words.match?(/silk|satin|chiffon|charmeuse|organza|georgette|crepe de chine/i)
+      # Smooth, slippery cloths that hang like silk: a nylon slip, a sequinned or viscose dress.
+      return "silk" if !stretch && words.match?(/\bnylon\b|viscose|rayon|cupro|sequin/i)
       return "stretch" if stretch && !words.match?(/\bknit\b|jersey|ribbed|rib[- ]knit/i)
       return "jersey" if stretch
 

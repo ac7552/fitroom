@@ -1,0 +1,1270 @@
+[
+{
+"h": "ms-tee-mo",
+"title": "Made Some Morocco Sportswear Tee - Off White",
+"vendor": "Made Some",
+"type": "Short Sleeve Tees",
+"tags": "Tees, Tops, wmns",
+"body": "Cotton Garment-dyed Ribbed crew neckline Logo print and graphic print on the front Relaxed fit Style: ms-tee-mo Color: Off White Material: 100% Cotton",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "tee",
+"women": true,
+"sizes": {
+"M": {
+"chest": 90,
+"length": 54
+}
+},
+"snug": true
+},
+"shape": {
+"armpit": 0.33,
+"length": 1.55,
+"waist": 0.97,
+"sleeve": 0.65,
+"sleeveDown": 0.38
+}
+},
+{
+"h": "ms-tee-ko",
+"title": "Made Some Korea Sportswear Tee - Off White",
+"vendor": "Made Some",
+"type": "Short Sleeve Tees",
+"tags": "Tees, Tops, wmns",
+"body": "Cotton Garment-dyed Ribbed crew neckline Logo print and graphic print on the front Relaxed fit Style: ms-tee-ko Color: Off White Material: 100% Cotton",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "tee",
+"women": true,
+"sizes": {
+"M": {
+"chest": 90,
+"length": 54,
+"sleeve": 12
+}
+},
+"snug": true
+},
+"shape": {
+"armpit": 0.33,
+"length": 1.72,
+"waist": 0.97,
+"sleeve": 0.69,
+"sleeveDown": 0.36
+}
+},
+{
+"h": "mi7026ljbwwp",
+"title": "Miaou Mini Tee - Black / White",
+"vendor": "Miaou",
+"type": "Short Sleeve Tees",
+"tags": "Tees, Tops, wmns",
+"body": "Printed deadstock leather Slightly sheer Crew neckline Cap sleeves Slim fit Style: mi7026ljbwwp Color: Black / White Material: Main: 100% Deadstock Leather / Lining: 100% Deadstock Polyester",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "tee",
+"women": true
+},
+"shape": {
+"armpit": 0.37,
+"length": 1.92,
+"waist": 0.99,
+"sleeve": 1.9,
+"sleeveDown": 0.98
+}
+},
+{
+"h": "nikiv6646-657",
+"title": "NikeSKIMS Performance Cotton Blend Short Sleeve V Neck Crop Top - University Red",
+"vendor": "NikeSKIMS",
+"type": "Short Sleeve Tees",
+"tags": "short sleeve tops, tees, Tops, wmns",
+"body": "Polyester blend Dri-FIT technology Raw edges Plunging neckline Twisted construction on the front Puff logo on the back Cropped fit Style: nikiv6646-657 Color: University Red Material: 75% Polyester / 13% Cotton / 12% Rayon",
+"sizes": [
+"XS",
+"S",
+"M",
+"L",
+"XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "tee",
+"women": true,
+"sizes": {
+"M": {
+"chest": 94
+}
+}
+},
+"shape": {
+"armpit": 0.55,
+"length": 1.19,
+"waist": 1.0,
+"sleeve": 0.74,
+"sleeveDown": 0.57
+}
+},
+{
+"h": "ebdw2608rylsv-htgr",
+"title": "EB Denim Rory Layered Long Sleeve Tee - Heather Grey",
+"vendor": "EB Denim",
+"type": "Long Sleeve Tees",
+"tags": "long sleeve tees, Tees, Tops, wmns",
+"body": "Cotton Dropped shoulders Crew neckline Layered sleeves and hem Vertical seam on the back Relaxed fit Style: ebdw2608rylsv-htgr Color: Heather Grey Material: 100% Cotton",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "longsleeve",
+"women": true
+}
+},
+{
+"h": "khm035057-001",
+"title": "Kith for The Matrix The Matrix Has You Tee - Black",
+"vendor": "Kith",
+"type": "Short Sleeve Tees",
+"tags": "graphic, mens, tee, Tees, tops",
+"body": "230 GSM cotton jersey Ribbed neckline The Matrix Code and Kith logo printed on the front and back Machine wash inside out Wash with like colors Style: khm035057-001 Color: Black Material: 100% Cotton",
+"sizes": [
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL"
+],
+"tables": [
+[
+[
+"Size",
+"Body Length",
+"Shoulder Width",
+"Chest Width",
+"Sleeve Length"
+],
+[
+"XS",
+"26.50",
+"19.50",
+"41.50",
+"17.38"
+],
+[
+"S",
+"27.00",
+"20.00",
+"43.50",
+"17.75"
+],
+[
+"M",
+"27.50",
+"20.50",
+"45.50",
+"18.13"
+],
+[
+"L",
+"28.00",
+"21.00",
+"47.50",
+"18.50"
+],
+[
+"XL",
+"28.75",
+"21.75",
+"50.50",
+"19.00"
+],
+[
+"XXL",
+"29.50",
+"22.50",
+"53.50",
+"19.50"
+]
+]
+],
+"expect": {
+"garment": "top",
+"style": "tee",
+"women": false,
+"sizes": {
+"M": {
+"chest": 115.57
+}
+},
+"dropped": true
+},
+"shape": {
+"armpit": 0.49,
+"length": 1.56,
+"waist": 0.99,
+"sleeve": 0.85,
+"sleeveDown": 0.52
+}
+},
+{
+"h": "unduc2f4814-2",
+"title": "Undercover Cindy Sherman Tee - White",
+"vendor": "Undercover",
+"type": "Short Sleeve Tees",
+"tags": "mens, Tees, Tops",
+"body": "Cotton Dropped shoulders Ribbed crew neckline Logo print and graphic print on the front Oversized fit Style: unduc2f4814-2 Color: White Material: 100% Cotton",
+"sizes": [
+"0",
+"1",
+"2",
+"3",
+"4",
+"5",
+"6",
+"7",
+"8",
+"9",
+"10",
+"11",
+"12",
+"13",
+"16",
+"14"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "tee",
+"women": false,
+"sizes": {
+"M": {
+"chest": 116,
+"length": 74
+}
+},
+"names": [
+"XS (0)",
+"S (1)",
+"M (2)",
+"L (3)",
+"XL (4)",
+"XXL (5)",
+"XXXL (6)"
+],
+"dropped": true
+},
+"shape": {
+"armpit": 0.47,
+"length": 1.83,
+"waist": 1.0,
+"sleeve": 0.98,
+"sleeveDown": 0.49
+}
+},
+{
+"h": "kkagla0702-075",
+"title": "ATON Royal Wool Jersey Loose Fit Long Sleeve Tee - Navy",
+"vendor": "ATON",
+"type": "Long Sleeve Tees",
+"tags": "long sleeve tees, mens, Tees, Tops",
+"body": "Wool Dropped shoulder Ribbed crew neckline Oversized fit Style: kkagla0702-075 Color: Navy Material: 100% Wool",
+"sizes": [
+"0",
+"1",
+"2",
+"3",
+"4",
+"5",
+"6",
+"7",
+"8",
+"9",
+"10",
+"11",
+"12",
+"13",
+"16",
+"14"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "longsleeve",
+"women": false
+}
+},
+{
+"h": "blagla0105-004",
+"title": "ATON Fibril Silk Tafta Skipper Shirt - Charcoal Grey",
+"vendor": "ATON",
+"type": "Shirts",
+"tags": "mens, Shirting, shirts, Tops",
+"body": "Silk taffeta Classic collar Dropped shoulders Zip closure on the front Buttoned sleeve cuffs Back yoke Vents on sides Asymmetrical hemline Relaxed fit Style: blagla0105-004 Color: Charcoal Grey Material: 100% Silk",
+"sizes": [
+"0",
+"1",
+"2",
+"3",
+"4",
+"5",
+"6",
+"7",
+"8",
+"9",
+"10",
+"11",
+"12",
+"13",
+"16",
+"14"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "shirt",
+"women": false
+}
+},
+{
+"h": "avf261k71-gry",
+"title": "AVIREX Icon Hoodie - Heather Grey",
+"vendor": "AVIREX",
+"type": "Hoodies",
+"tags": "hoodies, mens, sweatshirts, Tops",
+"body": "Cotton fleece Drawcord-adjustable two-piece hood Dropped shoulders Branding on chest, right sleeve, and back Kangaroo pockets on the front Ribbed sleeve cuffs and hem Relaxed fit Style: avf261k71-gry Color: Heather Grey Material: 100% Cotton",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "hoodie",
+"women": false
+}
+},
+{
+"h": "cag5078m-9061",
+"title": "Canada Goose Lodge Hoodie - Black",
+"vendor": "Canada Goose",
+"type": "Hoodies",
+"tags": "hoodie, hoodies, mens, sweatshirts, Tops",
+"body": "Nylon Water-repellent, wind-resistant, durable, and downproof Drawcord-adjustable two-piece hood Dropped shoulders Mock neckline Two-way zipper closure on the front Zip slash pockets on the front Logo patch on the sleeve Power Stretch elasticated sleeve cuffs U-shaped hem on the back Quilted construction Relaxed fit Style: cag5078m-9061 Color: Black Material: 100% Nylon",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "jacket",
+"style": "zip",
+"women": false
+}
+},
+{
+"h": "gm004940m8061",
+"title": "Giorgio Armani & Kith Cashmere Trouser - Iron",
+"vendor": "Kith",
+"type": "Trousers",
+"tags": "Bottoms, mens, Pants, suiting, Trousers",
+"body": "Resca tweed-effect cashmere-wool blend Button closure at the waistband Hidden zipper closure Belt loops Straight-leg fit See garment tag for care instructions Style: gm004940m8061 Color: Iron Material: 51% Cashmere / 49% Virgin Wool",
+"sizes": [
+"44",
+"46",
+"48",
+"50",
+"52",
+"54",
+"56",
+"58",
+"60"
+],
+"tables": [
+[
+[
+"Size",
+"RELAXED WAIST",
+"HIP",
+"FRONT RISE",
+"INSEAM",
+"LEG  OPENING"
+],
+[
+"44",
+"79",
+"106",
+"16.7",
+"87.8",
+"23.6"
+],
+[
+"46",
+"83",
+"110",
+"16.95",
+"87.8",
+"23.8"
+],
+[
+"48",
+"87",
+"114",
+"17.2",
+"87.8",
+"24"
+],
+[
+"50",
+"91",
+"118",
+"17.45",
+"88.3",
+"24.2"
+],
+[
+"52",
+"95",
+"122",
+"17.7",
+"88.8",
+"24.4"
+],
+[
+"54",
+"99",
+"126",
+"17.95",
+"88.8",
+"24.6"
+],
+[
+"56",
+"103",
+"130",
+"18.2",
+"88.8",
+"24.8"
+],
+[
+"58",
+"107",
+"134",
+"18.45",
+"88.8",
+"25"
+],
+[
+"60",
+"111",
+"138",
+"18.7",
+"88.8",
+"25.2"
+]
+]
+],
+"expect": {
+"garment": "trousers",
+"women": false,
+"sizes": {
+"48": {
+"waist": 87,
+"seat": 114
+}
+}
+}
+},
+{
+"h": "gm004898u1129",
+"title": "Giorgio Armani & Kith Cargo Pant - Sabbia",
+"vendor": "Kith",
+"type": "Cargo Pants",
+"tags": "Bottoms, Cargo Pants, mens, Pants",
+"body": "Ultra-soft cashmere Waistband with arrow-shaped belt loops Fabric-covered snap buttons Pleats at the waist Slanted side pockets Relaxed, straight leg fit Style: gm004898u1129 Color: Sabbia Material: 100% Cashmere",
+"sizes": [
+"44",
+"46",
+"48",
+"50",
+"52",
+"54",
+"56",
+"58",
+"60"
+],
+"tables": [
+[
+[
+"Size",
+"RELAXED WAIST",
+"HIP",
+"FRONT RISE",
+"INSEAM",
+"LEG  OPENING"
+],
+[
+"44",
+"79",
+"118",
+"32.5",
+"69.7",
+"20"
+],
+[
+"46",
+"83",
+"122",
+"33",
+"70.6",
+"20.5"
+],
+[
+"48",
+"87",
+"126",
+"33.5",
+"71.5",
+"21"
+],
+[
+"50",
+"91",
+"130",
+"34",
+"72.4",
+"21.5"
+],
+[
+"52",
+"95",
+"134",
+"34.3",
+"72.8",
+"22"
+],
+[
+"54",
+"99",
+"138",
+"34.6",
+"73.2",
+"22.5"
+],
+[
+"56",
+"103",
+"142",
+"34.9",
+"73.6",
+"23"
+],
+[
+"58",
+"107",
+"146",
+"35.2",
+"74",
+"23.5"
+],
+[
+"60",
+"111",
+"150",
+"35.5",
+"74.4",
+"24"
+]
+]
+],
+"expect": {
+"garment": "trousers",
+"women": false
+}
+},
+{
+"h": "ebw0300mmrbt",
+"title": "EB Denim Maria Slim Bootcut Jean - Blue Haze",
+"vendor": "EB Denim",
+"type": "Jeans",
+"tags": "Bottoms, denim, jeans, Pants, wmns",
+"body": "Cotton blend denim Fading and whiskering effect Button closure with zip fly Belt loops Five-pockets styling Logo patch on the back Bootcut-leg fit Style: ebw0300mmrbt Color: Blue Haze Material: 98% Cotton / 2% Elastane",
+"sizes": [
+"23",
+"24",
+"25",
+"26",
+"27",
+"28",
+"29",
+"30",
+"31",
+"32",
+"33"
+],
+"tables": [],
+"expect": {
+"garment": "trousers",
+"women": true
+}
+},
+{
+"h": "esfw26pa01016-bla",
+"title": "Entire Studios Avenue Trouser - Black",
+"vendor": "Entire Studios",
+"type": "Trousers",
+"tags": "Bottoms, Pants, trousers, wmns",
+"body": "Polyester Foldover waistband Button closure on the sides Belt loops Slash pockets on the front Pleated construction on the front Welt pockets on the back Straight-leg fit Style: esfw26pa01016-bla Color: Black Material: 100% Polyester",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "trousers",
+"women": true
+}
+},
+{
+"h": "nikiv6644-080",
+"title": "NikeSKIMS Crunchy Nylon Wide Leg Pant - Boulder",
+"vendor": "NikeSKIMS",
+"type": "Pants",
+"tags": "Bottoms, pants, wmns",
+"body": "Crunchy nylon Water-repellent Drawcord-adjustable elasticated waistband Zipper pockets on the front Puff logo on the left leg Oversized fit Style: nikiv6644-080 Color: Boulder Material: 100% Nylon",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "trousers",
+"women": true
+}
+},
+{
+"h": "ricru02f4372-34",
+"title": "Rick Owens Work Short - Dust",
+"vendor": "Rick Owens",
+"type": "Shorts",
+"tags": "bottoms, mens, shorts",
+"body": "Wool Button closure with zip-fly Belt loops Slash pockets on the front Welt pocket on the side and back Baggy fit Style: ricru02f4372-34 Color: Dust Material: 100% Wool",
+"sizes": [
+"28",
+"29",
+"30",
+"31",
+"32",
+"33",
+"34",
+"35",
+"36",
+"38",
+"40",
+"42",
+"44"
+],
+"tables": [],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "amfw2643-blk",
+"title": "Aya Muse Obra Skirt - Black",
+"vendor": "Aya Muse",
+"type": "Mini Skirts",
+"tags": "Bottoms, Skirts, wmns",
+"body": "Cotton Ribbed trims Elasticated waistband Belt loops Slim fit Style: amfw2643-blk Color: Black Material: 100% Cotton",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "lbk-447-chc",
+"title": "The Line by K Vana Fitted Maxi Skirt - Chocolate",
+"vendor": "The Line by K",
+"type": "Maxi Skirts",
+"tags": "Bottoms, Skirts, wmns",
+"body": "Micro modal Elasticated waistband Visible seams on the front and back Pull-on style Slim fit Style: lbk-447-chc Color: Chocolate Material: 90% Micro Modal / 10% Spandex",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "amfw2610-for",
+"title": "Aya Muse Mela Mini Dress - Forest",
+"vendor": "Aya Muse",
+"type": "Mini Dresses",
+"tags": "Dresses, wmns",
+"body": "Viscose blend Ruffled artwork on the straps and neck Plunging neck Lace-up closure on the front Ruffled hem Slim fit Style: amfw2610-for Color: Forest Material: Main: 77% Viscose / 15% Nylon / 8% Silk / Contrast Body: 58% Rayon / 42% Cupro",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "dress",
+"sleeves": "straps",
+"length": "mini",
+"women": true
+}
+},
+{
+"h": "lbk-743-bkv",
+"title": "The Line by K Franz Short Sleeve Maxi Dress - Black / Vanilla",
+"vendor": "The Line by K",
+"type": "Maxi Dresses",
+"tags": "Dresses, wmns",
+"body": "Tencel blend Scoop neckline Rolled sleeves Contrast trims Layered construction Slim fit Style: lbk-743-bkv Color: Black / Vanilla Material: Body 1: 90% Tencel / 10% Spandex / Body 2: 50% Cotton / 50% Polyester",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "dress",
+"sleeves": "short",
+"length": "maxi",
+"women": true
+}
+},
+{
+"h": "lbk-475-bk",
+"title": "The Line by K Lenny Open Back Turtleneck Maxi Dress - Black",
+"vendor": "The Line by K",
+"type": "Maxi Dresses",
+"tags": "Dresses, wmns",
+"body": "Micro modal blend Merrow-stitched edges Turtle neck Raglan sleeves Cutout on the side and back Slim fit Style: lbk-475-bk Color: Black Material: 90% Micro Modal / 10% Spandex",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "dress",
+"sleeves": "long",
+"length": "maxi",
+"women": true
+}
+},
+{
+"h": "dgp26423w235-001",
+"title": "GUIZIO Grace Cowl Neck Mini Dress - Black",
+"vendor": "GUIZIO",
+"type": "Mini Dresses",
+"tags": "Dresses, wmns",
+"body": "Semi sheer nylon All-over sequin artwork Adjustable thin straps Cowl neck Lined construction on the chest Zipper closure on the side Open back Slim fit Style: dgp26423w235-001 Color: Black Material: 100% Nylon",
+"sizes": [
+"XXS",
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL",
+"XXXL",
+"4XL"
+],
+"tables": [],
+"expect": {
+"garment": "top",
+"style": "dress",
+"sleeves": "thin_straps",
+"length": "mini",
+"women": true
+}
+},
+{
+"h": "khma010296-211",
+"title": "Kith Vancouver Dejan Utility Jacket - Kindling",
+"vendor": "Kith",
+"type": "Jackets",
+"tags": "jacket, jackets, mens, Outerwear",
+"body": "Nylon Vintage-washed satin lining Mock neckline All-over panels Contrast piping at the shoulder seams Kith-branded two-way zipper closure Double-entry welt pockets Interior chest pocket Style: khma010296-211 Color: Kindling Material: 100% Nylon",
+"sizes": [
+"XS",
+"S",
+"M",
+"L",
+"XL",
+"XXL"
+],
+"tables": [
+[
+[
+"Size",
+"BODY LENGTH",
+"CHEST WIDTH",
+"SLEEVE LENGTH"
+],
+[
+"XS",
+"27",
+"47.00",
+"35.13"
+],
+[
+"S",
+"27.50",
+"49.00",
+"35.50"
+],
+[
+"M",
+"28.00",
+"51.00",
+"35.88"
+],
+[
+"L",
+"28.50",
+"53.00",
+"36.25"
+],
+[
+"XL",
+"29.25",
+"56.00",
+"36.75"
+],
+[
+"XXL",
+"30.00",
+"59.00",
+"37.25"
+]
+]
+],
+"expect": {
+"garment": "jacket",
+"style": "zip",
+"women": false
+}
+},
+{
+"h": "gm004837u8137",
+"title": "Giorgio Armani & Kith Lamb Leather Aviator Blouson Jacket - Meteorite",
+"vendor": "Kith",
+"type": "Leather Jackets",
+"tags": "Jackets, leather jackets, mens, Outerwear",
+"body": "Washed lambskin leather Wrinked effect Detachable Portuguese lamb shearling collar with zipper Wool-cashmere blend bomber-style collar underneath Hidden zipper covered by a flap Co-branded snap buttons Wool-cashmere blend sleeve cuffs Style: gm004837u8137 Color: Meteorite Material: 100% Lambskin Leather",
+"sizes": [
+"44",
+"46",
+"48",
+"50",
+"52",
+"54",
+"56",
+"58",
+"60"
+],
+"tables": [
+[
+[
+"Size",
+"Body Length",
+"Shoulder Width",
+"Chest Width",
+"Sleeve Length"
+],
+[
+"44",
+"59.3",
+"53.9",
+"118.4",
+"63"
+],
+[
+"46",
+"60.5",
+"55.1",
+"122.4",
+"63.4"
+],
+[
+"48",
+"61.7",
+"56.3",
+"126.4",
+"63.8"
+],
+[
+"50",
+"62.9",
+"57.5",
+"130.4",
+"64.2"
+],
+[
+"52",
+"64.1",
+"58.7",
+"134.4",
+"64.6"
+],
+[
+"54",
+"65.3",
+"59.9",
+"139.4",
+"65"
+],
+[
+"56",
+"65.8",
+"61.1",
+"144.4",
+"65.4"
+],
+[
+"58",
+"66.3",
+"62.3",
+"149.4",
+"65.8"
+],
+[
+"60",
+"66.8",
+"63.5",
+"154.4",
+"66.2"
+]
+]
+],
+"expect": {
+"garment": "jacket",
+"style": "bomber",
+"women": false,
+"sizes": {
+"48": {
+"chest": 126.4
+}
+}
+}
+},
+{
+"h": "a3747af3252pl132-n1",
+"title": "Anderson's Leather Black Belt - Black",
+"vendor": "Anderson's",
+"type": "Belts",
+"tags": "accessories, belt, belts, mens, Small Leather Goods",
+"body": "Calf leather Silver polished rounded buckle closure All-over adjustable holes Width: 1.3 Style: a3747af3252pl132-n1 Color: Black Material: 100% Calf Leather",
+"sizes": [
+"32",
+"34",
+"36",
+"38",
+"40",
+"42",
+"44"
+],
+"tables": [],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "gm005312u6037",
+"title": "Giorgio Armani & Kith Belt Bag - Tan",
+"vendor": "Kith",
+"type": "Belts",
+"tags": "Accessories, belt, belts, mens, Small Leather Goods",
+"body": "Bovine leather Detachable suede pouch Buckle detailing Fits sizes S-L Style: gm005312u6037 Color: Tan Material: 100% Bovine Leather",
+"sizes": [
+"S",
+"M",
+"L"
+],
+"tables": [],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "nwbm991br1",
+"title": "New Balance Made in UK 991v1 Luxe Suede - Cocoa / Castle Wall",
+"vendor": "New Balance",
+"type": "Low Top Sneakers",
+"tags": "footwear, low top sneakers, mens, sneaker, Sneakers",
+"body": "Made in UK 991v1 Luxe Suede silhouette Suede upper Padded collar TPU eyelets on collar Flat cotton laces ENCAP midsole cushioning Rubber outsole Style: nwbm991br1 Color: Cocoa / Castle Wall Material: Suede",
+"sizes": [
+"7",
+"7.5",
+"8",
+"8.5",
+"9",
+"9.5",
+"10",
+"10.5",
+"11",
+"11.5",
+"12",
+"13"
+],
+"tables": [
+[
+[
+"US (M)",
+"US (W)",
+"UK",
+"EU",
+"LENGTH"
+],
+[
+"7",
+"8.5",
+"6.5",
+"40",
+"9.84"
+],
+[
+"8",
+"9.5",
+"7.5",
+"41.5",
+"10.24"
+],
+[
+"9",
+"10.5",
+"8.5",
+"42.5",
+"10.63"
+]
+]
+],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "drm43247200",
+"title": "Dr. Martens Wayborne Boot Mayhem - Dark Brown",
+"vendor": "Dr. Martens",
+"type": "Boots",
+"tags": "boot, boots, footwear, mens",
+"body": "Wayborne Boot Mayhem silhouette Leather upper Padded collar Round laces Metal eyelets Rubber outsole Style: drm43247200 Color: Dark Brown Material: Leather",
+"sizes": [
+"7",
+"7.5",
+"8",
+"9",
+"10",
+"10.5",
+"11",
+"12",
+"13"
+],
+"tables": [
+[
+[
+"US Men",
+"US Women",
+"UK",
+"EUR",
+"JPN",
+"Foot Length (IN)"
+],
+[
+"7",
+"8",
+"6",
+"39",
+"25",
+"10.35"
+],
+[
+"8",
+"9",
+"7",
+"41",
+"26",
+"10.69"
+],
+[
+"9",
+"10",
+"8",
+"42",
+"27",
+"11.02"
+]
+]
+],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "khw050190-506",
+"title": "Kith Women Mixed Media Fleece Bucket Hat - Thunder",
+"vendor": "Kith Women",
+"type": "Hats",
+"tags": "accessories, hats, headwear, wmns, womens",
+"body": "Custom variegated sherpa fur fabric Cotton poplin lining Cotton twill sweatband Bucket silhouette Kith Script embroidery at front Style: khw050190-506 Color: Thunder Material: 100% Polyester",
+"sizes": [
+"Default Title"
+],
+"tables": [
+[
+[
+"Size",
+"Head Circumference",
+"Crown Height",
+"Brim Height"
+],
+[
+"OS",
+"22.83",
+"3.5",
+"2.25"
+]
+]
+],
+"expect": {
+"error": "not_supported"
+}
+},
+{
+"h": "dmmy2-wg04",
+"title": "Vintage Frames Sunglasses 24KT Gold - Blue",
+"vendor": "Vintage Frames",
+"type": "Sunglasses",
+"tags": "accessories, mens, wmns",
+"body": "24kt yellow gold frame Rectangular silhouette Precision-drilled mirrored lenses Scratch-resistant diamond coating Gradient overlays Style: dmmy2-wg04 Color: Blue Material: 24k Gold",
+"sizes": [
+"OS"
+],
+"tables": [],
+"expect": {
+"error": "not_supported"
+}
+}
+]

@@ -173,12 +173,18 @@ class GarmentImport
       return "body" if @context.match?(BODY_WORDS)
       return "garment" if @context.match?(GARMENT_WORDS)
 
+      # And it grows as its size numbers do: 2.54 cm a size for inches, 2 cm for an EU or Italian size. (EU
+      # garment chests can land near a size number in inches by chance: an Armani 54 jacket is 139 cm round.)
+      numbered = sizes.filter_map { |size| [ size["name"][/\d+/].to_i, to_cm(size[@key], unit) ] if size["name"][/\d+/] && size[@key] }.sort
+      slope = (numbered.last[1] - numbered.first[1]) / (numbered.last[0] - numbered.first[0]).to_f if numbered.size >= 3 && numbered.last[0] > numbered.first[0]
       matches = sizes.count do |size|
         label = size["name"][/\d+/]&.to_i
         next false unless label
 
         cm = to_cm(size[@key], unit)
-        (cm - label * 2.54).abs <= 2.6 || (@key == "chest" && (cm - label * 2).abs <= 4)
+        inches = (cm - label * 2.54).abs <= 2.6 && (slope.nil? || (slope - 2.54).abs < 0.2)
+        eu = @key == "chest" && (cm - label * 2).abs <= 4 && (slope.nil? || (slope - 2).abs < 0.2)
+        inches || eu
       end
       matches >= sizes.size / 2.0 ? "body" : "garment"
     end

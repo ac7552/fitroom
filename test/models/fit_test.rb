@@ -76,4 +76,26 @@ class FitTest < ActiveSupport::TestCase
     assert_equal "M", best.size
     assert_match(/knee/, best.checks.find { it.part == "length" }.note)
   end
+
+  test "a baby tee is made the size of the body, short, and its size is picked so" do
+    body = { "chest" => 91.5, "waist" => 74, "shoulders" => 39.5, "arm" => 58, "height" => 165 }
+    sizes = [ [ "S", 85, 35.5, 53 ], [ "M", 90, 37, 54 ], [ "L", 95, 38.5, 55.5 ], [ "XL", 100, 40, 57 ] ].map do |name, chest, shoulders, length|
+      { "name" => name, "chest" => chest, "waist" => nil, "shoulders" => shoulders, "sleeve" => 12, "length" => length }
+    end
+
+    assert_equal "L", Fit.rank(body, sizes, "regular", "top", style: "tee", details: { "women" => true }).first.size
+    snug = Fit.rank(body, sizes, "regular", "top", style: "tee", details: { "women" => true, "snug" => true })
+    assert_equal "M", snug.first.size
+    assert_match(/baby tee/, snug.first.checks.find { it.part == "length" }.note)
+  end
+
+  test "a tee whose photo shows dropped shoulders is meant to be wide there and boxy" do
+    body = { "chest" => 101.6, "waist" => 86.4, "shoulders" => 45.5, "arm" => 65.5, "height" => 178 }
+    sizes = [ { "name" => "S", "chest" => 110.5, "waist" => nil, "shoulders" => 50.8, "sleeve" => 19.4, "length" => 68.6 } ]
+
+    plain = Fit.rank(body, sizes, "regular", "top", style: "tee").first
+    assert_equal %w[loose short], plain.checks.values_at(0, 4).map(&:status)
+    boxy = Fit.rank(body, sizes, "regular", "top", style: "tee", details: { "dropped" => true }).first
+    assert_equal %w[good good], boxy.checks.values_at(0, 4).map(&:status)
+  end
 end

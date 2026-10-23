@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readGarment } from "lib/garments/print"
+import { readPhoto, readGarment, readTopShape, loaded } from "lib/garments/print"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -117,6 +117,13 @@ export default class extends Controller {
       const data = await response.json()
       if (!response.ok) throw new Error(data.message ?? "Couldn't read that.")
       this.addItem(data.garment)
+      // A women's piece goes on the woman mannequin while the numbers are still the example ones (a person
+      // who entered their own keeps their mannequin).
+      const ownNumbers = Object.values(this.readMeasurements()).some(v => v > 0) && !this.showsExample(EXAMPLES_CM.men)
+      if (data.garment.women && this.bodyType === "men" && !ownNumbers) {
+        this.changeBodyType({ target: { value: "women" } })
+        return
+      }
       this.update()
     } catch (error) {
       this.showImportError(error.name === "TimeoutError" ? "That store's page took too long. Try again, or paste its size chart instead."
@@ -139,7 +146,7 @@ export default class extends Controller {
       readPhoto(garment.photo, { shape: frontShape(garment.chart) }).then(async read => {
         const color = read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) return
-        garment.color = garment.photoColor = color
+        garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
         // printed gets the photo's print.
         garment.print = garment.cut && !garment.cut.printed ? null : read?.print ?? null
@@ -515,7 +522,8 @@ export default class extends Controller {
       const responses = await Promise.all(items.map(({ kind, garment }, i) => fetch(this.fitsUrlValue, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: garment.cut ?? undefined,
+        body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: garment.cut ?? (garment.women || garment.cropped || garment.snug || garment.dropped
+          ? { women: !!garment.women, cropped: !!garment.cropped, snug: !!garment.snug, dropped: !!garment.dropped } : undefined),
           sizes: garment.chart.sizes, measurements }),
         signal: this.requests[i].signal,
         cache: "no-store"
@@ -828,7 +836,7 @@ function frontShape(chart) {
 async function clothColor(url) {
   const image = new Image()
   image.src = url
-  await image.decode()
+  await loaded(image)
   const canvas = document.createElement("canvas")
   canvas.width = canvas.height = 48
   const context = canvas.getContext("2d", { willReadFrequently: true })
@@ -851,7 +859,7 @@ async function clothColor(url) {
 async function shrunkPhoto(src) {
   const image = new Image()
   image.src = src
-  await image.decode()
+  await loaded(image)
   const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight))
   const canvas = document.createElement("canvas")
   canvas.width = Math.round(image.naturalWidth * scale)
@@ -873,6 +881,17 @@ function capitalize(text) {
 
 function escape(text) {
   return String(text ?? "").replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`)
+}
+
+// A photo's colour, kept true to a neutral the listing names: a white tee shot under cool light reads
+// lavender, so a white, off-white, grey or black one keeps the photo's lightness and the named colour's tint.
+const NEUTRALS = /\b(white|off[- ]white|ivory|cream|ecru|black|grey|gray|heather|charcoal|silver)\b/i
+function asNamed(color, name, named) {
+  if (!color || !NEUTRALS.test(name ?? "") || !/^#[0-9a-f]{6}$/i.test(named ?? "")) return color
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+  const [r, g, b] = rgb(color), [nr, ng, nb] = rgb(named)
+  const light = (r + g + b) / 3, namedLight = (nr + ng + nb) / 3
+  return "#" + [nr, ng, nb].map(v => Math.round(Math.min(255, Math.max(0, v - namedLight + light))).toString(16).padStart(2, "0")).join("")
 }
 
 // Many shops run on Shopify, which answers a product's details as small public JSON. Some big ones (Kith)
@@ -898,8 +917,12 @@ async function readShop(link) {
   const sizing = await json(`https://app.kiwisizing.com/api/getSizingChart?${query}`)
   const { id, handle: name, title, vendor, product_type, tags, body_html, images, options } = product
   const variants = (product.variants ?? []).slice(0, 40).map(v => ({ title: v.title }))
+  const photo = await readShopPhoto(images?.[0]?.src)
+  // The photo's shape (how high its arms are sewn in, how far its sleeves reach), which says how a top is
+  // cut when the shop gives no chart.
+  const shape = photo ? await readTopShape(photo).catch(() => null) : null
   return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
-    photo: await readShopPhoto(images?.[0]?.src) }
+    photo, shape }
 }
 
 // The product's photo, small, as a data: URL (Shopify's image host lets pages read its photos).
@@ -907,7 +930,7 @@ async function readShopPhoto(src) {
   if (!src) return null
   try {
     const url = new URL(src.startsWith("//") ? `https:${src}` : src)
-    url.searchParams.set("width", "800")
+    url.searchParams.set("width", "1600")
     const response = await fetch(url, { signal: AbortSignal.timeout(6000), credentials: "omit" })
     const blob = await response.blob()
     if (!response.ok || !/^image\/(jpeg|png|webp)$/.test(blob.type) || blob.size > 2_500_000) return null
@@ -926,7 +949,7 @@ async function smallPhoto(file) {
   try {
     const image = new Image()
     image.src = url
-    await image.decode()
+    await loaded(image)
     const scale = Math.min(1, 900 / Math.max(image.naturalWidth, image.naturalHeight))
     const canvas = document.createElement("canvas")
     canvas.width = Math.round(image.naturalWidth * scale)

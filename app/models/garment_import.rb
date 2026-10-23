@@ -13,6 +13,22 @@ class GarmentImport
   end
 
   UNSUPPORTED = /shorts?\b|skirt|shoe|sneaker|boot|sock|\btie\b|belt|\bhat\b|\bcap\b|scarf|bag\b/i
+  # Things worn but not fitted here, each with what to call it ("Fitroom can't try on shoes yet"). Read from the
+  # name, the shop's category and its tags; checked first, so "Low Top Sneakers" is never a top.
+  NOT_FITTED = [
+    [ "shoes", /sneakers?|\bshoes?\b|\bboots?\b|footwear|loafers?|sandals?|slides?\b|mules?\b|clogs?|trainers?|\bheels?\b/i ],
+    [ "belts", /\bbelts?\b|belt bag/i ],
+    [ "bags", /\bbags?\b|backpack|tote|wallet|pouch|card holder|small leather goods/i ],
+    [ "hats", /\bhats?\b|\bcaps?\b|beanie|headwear|bucket hat|balaclava/i ],
+    [ "sunglasses", /sunglasses|eyewear|glasses|frames\b/i ],
+    [ "jewelry", /jewel|necklace|bracelet|\brings?\b|earrings?|watch(?:es)?\b/i ],
+    [ "skirts", /skirts?\b/i ],
+    [ "shorts", /\bshorts\b/i ],
+    [ "socks", /\bsocks?\b|underwear|boxers?|briefs\b/i ],
+    [ "scarves and ties", /scarf|scarves|\bties?\b|gloves?/i ],
+    [ "swimwear", /swim|bikini/i ],
+    [ "accessories", /accessor/i ]
+  ].freeze
   # Dresses (a "dress shirt" or "dress pants" isn't one), drawn as a top cut long.
   DRESSES = /\b(?:dress(?:es)?(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?)\b)|gowns?|maxi|midi|sundress|frock|kaftan|caftan)\b/i
   JACKETS = /jacket|blazer|suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket/i
@@ -54,6 +70,7 @@ class GarmentImport
 
   # What the cloth looks like, from the product's name and description, so the 3D view can draw its surface.
   FABRICS = [
+    [ "silk", /silk|satin|taffeta|chiffon|charmeuse/i ],
     [ "denim", /denim|jean|trucker|chambray/i ],
     [ "leather", /leather|suede|biker|moto\b/i ],
     [ "nylon", /nylon|puffer|down\b|quilted|shell|windbreaker|anorak|parka/i ],
@@ -91,7 +108,7 @@ class GarmentImport
   KINDS = %w[top jacket coat trousers].freeze
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 9
+  FORMAT = 11
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -187,8 +204,12 @@ class GarmentImport
       color: data["title"].to_s[/\s[-–]\s([^-–]+)\z/, 1]&.squish, category: data["product_type"].to_s.presence&.truncate(80),
       description: description.truncate(400), fabric: description[/(?:Material|Fabric|Composition):\s*([^.]+?)(?=\s+[A-Z][a-z]+:|\z)/, 1],
       image: shop_image(Array(data["images"]).first),
-      sizes: shop_sizes(data)
+      sizes: shop_sizes(data),
+      tags: Array(data["tags"]).join(",").split(/,\s*/).map(&:strip).first(40),
+      sorted: data["product_type"].to_s.present?,
+      shape: photo_shape(given&.dig("shape"))
     }
+    product[:women] = women?(product, url)
     kind = kind_of(product)
     style = usual_key(kind, top_style_of(product), product)
     sizing = given ? given["sizing"] : kiwi_answer(
@@ -201,10 +222,10 @@ class GarmentImport
       chart = read_kiwi(sizing, kind) || DressCut.usual_sizes(DressCut.read(product), product[:sizes])
       return garment(product, chart, kind:, source_url: url)
     end
-    chart = read_kiwi(sizing, kind) || (usual_sizes(kind, style) if given)
+    chart = read_kiwi(sizing, kind) || (usual_for(kind, style, product) if given)
     return unless chart
 
-    garment(product, with_usual(chart, kind, style, size_names(sizing)), kind:, source_url: url)
+    garment(product, with_usual(chart, kind, style, size_names(sizing), product), kind:, source_url: url)
   rescue Fetcher::TooSlow, Fetcher::Error => e
     # A shop that stalls here stalls on its page too, and one that turns apps away turns away the page.
     raise if e.is_a?(Fetcher::TooSlow) || e.message.include?("doesn't let apps")
@@ -274,36 +295,182 @@ class GarmentImport
     {}
   end
 
-  # Pants by waist size (inches), with the usual seat, thigh, leg length and opening for each, in cm.
-  def usual_trousers
-    sizes = (28..40).step(2).map do |waist|
-      seat = waist * 2.54 + 20
-      { "name" => waist.to_s, "waist" => (waist * 2.54).round(1), "seat" => seat.round(1), "thigh" => (seat * 0.6).round(1),
-        "inseam" => 81.0, "leg_opening" => 40.0 }
-    end
+  # Pants by waist size (inches), or by letter size, with the usual seat, thigh, leg length and opening for
+  # each, in cm: named as the shop names them, women's cut for a women's listing, and as wide at the hem as
+  # it says ("Wide leg", "Bootcut", "Slim").
+  def usual_trousers(product = {})
+    names = Array(product[:sizes])
+    women = product[:women]
+    words = product.values_at(:name, :description).join(" ")
+    opening, roomy = TROUSER_LEGS.find { |pattern, _| words.match?(pattern) }&.last || [ women ? 38 : 40, 0 ]
+    roomy += 8 if words.match?(/oversized|baggy|relaxed/i)
+    waists = names.filter_map { it.to_s.strip[/\A(2[2-9]|3\d|4[0-6])\z/, 1]&.to_i }
+    sizes =
+      if waists.size >= 2
+        waists.uniq.sort.map { |w| trouser_size(w.to_s, w * 2.54, women, opening, roomy) }
+      elsif (letters = names.map { letter_of(it) }.compact.uniq).size >= 2
+        letters.sort_by { ALL_LETTERS.index(it) }.map do |letter|
+          waist = women ? DressCut::LETTERS.fetch(letter)[1] + 2 : MEN_WAIST.fetch(letter)
+          trouser_size(letter, waist, women, opening, roomy)
+        end
+      else
+        (28..40).step(2).map { |w| trouser_size(w.to_s, w * 2.54, false, opening, roomy) }
+      end
     ChartReader::Chart.new(sizes:, unit: "cm", kind: "sizes", missing: [])
   end
 
+  # The waist (cm) men's pants in each letter size are made for.
+  MEN_WAIST = { "XXS" => 66, "XS" => 71, "S" => 76, "M" => 81, "L" => 86, "XL" => 94, "XXL" => 102, "XXXL" => 109, "4XL" => 117 }.freeze
+  # [leg opening around (cm), extra room at the seat and thigh (cm)] by how the listing says the leg is cut.
+  TROUSER_LEGS = [
+    [ /wide[- ]leg|palazzo|flared?|barrel|balloon/i, [ 58, 10 ] ],
+    [ /boot ?cut/i, [ 46, 2 ] ],
+    [ /skinny/i, [ 28, -6 ] ],
+    [ /slim|tapered/i, [ 34, -2 ] ],
+    [ /straight/i, [ 42, 2 ] ]
+  ].freeze
+
+  def trouser_size(name, waist, women, opening, roomy)
+    seat = waist + (women ? 26 : 20) + roomy
+    { "name" => name, "waist" => waist.round(1), "seat" => seat.round(1), "thigh" => (seat * (women ? 0.58 : 0.6)).round(1),
+      "inseam" => women ? 76.0 : 81.0, "leg_opening" => opening.to_f }
+  end
+
   # Every letter size's usual measurements, when the shop has no chart: a guide, marked as guessed.
-  def usual_sizes(kind, style)
+  # product: its listing, for whether it's a women's (smaller and shorter) and how it says it fits ("Oversized
+  # fit", "Cropped", "Cap sleeves"); its shop's letter sizes (XXS to 4XL) are the ones given.
+  def usual_sizes(kind, style, product = {})
     return if kind == "trousers"
 
-    base, step = USUAL.fetch(USUAL.key?(style) ? style : usual_key(kind, style))
-    sizes = USUAL_SIZES.each_with_index.map do |letter, n|
+    key = USUAL.key?(style) ? style : usual_key(kind, style)
+    key = "#{key}_women" if product[:women] && USUAL.key?("#{key}_women")
+    base, step = USUAL.fetch(key)
+    letters = Array(product[:sizes]).map { letter_of(it) }.compact.uniq
+    numbered = letters.size < 2 && brand_numbers(product[:sizes])
+    letters = numbered ? numbered.keys : USUAL_SIZES if letters.size < 2
+    sizes = letters.sort_by { ALL_LETTERS.index(it) }.map do |letter|
+      n = ALL_LETTERS.index(letter) - 1   # XS is the base
       chest, shoulders, sleeve, length = base.zip(step).map { |b, d| (b + d * n).round(1) }
-      { "name" => letter, "chest" => chest, "waist" => nil,
+      { "name" => numbered ? "#{letter} (#{numbered[letter]})" : letter, "chest" => chest, "waist" => nil,
         "shoulders" => shoulders, "sleeve" => sleeve, "length" => length }
     end
+    sizes = cut_as_listed(sizes, product, kind) if product[:description]
     ChartReader::Chart.new(sizes:, unit: "cm", kind: "sizes", missing: [ "waist" ])
+  end
+
+  # The usual sizes for a listing with no chart: a top's or a jacket's, or pants by waist size or letter.
+  def usual_for(kind, style, product)
+    kind == "trousers" ? usual_trousers(product) : usual_sizes(kind, style, product)
+  end
+
+  ALL_LETTERS = %w[XXS XS S M L XL XXL XXXL 4XL].freeze
+  # Japanese and some European brands number their sizes 0 (or 1) upward: 0 is an XS, 1 an S, 2 an M.
+  # { "XS" => "0", "S" => "1", ... } for the numbers a shop sells, when it sells at least three of 0 to 6.
+  BRAND_SIZE_LETTERS = %w[XS S M L XL XXL XXXL].freeze
+
+  def brand_numbers(names)
+    numbers = Array(names).filter_map { it.to_s.strip[/\A[0-6]\z/]&.to_i }.uniq.sort
+    return unless numbers.size >= 3
+
+    numbers.to_h { [ BRAND_SIZE_LETTERS[it], it.to_s ] }
+  end
+  def letter_of(name)
+    label = name.to_s.upcase.strip[/\A(4XL|XXXXL|XXXL|3XL|XXL|2XL|XL|L|M|S|XS|XXS|2XS)\b/, 1] or return
+    { "XXXXL" => "4XL", "3XL" => "XXXL", "2XL" => "XXL", "2XS" => "XXS" }.fetch(label, label)
+  end
+
+  # How a listing says a top is cut, on its usual sizes: roomier, cropped, close or with short cap sleeves.
+  FIT_WORDS = [
+    [ /oversized|boxy|loose fit|baggy/i, { chest: 10, length: 2, shoulders: 4 } ],
+    [ /relaxed/i, { chest: 4, shoulders: 1 } ],
+    [ /dropped shoulders?/i, { shoulders: 3 } ],
+    [ /slim fit|fitted|baby tee|mini tee|shrunken|body[- ]?con|second[- ]skin/i, { chest: -6, length: -3, shoulders: -2 } ],
+    [ /crop(?:ped)?\b/i, { length_share: 0.75 } ],
+    [ /cap sleeves?/i, { sleeve_share: 0.55 } ]
+  ].freeze
+
+  def cut_as_listed(sizes, product, kind)
+    return sizes unless kind == "top"
+
+    words = product.values_at(:name, :description).join(" ")
+    change = FIT_WORDS.select { |pattern, _| words.match?(pattern) }.map(&:last)
+    change = as_photographed(change, product, words)
+    return sizes if change.empty?
+
+    sizes.map do |size|
+      chest = size["chest"] + change.sum { it[:chest].to_i }
+      shoulders = size["shoulders"] + change.sum { it[:shoulders].to_i }
+      length = (size["length"] + change.sum { it[:length].to_i }) * change.filter_map { it[:length_share] }.reduce(1, :*)
+      sleeve = size["sleeve"] * (size["sleeve"] < 30 ? change.filter_map { it[:sleeve_share] }.reduce(1, :*) : 1)
+      size.merge("chest" => chest.round(1), "shoulders" => shoulders.round(1), "length" => length.round(1), "sleeve" => sleeve.round(1))
+    end
+  end
+
+  # What the shop photo shows overrules the listing's words, which are often the same for every top a
+  # brand sells. A top whose arms are sewn in high (its armpit about half its width below the shoulders) is
+  # cut close to the body, however "relaxed" its listing says it is: a women's one is a baby tee, short and
+  # snug. One whose armpit is three quarters of its width down has dropped shoulders and room. A tee whose
+  # sleeves barely leave the shoulder has short ones.
+  BABY_TEE = { chest: -4, length: -8, shoulders: -3 }.freeze
+  ROOMY_TOP = { chest: 4, shoulders: 3 }.freeze
+  SHORT_SLEEVES = { sleeve_share: 0.75 }.freeze
+  ROOMY_WORDS = FIT_WORDS.first(3).map(&:last).freeze
+
+  def as_photographed(change, product, words)
+    shape = product[:shape] or return change
+    sewn = sleeves_sewn(shape)
+    change -= ROOMY_WORDS if sewn == :high
+    change += [ BABY_TEE ] if baby_tee?(product, words)
+    change += [ ROOMY_TOP ] if sewn == :low && (change & ROOMY_WORDS).empty?
+    change += [ SHORT_SLEEVES ] if shape[:sleeve] && shape[:sleeve] < 0.75 && shape[:sleeve_down].to_f < 0.45 && words !~ /cap sleeves?/i
+    change
+  end
+
+  # Where a photographed top's arms are sewn in: :high (close-cut), :low (dropped shoulders) or nil.
+  def sleeves_sewn(shape)
+    armpit, waist, length = shape.to_h.values_at(:armpit, :waist, :length)
+    depth = armpit && length && armpit * length   # shoulders to armpit, over the chest's width
+    return unless depth
+
+    return :high if depth < 0.62 && waist.to_f < 1.05
+    :low if depth >= 0.72
+  end
+
+  # A women's tee whose photo shows it cut close, with no words saying how close: a baby tee, made snug
+  # and short.
+  def baby_tee?(product, words = product.values_at(:name, :description).join(" "))
+    product[:women] && product[:shape] && sleeves_sewn(product[:shape]) == :high && !words.match?(FIT_WORDS[3].first)
+  end
+
+  # The shape the browser read off the shop photo ({ "length", "waist", "hem", "sleeve", "sleeveDown",
+  # "armpit" }, each a share of the front's width or length), checked: nil unless every part is a
+  # plausible number.
+  def photo_shape(shape)
+    return unless shape.is_a?(Hash)
+
+    read = { armpit: shape["armpit"], waist: shape["waist"], sleeve: shape["sleeve"], sleeve_down: shape["sleeveDown"],
+             length: shape["length"] }
+    return if read.values.any? { !(it.nil? || (it.is_a?(Numeric) && it.finite? && it.between?(0, 5))) }
+
+    read.compact.presence
+  end
+
+  # A women's listing: its shop tags it so ("wmns", "womens") or files it there, or its name says so.
+  def women?(product, url)
+    tags = Array(product[:tags]).map(&:downcase)
+    return true if tags.intersect?(%w[wmns womens women woman ladies])
+    return false if tags.intersect?(%w[mens men man])
+
+    [ product[:name], product[:category], url ].join(" ").match?(/\bwom[ae]n'?s?\b|\bwmns\b|ladies/i)
   end
 
   # A chart read from size names alone (a conversion table gives only the chest) with each letter size's usual
   # shoulders, sleeve and length filled in, so the garment is drawn at about its size; and each size named as
   # the shop names it when it has its own ("M (2)").
-  def with_usual(chart, kind, style, names = {})
+  def with_usual(chart, kind, style, names = {}, product = {})
     return chart unless chart.kind == "sizes" && kind != "trousers"
 
-    usual = usual_sizes(kind, style).sizes.index_by { it["name"] }
+    usual = usual_sizes(kind, style, product).sizes.index_by { it["name"] }
     sizes = chart.sizes.map do |size|
       letter = size["name"].to_s[LETTER, 1]&.upcase&.sub("3XL", "XXXL")&.sub("2XL", "XXL")
       known = usual[letter] or next size
@@ -325,6 +492,8 @@ class GarmentImport
   USUAL_SIZES = %w[XS S M L XL XXL XXXL].freeze
   USUAL = {
     "tee" => [ [ 94, 42, 19.5, 68 ], [ 6, 2, 0.5, 2 ] ],
+    "tee_women" => [ [ 84, 37, 15, 59 ], [ 5, 1.5, 0.5, 1.5 ] ],
+    "top_women" => [ [ 86, 37, 58, 60 ], [ 5, 1.5, 1, 1.5 ] ],
     "top" => [ [ 96, 42, 61, 66 ], [ 6, 2, 1, 2 ] ],
     "jacket" => [ [ 100, 43, 62, 66 ], [ 6, 2, 1, 1.5 ] ],
     "coat" => [ [ 104, 44, 62, 92 ], [ 6, 2, 1, 2 ] ],
@@ -382,15 +551,23 @@ class GarmentImport
   # Top, jacket, coat or trousers, from the product's name and category.
   def kind_of(product)
     words = product.values_at(:name, :category).join(" ")
+    # The shop's own category and tags say first what something is: a sneaker is shoes, whatever its name says.
+    sorted = [ product[:category], *Array(product[:tags]).grep(/\A(?!mens\z|wmns\z|womens\z)/i) ].compact.join(" ")
+    not_fitted = NOT_FITTED.find { |_, pattern| sorted.match?(pattern) || words.match?(pattern) && !words.match?(Regexp.union(DRESSES, TOPS, JACKETS, TROUSERS)) }
+    not_fitted ||= NOT_FITTED.find { |_, pattern| product[:name].to_s.match?(pattern) } if words.match?(/skirt|shorts/i)
+    if not_fitted
+      raise Error.new("not_supported", "Fitroom can't try on #{not_fitted.first} yet. It works with tops, dresses, jackets, coats and pants.")
+    end
     return "top" if words.match?(DRESSES)
     return "coat" if words.match?(COATS) && !words.match?(NOT_COATS)
     return "jacket" if words.match?(JACKETS)
     return "jacket" if words.match?(/hoodie|hooded/i) && product[:description].to_s.match?(HOODED_OUTERWEAR)
     return "trousers" if words.match?(TROUSERS)
     return "top" if words.match?(TOPS)
-    return "jacket" unless words.match?(UNSUPPORTED)
+    # A shop's page that names nothing else is most often a jacket (a "Hudson"); a Shopify listing says what it is.
+    return "jacket" unless words.match?(UNSUPPORTED) || product[:sorted]
 
-    raise Error.new("not_supported", "Fitroom fits tops, jackets, coats and trousers so far, and this looks like something else.")
+    raise Error.new("not_supported", "Fitroom can't try this on yet. It works with tops, dresses, jackets, coats and pants.")
   end
 
   def dress?(kind, product) = kind == "top" && top_style_of(product) == "dress"
@@ -421,6 +598,10 @@ class GarmentImport
       **(product[:image] ? { image_url: product[:image] } : {}),
       source_url:,
       garment: kind,
+      **(product[:women] ? { women: true } : {}),
+      **(kind == "top" && product.values_at(:name, :description).join(" ").match?(/crop(?:ped)?\b/i) ? { cropped: true } : {}),
+      **(kind == "top" && chart.kind == "sizes" && baby_tee?(product) ? { snug: true } : {}),
+      **(kind == "top" && product[:shape] && sleeves_sewn(product[:shape]) == :low ? { dropped: true } : {}),
       chart: chart.as_json
     }
   end
@@ -430,14 +611,17 @@ class GarmentImport
       name: product[:name].presence || "Dress", brand: product[:brand], color_name: product[:color],
       color: color_hex(product.values_at(:color, :description, :name)), fabric: cut[:fabric], style: "dress",
       cut:, **(product[:image] ? { image_url: product[:image] } : {}),
-      source_url:, garment: "top", chart: chart.as_json
+      source_url:, garment: "top", women: true, chart: chart.as_json
     }
   end
 
   def fabric_of(product, kind = "jacket")
     shell = product[:fabric].to_s.split(/[;,]?\s*lining/i).first   # "100% Cashmere; Lining 55% Silk, 45% Cotton"
-    words = [ *product.values_at(:name, :category, :description), shell ].join(" ")
-    FABRICS.find { |_, pattern| words.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
+    # What it's made of says it best ("EB Denim" makes cotton tees); else its name and description.
+    name = product[:name].to_s.delete_prefix(product[:brand].to_s)
+    words = [ name, *product.values_at(:category, :description) ].join(" ")
+    found = [ shell, words ].find { |text| FABRICS.any? { |_, pattern| text.to_s.match?(pattern) } }
+    FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
   end
 
   # A T-shirt's sleeve is short, so a long one on its chart was measured from the centre of the back (as

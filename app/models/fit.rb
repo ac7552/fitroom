@@ -81,9 +81,25 @@ module Fit
     "regular" => { chest: 4..9,  waist: 4..11 },
     "classic" => { chest: 7..14, waist: 8..16 }
   }.freeze
+  # A women's top sits closer than a men's.
+  WOMEN_TOP_CUTS = {
+    "slim"    => { chest: 0..6,   waist: 0..8 },
+    "regular" => { chest: 3..10,  waist: 4..14 },
+    "classic" => { chest: 8..18,  waist: 10..24 }
+  }.freeze
+  # A baby tee's stretchy knit is made about the size of the body, or a little smaller.
+  SNUG_TOP_CUTS = {
+    "slim"    => { chest: -7..1, waist: -6..4 },
+    "regular" => { chest: -5..4, waist: -4..8 },
+    "classic" => { chest: -2..8, waist: 0..12 }
+  }.freeze
+  SNUG_SHORT = 10   # and may end this much higher than a women's top usually does
+  SNUG_SHOULDER_EASE = -5..3   # its shoulder seams sit a little in from the shoulder
   TOP_SHOULDER_EASE = -1..5
   TOP_LENGTH_PER_HEIGHT = 0.41
   TOP_LENGTH_TOLERANCE = 4
+  # A women's top usually ends higher, at the top of the hip.
+  WOMEN_TOP_LENGTH_PER_HEIGHT = 0.36
   SHORT_SLEEVE = 40   # a sleeve shorter than this (cm, from the shoulder seam) is a short sleeve
 
   # Penalty per centimetre outside the target, plus a flat cost when no tailor can fix it.
@@ -197,7 +213,8 @@ module Fit
   BOXY_SHORT = 10     # a roomy top may be cut this much shorter than usual (boxy)
 
   # How a top's sizes are cut: { roomy: the extra chest it's made with (cm), or nil; dropped: true/false }.
-  def design(sizes)
+  # details "dropped": its shop photo shows dropped shoulders, whatever its chart's numbers say.
+  def design(sizes, details = {})
     known = sizes.filter_map do |size|
       letter = size["name"].to_s.upcase[/\A(XXXL|3XL|XXL|2XL|XL|XS|S|M|L)\b/, 1]&.sub("3XL", "XXXL")&.sub("2XL", "XXL")
       [ size, LETTER_BODY[letter] ] if letter
@@ -205,19 +222,24 @@ module Fit
     chest = known.filter_map { |size, (c, _)| size["chest"] && size["chest"] - c }.sort
     shoulders = known.filter_map { |size, (_, s)| size["shoulders"] && size["shoulders"] - s }.sort
     roomy = chest.any? && chest[chest.size / 2] >= ROOMY ? chest[chest.size / 2] : nil
-    { roomy:, dropped: shoulders.any? && shoulders[shoulders.size / 2] >= DROPPED }
+    photo = details["dropped"] == true || details["dropped"].to_s == "true"
+    { roomy:, dropped: photo || (shoulders.any? && shoulders[shoulders.size / 2] >= DROPPED) }
   end
 
   # A T-shirt, shirt, sweatshirt or other top. Short sleeves end on the upper arm, so they aren't checked
   # against the arm. design: how its sizes are cut (see design).
-  def check_top(body, size, cut = "regular", design = {}, style: nil)
-    ranges = (style == "dress" ? DRESS_CUTS : TOP_CUTS).fetch(cut)
+  # details: { "women" => a women's top (it ends higher), "cropped" => made to end above the waist }.
+  def check_top(body, size, cut = "regular", design = {}, style: nil, details: {})
+    women = details["women"] == true || details["women"].to_s == "true"
+    cropped = details["cropped"] == true || details["cropped"].to_s == "true"
+    snug = details["snug"] == true || details["snug"].to_s == "true"
+    ranges = (style == "dress" ? DRESS_CUTS : snug ? SNUG_TOP_CUTS : women ? WOMEN_TOP_CUTS : TOP_CUTS).fetch(cut)
     roomy, dropped = design.values_at(:roomy, :dropped)
     checks = [
       given(size, "shoulders", "Shoulders") do |shoulders|
         next check(:shoulders, "Shoulders", shoulders - body["shoulders"], "good").with(note: "The shoulder seam is made to sit down the arm.") if dropped
 
-        range_check(:shoulders, "Shoulders", shoulders - body["shoulders"], TOP_SHOULDER_EASE)
+        range_check(:shoulders, "Shoulders", shoulders - body["shoulders"], snug ? SNUG_SHOULDER_EASE : TOP_SHOULDER_EASE)
       end,
       given(size, "chest", "Chest") do |chest|
         next range_check(:chest, "Chest", chest - body["chest"], ranges[:chest]) unless roomy
@@ -238,10 +260,13 @@ module Fit
       end,
       given(size, "length", "Length") do |length|
         next coat_length(length, body["height"]) if style == "dress"
-
-        diff = length - body["height"] * TOP_LENGTH_PER_HEIGHT
+        diff = length - body["height"] * (women ? WOMEN_TOP_LENGTH_PER_HEIGHT : TOP_LENGTH_PER_HEIGHT)
+        next check(:length, "Length", diff, "good").with(note: "Cropped. It's made to end above your waist.") if cropped
+        if snug && diff.between?(-SNUG_SHORT, TOP_LENGTH_TOLERANCE)
+          next check(:length, "Length", diff, "good").with(note: "A baby tee: made short, to end near your waist.")
+        end
         next check(:length, "Length", diff, "good") if diff.abs <= TOP_LENGTH_TOLERANCE
-        if roomy && diff.negative? && diff >= -BOXY_SHORT
+        if (roomy || dropped) && diff.negative? && diff >= -BOXY_SHORT
           next check(:length, "Length", diff, "good").with(note: "Made short and boxy. It ends at your hips.")
         end
 
@@ -259,7 +284,7 @@ module Fit
     results = sizes.map do |size|
       case garment
       when "trousers" then check_trousers(body, size, cut)
-      when "top" then style == "dress" ? check_dress(body, size, cut, details.to_h) : check_top(body, size, cut, cuts ||= design(sizes), style:)
+      when "top" then style == "dress" ? check_dress(body, size, cut, details.to_h) : check_top(body, size, cut, cuts ||= design(sizes, details.to_h), style:, details: details.to_h)
       else check_size(body, size, cut, garment)
       end
     end

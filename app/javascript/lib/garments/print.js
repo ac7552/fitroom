@@ -3,6 +3,16 @@
 // photo: the garment, front on, on a plain background. Runs in the page; the photo goes nowhere.
 
 const SIZE = 384   // the photo is read at about this many pixels across
+const PRINT_SIZE = 720   // and its print at about this many (thin lettering is only a few pixels wide)
+
+// Waits for an image to load. (Not image.decode(), which never settles while the tab is in the background.)
+export function loaded(image) {
+  return new Promise((resolve, reject) => {
+    if (image.complete && image.naturalWidth) return resolve(image)
+    image.addEventListener("load", () => resolve(image), { once: true })
+    image.addEventListener("error", reject, { once: true })
+  })
+}
 
 // src: an image URL (a data: URL from the import, or a local blob). shape: the garment's length over its
 // front's width (from its chart), to find its hem when something else (trousers, a stand) shows below it.
@@ -12,17 +22,30 @@ const SIZE = 384   // the photo is read at about this many pixels across
 export async function readPhoto(src, { shape = null } = {}) {
   const image = new Image()
   image.src = src
-  try { await image.decode() } catch { return null }
-  const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
-  const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
-  const canvas = document.createElement("canvas")
-  canvas.width = w
-  canvas.height = h
-  const context = canvas.getContext("2d", { willReadFrequently: true })
-  context.drawImage(image, 0, 0, w, h)
-  const { data } = context.getImageData(0, 0, w, h)
-  const found = findPrint(data, w, h, shape)
+  try { await loaded(image) } catch { return null }
+  const read = (sx, sy, sw, sh) => {
+    const scale = Math.min(1, PRINT_SIZE / Math.max(sw, sh))
+    const w = Math.max(8, Math.round(sw * scale)), h = Math.max(8, Math.round(sh * scale))
+    const canvas = document.createElement("canvas")
+    canvas.width = w
+    canvas.height = h
+    const context = canvas.getContext("2d", { willReadFrequently: true })
+    context.drawImage(image, sx, sy, sw, sh, 0, 0, w, h)
+    const found = findPrint(context.getImageData(0, 0, w, h).data, w, h, shape)
+    return found && { ...found, scale }
+  }
+  const W = image.naturalWidth, H = image.naturalHeight
+  let found = read(0, 0, W, H)
   if (!found) return null
+  // A garment shot small in a big frame: read again, closer, so a print's thin lettering isn't lost as specks.
+  // The crop keeps a margin of backdrop all round (the reading needs it).
+  const [x0, y0, x1, y1] = found.rect.map(v => v / found.scale)
+  const across = (x1 - x0) * 2.4, cx = (x0 + x1) / 2, down = (y1 - y0) * 1.3
+  if (across < W * 0.7 && Math.max(across, down) > PRINT_SIZE * 1.2) {
+    const sx = Math.max(0, cx - across / 2), sy = Math.max(0, y0 - (y1 - y0) * 0.2)
+    const closer = read(sx, sy, Math.min(W - sx, across), Math.min(H - sy, down))
+    if (closer) found = closer
+  }
   let print = null
   if (found.print) {
     const out = document.createElement("canvas")
@@ -39,7 +62,7 @@ export async function readPhoto(src, { shape = null } = {}) {
 export function findPrint(data, w, h, shape = null) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
-  const { lab, bg, garment } = cut
+  const { lab, bg, garment, far } = cut
 
   // Its rows from the collar to the hem, and the torso: as wide as the garment is near its hem (the sleeves
   // stick out higher up), centred where it is there.
@@ -126,7 +149,11 @@ export function findPrint(data, w, h, shape = null) {
   const gap = new Uint8Array(pw * ph)
   const near = k => {
     const i = (top + Math.floor(k / pw)) * w + x0 + (k % pw)
-    return Math.abs(lab[3 * i] - bg[0]) <= 18 && Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) <= 12
+    // Only what's nearer the backdrop's colour than the cloth's: an off-white cloth isn't backdrop, a soft
+    // shadow round a black one is.
+    const dl = Math.abs(lab[3 * i] - bg[0]), dc = Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2])
+    const toCloth = Math.hypot(lab[3 * i] - baseLab[0], lab[3 * i + 1] - baseLab[1], lab[3 * i + 2] - baseLab[2])
+    return dl <= 18 && dc <= 12 && Math.hypot(dl, dc) < toCloth
   }
   const edgeStack = []
   for (let y = 0; y < ph; y++) for (const x of [0, pw - 1]) edgeStack.push(y * pw + x)
@@ -147,6 +174,26 @@ export function findPrint(data, w, h, shape = null) {
   for (let k = 0; k < pw * ph; k++) if (grown[k] > 0 || k >= hem * pw) { alpha[k] = 0; gap[k] = 1 }
 
   // Keep only solid areas: specks and the photo's own seams and folds are thin.
+  // Marks running off the front's sides or hem are its edge in the light (a sleeve's rim, the hem's fold),
+  // not a print: a chest print sits inside the front. (An all-over print, which does reach them, is kept
+  // whole below.)
+  const before = alpha.reduce((sum, a) => sum + a, 0)
+  const kept = Float32Array.from(alpha)
+  const edgeMarks = []
+  for (let y = 0; y < ph; y++) for (const x of [0, 1, pw - 2, pw - 1]) edgeMarks.push(y * pw + x)
+  for (let x = 0; x < pw; x++) edgeMarks.push((ph - 1) * pw + x, (ph - 2) * pw + x)
+  const seen = new Uint8Array(pw * ph)
+  const marks = edgeMarks.filter(k => kept[k] > 0.2 && !seen[k] && (seen[k] = 1))
+  while (marks.length) {
+    const k = marks.pop(), x = k % pw
+    kept[k] = 0
+    for (const j of [x > 0 ? k - 1 : -1, x < pw - 1 ? k + 1 : -1, k - pw, k + pw]) {
+      if (j < 0 || j >= pw * ph || seen[j] || kept[j] <= 0.2) continue
+      seen[j] = 1
+      marks.push(j)
+    }
+  }
+  if (kept.reduce((sum, a) => sum + a, 0) > before * 0.4) alpha.set(kept)
   const solid = boxBlur(alpha, pw, ph, 2)
   let covered = 0
   const out = new Uint8ClampedArray(4 * pw * ph)
@@ -176,21 +223,29 @@ function cutOut(data, w, h) {
   for (let x = 0; x < w; x++) edge.push(x, (h - 1) * w + x)
   for (let y = 0; y < h; y++) edge.push(y * w, y * w + w - 1)
   const bg = [0, 1, 2].map(c => median(edge.map(i => lab[3 * i + c])))
-  const like = i => Math.abs(lab[3 * i] - bg[0]) <= 6 && Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) <= 7
+  // How much the backdrop itself varies (its grain, a soft gradient): a flat studio backdrop is read
+  // closely, so a white or cream garment on a light grey one isn't taken for backdrop.
+  const spread = median(edge.map(i => Math.abs(lab[3 * i] - bg[0]) + Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2])))
+  const flat = spread < 0.6
+  const far = flat ? [2.2, 2.6] : [6, 7]
+  const like = i => Math.abs(lab[3 * i] - bg[0]) <= far[0] && Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) <= far[1]
+  // On a flat backdrop each step out also has to look like the pixel it came from, so the fill stops at the
+  // garment's soft edge rather than seeping in.
+  const step = (i, j) => !flat || Math.abs(lab[3 * i] - lab[3 * j]) <= 1.6 && Math.hypot(lab[3 * i + 1] - lab[3 * j + 1], lab[3 * i + 2] - lab[3 * j + 2]) <= 1.8
   const mask = new Uint8Array(w * h).fill(1)
   const stack = []
   for (const i of edge) if (mask[i] && like(i)) { mask[i] = 0; stack.push(i) }
   while (stack.length) {
     const i = stack.pop(), x = i % w
     for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
-      if (j < 0 || j >= w * h || !mask[j] || !like(j)) continue
+      if (j < 0 || j >= w * h || !mask[j] || !like(j) || !step(i, j)) continue
       mask[j] = 0
       stack.push(j)
     }
   }
   const garment = largestPiece(mask, w, h)
   if (garment.count < w * h * 0.05) return null
-  return { lab, bg, garment }
+  return { lab, bg, garment, far }
 }
 
 // What a photo of one piece of clothing shows, from its outline: { kind: "top", "jacket" or "trousers",
@@ -289,10 +344,70 @@ export function guessGarment(data, w, h) {
   return { kind: "top", style: hem < torso * 0.94 ? "sweatshirt" : "longsleeve" }
 }
 
+// A top's shape in its photo, as shares of its front's width at the chest (so no size is needed):
+// { length: shoulders to hem, waist: its width at the waist, hem: its width at the hem, sleeve: how far
+// a sleeve reaches past the shoulder seam, along the arm }. Null when it can't be read. A shop that gives
+// no chart still shows the garment: a baby tee is narrow at the waist and short in the sleeve, a boxy tee
+// straight, whatever its listing's words say.
+export async function readTopShape(src) {
+  const pixels = await loadPixels(src)
+  return pixels && measureTop(pixels.data, pixels.w, pixels.h)
+}
+
+export function measureTop(data, w, h) {
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const on = (x, y) => cut.garment.mask[y * w + x] === 1
+  let top = -1, bottom = -1, widest = 0
+  const rowMin = new Int32Array(h).fill(w), rowMax = new Int32Array(h).fill(-1)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) if (on(x, y)) { rowMin[y] = Math.min(rowMin[y], x); rowMax[y] = Math.max(rowMax[y], x) }
+    if (rowMax[y] >= 0) { if (top < 0) top = y; bottom = y }
+    widest = Math.max(widest, rowMax[y] - rowMin[y])
+  }
+  if (top < 0) return null
+  let shoulders = top
+  while (shoulders < bottom && rowMax[shoulders] - rowMin[shoulders] < widest * 0.45) shoulders++
+  const body = bottom - shoulders + 1
+  const centre = Math.round(median(Array.from({ length: Math.max(1, Math.round(body * 0.05)) }, (_, k) => (rowMin[shoulders + k] + rowMax[shoulders + k]) / 2)))
+  // The front's width through the middle at a height: it stops at a gap, so a sleeve hanging apart from
+  // the body is left out (one sewn on beside it, a tee's, isn't).
+  const across = y => {
+    let a = centre, b = centre
+    while (a > 0 && on(a - 1, y)) a--
+    while (b < w - 1 && on(b + 1, y)) b++
+    return b - a
+  }
+  const row = f => Math.min(bottom, Math.round(shoulders + body * f))
+  const widthAt = (from, to) => median(Array.from({ length: row(to) - row(from) + 1 }, (_, k) => across(row(from) + k)))
+  // The armpit: where the width drops most (the sleeves end there, or part from the body). The chest is
+  // the width just below it.
+  const step = Math.max(2, Math.round(body * 0.03))
+  let armpit = -1, sharpest = 0
+  for (let y = row(0.08); y <= row(0.6); y++) {
+    const fall = across(y - step) - across(y + step)
+    if (fall > sharpest) { sharpest = fall; armpit = y }
+  }
+  const chest = armpit >= 0 && sharpest > across(armpit + step) * 0.08
+    ? median(Array.from({ length: Math.max(1, Math.round(body * 0.08)) }, (_, k) => across(Math.min(bottom, armpit + step + k))))
+    : widthAt(0.3, 0.45)
+  if (chest < w * 0.12) return null
+  // A sleeve: the last row (down from the shoulders) wider than the chest, and how far out it reaches.
+  const full = y => rowMax[y] - rowMin[y]
+  let cuff = -1, outer = 0
+  for (let y = shoulders; y <= bottom; y++) if (full(y) > chest * 1.08) { cuff = y; outer = Math.max(outer, (full(y) - chest) / 2) }
+  const drop = cuff < 0 ? 0 : cuff - shoulders
+  const at = f => across(row(f)) / chest
+  return {
+    length: body / chest, waist: median([0.6, 0.63, 0.66, 0.7].map(at)), hem: median([0.93, 0.95, 0.97].map(at)),
+    sleeve: Math.hypot(drop, outer) / chest, sleeveDown: drop / body, armpit: armpit < 0 ? null : (armpit - shoulders) / body
+  }
+}
+
 async function loadPixels(src) {
   const image = new Image()
   image.src = src
-  try { await image.decode() } catch { return null }
+  try { await loaded(image) } catch { return null }
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
