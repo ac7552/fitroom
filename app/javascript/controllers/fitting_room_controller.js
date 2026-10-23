@@ -51,7 +51,7 @@ export default class extends Controller {
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "exact",
-    "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider"
+    "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
   ]
   static values = { fitsUrl: String, importUrl: String, studioUrl: String, garment: Object, dress: Object }
 
@@ -463,6 +463,11 @@ export default class extends Controller {
     this.stage.setTone(event.target.value)
   }
 
+  // A top worn tucked into the pants or skirt, or not (only tops that tuck in offer it).
+  changeTuck(event) {
+    this.stage.setTucked(event.target.value === "in")
+  }
+
   changePose(event) {
     this.stage.setPose(event.target.value)
   }
@@ -686,6 +691,7 @@ export default class extends Controller {
       style: garment.style,
       cut: garment.cut ?? null
     })))
+    this.tuckTarget.hidden = !this.stage.canTuck()
 
     this.renderStageNote()
 

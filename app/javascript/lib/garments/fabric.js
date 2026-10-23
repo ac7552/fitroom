@@ -9,6 +9,7 @@ import * as THREE from "three"
 //   aPiece   which piece it's on (1 the front, 0 the rest)
 //   aShade   how open to the room it is (1) or tucked into a fold or under the hood (less): ambient light
 //            reaching it, worked out from the drape
+//   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
 
 // Each cloth: the texture, its tile (metres of cloth one repeat covers), and its finish.
 const CLOTHS = {
@@ -189,13 +190,15 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aHem;
         attribute float aPiece;
         attribute float aShade;
+        attribute float aHide;
+        varying float vHide;
         varying float vEdge;
         varying float vHem;
         varying float vPiece;
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vPattern = uv * 100.0;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPattern = uv * 100.0;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
     shader.fragmentShader = shader.fragmentShader
@@ -211,6 +214,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPrintOn;
         uniform float uPrintHalf;
         uniform float uPrintLength;
+        varying float vHide;
         varying float vEdge;
         varying float vHem;
         varying float vPiece;
@@ -235,6 +239,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           return d;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+        if ( vHide > 0.0 ) discard;
         vec3 thread = uThread;
         float groove = 1.0 - smoothstep( 0.0, 0.45, vEdge );
         float stitch = 0.0, metal = 0.0, shadow = 0.0;

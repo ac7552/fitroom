@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
-import { DrapedTop, bodySnapshot, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
+import { DrapedTop, TUCKABLE, bodySnapshot, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
 // script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
@@ -54,8 +54,13 @@ const EASE_KEYS = {
 
 // Poses live in public/models/poses.json, shared with the studio renderer so a photo matches the screen.
 
-// The draped layers, from the skin out.
+// The draped layers, from the skin out, and which each is sewn over: the pants, the top over them and a
+// casual jacket over both. A tucked top is gathered close round the body under the pants' waistband, so the
+// top and the pants are each sewn on the body alone, and the jacket over both.
 const LAYERS = ["bottom", "top", "outer"]
+const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
+const TUCKED_LAYERS = ["top", "bottom", "outer"]
+const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
 
 export class FittingStage {
   constructor(canvas) {
@@ -70,6 +75,8 @@ export class FittingStage {
     this.slots = { bottom: null, top: null, outer: null }
     this.leaving = { bottom: null, top: null, outer: null }
     this.waiting = {}
+    this.order = LAYERS
+    this.tucked = false     // whether a top is worn tucked into the pants (when it can be)
     this.drapeBudget = 20   // milliseconds of draping per frame
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -196,6 +203,19 @@ export class FittingStage {
     this.redraw()
   }
 
+  // Whether the top is tucked into the pants or skirt. Only some tops tuck in (see canTuck).
+  setTucked(on) {
+    this.tucked = Boolean(on)
+    this.redraw()
+  }
+
+  // Whether what's worn can be tucked in: a top (a tee, polo, tank or shirt) over pants or a skirt.
+  canTuck(items = this.outfit) {
+    const worn = Object.fromEntries(items.map(item => [item.kind, item]))
+    const tailored = worn.jacket && !DRAPED_STYLES.includes(worn.jacket.style)
+    return Boolean(worn.top && worn.trousers && TUCKABLE.includes(worn.top.style) && !tailored && !worn.coat)
+  }
+
   // "mannequin", "ghost" (the clothes alone) or "fit" (the fit map, on the mannequin).
   setView(view) {
     this.view = view
@@ -263,13 +283,18 @@ export class FittingStage {
     this.meshes.coat.visible = Boolean(worn.coat)
     this.meshes.trousers.visible = false
 
-    this.dressDraped("bottom", worn.trousers ?? null)
-    // Over them the top, unless the suit's jacket or a coat is over it (those are drawn from the model, and
-    // would show it through them); and over the top, a casual jacket.
+    // The top, unless the suit's jacket or a coat is over it (those are drawn from the model, and would show
+    // it through them), over the pants or tucked into them; and over the top, a casual jacket.
     const top = worn.top && !tailored && !worn.coat ? worn.top : null
     this.hiddenTop = Boolean(worn.top && !top)
-    this.dressDraped("top", top)
-    this.dressDraped("outer", drapedJacket ? worn.jacket : null)
+    const tuck = this.tucked && this.canTuck()
+    this.order = tuck ? TUCKED_LAYERS : LAYERS
+    const items = {
+      bottom: worn.trousers ?? null,
+      top: top && tuck ? { ...top, tuck: { style: worn.trousers.style ?? "trousers", size: worn.trousers.size, cut: worn.trousers.cut ?? null } } : top,
+      outer: drapedJacket ? worn.jacket : null
+    }
+    for (const slot of this.order) this.dressDraped(slot, items[slot])
   }
 
   // Draping
@@ -286,7 +311,7 @@ export class FittingStage {
 
   // The layers draped under this one.
   under(slot) {
-    return LAYERS.slice(0, LAYERS.indexOf(slot)).map(s => this.slots[s]).filter(Boolean)
+    return (this.order === TUCKED_LAYERS ? TUCKED_OVER : OVER)[slot].map(s => this.slots[s]).filter(Boolean)
   }
 
   // slot: "bottom" (pants), "top" or "outer" (a casual jacket). item: the outfit item drawn there, or null.
@@ -299,11 +324,11 @@ export class FittingStage {
     const style = slot === "bottom" ? item.style ?? "trousers" : DRAPED_STYLES.includes(item.style) ? item.style : "tee"
     // Each layer is sewn over the ones under it, so a new one under it is a new drape for it too.
     const over = this.under(slot).map(d => d.key)
-    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, this.fitted.scale, this.fitted.influences, over])
+    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, item.tuck ?? null, this.fitted.scale, this.fitted.influences, over])
     if (this.slots[slot]?.key !== key && this.waiting[slot]?.key !== key) {
       // The garment shown stays until the new one is sewn and in the pose shown, so nothing jumps about.
       this.removeDraped(slot, { keepShown: true })
-      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null } }
+      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null, tuck: item.tuck ?? null } }
       // It waits for the layers under it to be sewn, then is sewn over them.
       if (this.under(slot).some(d => !d.top.done)) this.waiting[slot] = spec
       else {
@@ -327,8 +352,9 @@ export class FittingStage {
     const rest = this.restSnapshot()
     const over = [...rest.over, ...this.under(slot).filter(d => d.top.done).map(d => clothSnapshot(d.restX ?? d.top.drape.x, d.top))]
     const { frame, field } = prepareBody(rest.body, rest.egg, over, { arms: slot !== "bottom" })
-    // A jacket over a top starts clear of the top's cloth.
-    if (slot === "outer" && this.slots.top) frame.gap = 0.03
+    // A jacket over a top starts clear of the top's cloth (a tucked top lies close round the waist, so the
+    // usual gap clears it; more would stretch the jacket's hem round the hips, to spring back and ride up).
+    if (slot === "outer" && this.slots.top && this.order !== TUCKED_LAYERS) frame.gap = 0.03
     const top = new DrapedTop({ item, body: rest.body, frame, field, measures: this.measures, renderer: this.renderer })
     top.mesh.visible = false
     this.scene.add(top.mesh)
@@ -443,6 +469,8 @@ export class FittingStage {
       // A skirt or dress keeps hanging round both legs as they come together, rather than falling in
       // between them.
       const envelope = drape.hangs ? { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor } : null
+      // A tucked top stays gathered round the body as it moves.
+      if (drape.tuck) drape.tuck = { ...drape.tuck, table: frame.torso }
       // Pants stay off the feet where the feet now are.
       const feet = drape.feet ? frame.feet : null
       if (!before) drape.repose(posed, field, envelope, feet)
@@ -701,6 +729,7 @@ export class FittingStage {
   tick = () => {
     this.controls.update()
     this.advanceDrape()
+    this.fitTuck()
     this.renderer.render(this.scene, this.camera)
     this.frameId = this.visible ? requestAnimationFrame(this.tick) : null
   }
@@ -708,7 +737,9 @@ export class FittingStage {
   // A few milliseconds of draping per frame, so the page stays smooth while the cloth settles: the pants
   // first, then the top over them.
   advanceDrape() {
-    for (const slot of LAYERS) {
+    // A tucked top waits to be shown until the pants it's tucked into are (it's cut short, to end inside them).
+    for (const slot of this.order) if (this.slots[slot]?.final && !this.slots[slot].posing) this.show(this.slots[slot])
+    for (const slot of this.order) {
       const spec = this.waiting[slot]
       if (spec && this.under(slot).every(d => d.top.done)) {
         delete this.waiting[slot]
@@ -716,7 +747,7 @@ export class FittingStage {
         this.redraw()
       }
     }
-    for (const slot of LAYERS) {
+    for (const slot of this.order) {
       const d = this.slots[slot]
       if (!d) continue
       if (!d.top.done) {
@@ -738,15 +769,32 @@ export class FittingStage {
         if (!d.final) return
         d.top.update()
         // It's sewn and moved into the pose shown: show it in place of the one before.
-        if (!d.shown) {
-          d.shown = true
-          d.top.mesh.visible = true
-          this.dropLeaving(slot)
-        }
+        this.show(d)
         if (!d.posing && this.settled) this.onDrape?.("done", true)
         if (d.posing) return
       }
     }
+  }
+
+  show(d) {
+    if (d.shown) return
+    const pants = this.slots.bottom
+    if (d.slot === "top" && this.order === TUCKED_LAYERS && pants && !pants.shown) return
+    d.shown = true
+    d.top.mesh.visible = true
+    this.dropLeaving(d.slot)
+  }
+
+  // A tucked top isn't drawn below where the pants' waistband actually lies (see DrapedTop#tuckedAway).
+  fitTuck() {
+    const top = this.slots.top?.top, bottom = this.slots.bottom
+    if (this.order !== TUCKED_LAYERS || !top?.drape.tuck || !bottom?.shown) return
+    const { drape, cloth } = bottom.top
+    const stamp = `${drape.frame}:${bottom.posedAs}:${top.drape.frame}`
+    if (this.tuckStamp === stamp) return
+    this.tuckStamp = stamp
+    const points = [...new Set((cloth.edges["waistband/rim"] ?? []).map(i => (drape.map ? drape.map[i] : i)))]
+    top.setRim(points.map(j => [drape.x[3 * j], drape.x[3 * j + 1], drape.x[3 * j + 2]]))
   }
 
   dispose() {
@@ -768,10 +816,15 @@ export class FittingStage {
 }
 
 // A draped garment as something to drape over: its cloth's points (x, the drape's joined points) as a
-// triangle mesh with normals.
+// triangle mesh with normals. A tucked top is left out from a little above the pants' waistband down: the
+// pants cover it, and where it comes out of them, its edge and theirs together would snag the cloth over
+// them.
 function clothSnapshot(x, garment) {
   const map = garment.drape.map
-  const index = Uint32Array.from(garment.triangles, i => (map ? map[i] : i))
+  const away = garment.tuckedAway?.(x, -0.025)
+  let triangles = garment.triangles
+  if (away) triangles = Uint32Array.from(triangles).filter((_, k, all) => { const t = k - (k % 3); return !(away[all[t]] > 0 && away[all[t + 1]] > 0 && away[all[t + 2]] > 0) })
+  const index = Uint32Array.from(triangles, i => (map ? map[i] : i))
   const positions = Float32Array.from(x)
   return { positions, normals: vertexNormals(positions, index), index }
 }

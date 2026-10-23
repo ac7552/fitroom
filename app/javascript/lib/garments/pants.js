@@ -27,6 +27,8 @@ const SKIRT_HEM = { fitted: 0.92, slim: 1.02, relaxed: 1.15, flared: 1.45, pleat
 
 // The front takes a little less of each round than the back (the seat is behind).
 const FRONT = 0.47
+// How much higher (cm) the back's waist rises at its middle, over the seat.
+export const BACK_RAISE = 4
 
 // size: { waist, seat, thigh, knee, inseam, leg_opening, rise } (cm round, or long; any but the waist may be
 // null). body: the wearer in cm ({ waist, hips, inseam, height }, and from the mesh: rise, the height from the
@@ -168,7 +170,7 @@ function legPiece(m, part) {
   const half = round => (round * share) / 2
   const hemY = -m.length, kneeY = -(m.rise + m.kneeAt), crotchY = -m.rise, seatY = -m.seatAt
   // The back rises higher at the middle, over the seat.
-  const backRaise = part === "back" ? 4 : 0
+  const backRaise = part === "back" ? BACK_RAISE : 0
   const thighY = crotchY - Math.min(8, m.inseam * 0.3)
   const outer = [
     [centre + half(m.opening), hemY],
