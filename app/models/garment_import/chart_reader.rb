@@ -28,7 +28,10 @@ class GarmentImport
           "seat" => /seat|hip/i,
           "thigh" => /thigh/i,
           "inseam" => /inseam|inside leg|inner leg|leg length/i,
-          "leg_opening" => /opening|hem|bottom|ankle|cuff/i
+          "leg_opening" => /opening|hem|bottom|ankle|cuff/i,
+          "rise" => /\brise\b/i,
+          # A skirt's (or shorts') length from the waist.
+          "length" => /length|\blong\b/i
         },
         key: "waist", plausible: 55..160, inches_below: 52,
         body_to_garment: { "waist" => 2.5, "seat" => 6 }

@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readGarment, readTopShape, loaded } from "lib/garments/print"
+import { readPhoto, readGarment, readTopShape, readBottomShape, loaded } from "lib/garments/print"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -563,11 +563,11 @@ export default class extends Controller {
       this.showStudio("Add your measurements and at least one item first.")
       return
     }
-    // Tops and casual jackets are draped here on the page, so their photo is taken here too.
-    if (this.stage.hasDraped || snapshot.items.some(item => item.kind === "top" || ["zip", "bomber", "shirt"].includes(item.style))) {
+    // Tops, casual jackets and pants are draped here on the page, so their photo is taken here too.
+    if (this.stage.hasDraped || snapshot.items.some(item => item.kind === "top" || item.kind === "trousers" || ["zip", "bomber", "shirt"].includes(item.style))) {
       this.closeStudio()
       this.showStudio("Taking the photo…")
-      if (this.stage.draped && !(this.stage.draped.top.done && !this.stage.draped.posing)) {
+      if (!this.stage.settled) {
         this.showStudio("Wait for the cloth to finish settling, then take the photo.")
         return
       }
@@ -921,8 +921,9 @@ async function readShop(link) {
   // The photo's shape (how high its arms are sewn in, how far its sleeves reach), which says how a top is
   // cut when the shop gives no chart.
   const shape = photo ? await readTopShape(photo).catch(() => null) : null
+  const bottomShape = photo ? await readBottomShape(photo).catch(() => null) : null
   return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
-    photo, shape }
+    photo, shape, bottom_shape: bottomShape }
 }
 
 // The product's photo, small, as a data: URL (Shopify's image host lets pages read its photos).

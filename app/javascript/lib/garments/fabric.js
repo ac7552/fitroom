@@ -17,6 +17,8 @@ const CLOTHS = {
   fleece: { surface: "fleece", tile: 0.025, roughness: 0.97, sheen: 0.75, sheenRoughness: 0.85, normal: 0.4 },
   twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5 },
   shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25 },
+  // Nylon pants: a soft satin sheen, far less glossy than a jacket's shell.
+  satin: { surface: "fine", tile: 0.012, roughness: 0.62, sheen: 0.35, sheenRoughness: 0.4, normal: 0.1, clearcoat: 0.04, clearcoatRoughness: 0.6 },
   wool: { surface: "felt", tile: 0.03, roughness: 0.95, sheen: 0.4, sheenRoughness: 0.6, normal: 0.35 },
   // Leather: a fine grain, mostly matte with a soft sheen, not a plastic shine.
   leather: { surface: "grain", tile: 0.04, roughness: 0.62, sheen: 0.2, sheenRoughness: 0.45, normal: 0.22, clearcoat: 0.12, clearcoatRoughness: 0.7 },
@@ -140,7 +142,7 @@ function mulberry(seed) {
 }
 
 // The material for one cloth of a garment. options: color, cloth (a CLOTHS name or alias), details: what to
-// draw on it ({ stitch: "hem" | "topstitch" | null, closure: "zip" | "buttons" | null, pocket: "kangaroo" |
+// draw on it ({ stitch: "hem" | "topstitch" | null, closure: "zip" | "buttons" | "placket" | null, pocket: "kangaroo" |
 // null, neckDepth (cm, where a front closure starts), length (cm, the front's length) }), fitMap (true: the
 // fit map's colours instead).
 export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {}, fitMap = false, renderer = null } = {}) {
@@ -156,7 +158,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
   })
   const uniforms = {
     uStitch: { value: { hem: 1, topstitch: 2 }[details.stitch] ?? 0 },
-    uClosure: { value: { zip: 1, buttons: 2 }[details.closure] ?? 0 },
+    uClosure: { value: { zip: 1, buttons: 2, placket: 3 }[details.closure] ?? 0 },
     uPocket: { value: details.pocket === "kangaroo" ? 1 : 0 },
     uNeckDepth: { value: details.neckDepth ?? 9 },
     uLength: { value: details.length ?? 70 },
@@ -242,12 +244,15 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
             metal = max( metal, teeth );
             stitch = max( stitch, lineAt( x, 1.1, 0.05 ) * dashes( vPattern ) );
           }
-          if ( uClosure == 2 && placket ) {
+          // A polo's short placket: three buttons, 13 cm down from the neck.
+          if ( uClosure == 3 ) placket = placket && y > -uNeckDepth - 13.0;
+          if ( ( uClosure == 2 || uClosure == 3 ) && placket ) {
             // A placket down the front with buttons every 9 cm.
             shadow = max( shadow, lineAt( x, 1.6, 0.06 ) * 0.5 );
             stitch = max( stitch, lineAt( x, 1.3, 0.04 ) * dashes( vPattern ) );
-            float k = floor( ( -uNeckDepth - 1.5 - y ) / 9.0 + 0.5 );
-            float by = -uNeckDepth - 1.5 - k * 9.0;
+            float gap = uClosure == 3 ? 5.0 : 9.0;
+            float k = floor( ( -uNeckDepth - 1.5 - y ) / gap + 0.5 );
+            float by = -uNeckDepth - 1.5 - k * gap;
             float d = length( vec2( vPattern.x, y - by ) );
             float button = smoothstep( 0.62, 0.52, d ) * step( y, -uNeckDepth ) * step( -uLength + 5.0, y );
             metal = max( metal, button * 0.6 );

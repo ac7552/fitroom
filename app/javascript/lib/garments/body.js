@@ -43,6 +43,12 @@ export function bodyFrame({ positions, normals, index, skinIndex, skinWeight, bo
     joints[`elbow_${key}`] = at(`lowerarm_${side}+upperarm_${side}`)
     joints[`wrist_${key}`] = at(`hand_${side}+lowerarm_${side}`)
   }
+  for (const side of ["l", "r"]) {
+    const key = side.toUpperCase()
+    joints[`hip_${key}`] = at(`pelvis+thigh_${side}`)
+    joints[`knee_${key}`] = at(`calf_${side}+thigh_${side}`)
+    joints[`ankle_${key}`] = at(`calf_${side}+foot_${side}`)
+  }
   joints.neck = at("neck_01+spine_03")
   joints.head = at("head+neck_01")
 
@@ -61,13 +67,15 @@ export function bodyFrame({ positions, normals, index, skinIndex, skinWeight, bo
 
   const torso = reachTable(positions, index, part, [0, 3, 4], floor, top)
   const arms = { L: armReach(positions, part, 1, joints, "L"), R: armReach(positions, part, 2, joints, "R") }
+  const legs = joints.hip_L && joints.knee_L && joints.ankle_L && joints.hip_R && joints.knee_R && joints.ankle_R
+    ? { L: legReach(positions, part, joints, "L"), R: legReach(positions, part, joints, "R") } : null
   const shoulderTop = shoulderProfile(positions, part, joints)
   const head = headShape(positions, part, joints)
   // The high point of the shoulder: where the top of the shoulders meets the side of the neck.
   const neckSide = neckWidth(positions, part, joints.neck)
   const hps = [neckSide, shoulderTop.at(neckSide + 0.012)]
   const armpitY = armpit(positions, part, joints)
-  const crotch = crotchHeight(positions, floor)
+  const crotch = crotchHeight(positions, floor, part)
   const neck = neckRound(positions, part, joints.neck)
   // What the pattern needs to know, in cm: round the neck, armpit below the high point of the shoulder, and
   // round the upper arm, the wrist and the head (from how far each reaches from its middle).
@@ -79,19 +87,21 @@ export function bodyFrame({ positions, normals, index, skinIndex, skinWeight, bo
     head: Math.PI * (head.rx + head.rz * 0.85) * 100
   }
 
-  return { count, part, joints, floor, top, torso, arms, shoulderTop, head, hps, armpitY, crotch, neckSide, measures }
+  return { count, part, joints, floor, top, torso, arms, legs, shoulderTop, head, hps, armpitY, crotch, neckSide, measures }
 }
 
-// Where the legs meet: the lowest point of the body on its middle line (below it, there's only air between
-// the legs).
-function crotchHeight(positions, floor) {
-  let low = Infinity
+// Where the legs meet: the lowest point of the pelvis on the body's middle line. (Not of the whole body: with
+// the legs brought together, the thighs touch the middle line well below it.)
+function crotchHeight(positions, floor, part) {
+  let low = Infinity, any = Infinity
   const n = positions.length / 3
   for (let i = 0; i < n; i++) {
     const y = positions[3 * i + 1]
-    if (Math.abs(positions[3 * i]) < 0.012 && y > floor + 0.3) low = Math.min(low, y)
+    if (Math.abs(positions[3 * i]) >= 0.012 || y <= floor + 0.3) continue
+    any = Math.min(any, y)
+    if (part[i] === 0) low = Math.min(low, y)
   }
-  return isFinite(low) ? low : floor + 0.8
+  return isFinite(low) ? low : isFinite(any) ? any : floor + 0.8
 }
 
 // How far the body (the given parts) reaches from its vertical middle line, by height (1 cm) and angle round
@@ -275,6 +285,41 @@ function armReach(positions, part, which, joints, side) {
       const span = lengths[k] - lengths[k - 1] || 1
       const u = (t - lengths[k - 1]) / span
       return { point: add3(a, scale(sub(b, a), u)), direction: normalize(sub(b, a)) }
+    }
+  }
+}
+
+// A leg's line (hip joint, knee, ankle) and how far the leg reaches from it along its length (1 cm steps),
+// from that leg's skin alone (the left leg is on +x).
+function legReach(positions, part, joints, side) {
+  const chain = [joints[`hip_${side}`], joints[`knee_${side}`], joints[`ankle_${side}`]]
+  const lengths = [0]
+  for (let k = 1; k < chain.length; k++) lengths.push(lengths[k - 1] + norm(sub(chain[k], chain[k - 1])))
+  const total = lengths[lengths.length - 1]
+  const steps = Math.ceil(total / 0.01) + 1
+  const reach = new Float32Array(steps)
+  const sign = side === "L" ? 1 : -1
+  const n = positions.length / 3
+  for (let i = 0; i < n; i++) {
+    if (part[i] !== 4 || positions[3 * i] * sign <= 0) continue
+    const p = vec(positions, i)
+    const { t, distance } = project(chain, lengths, p)
+    const s = Math.min(Math.max(Math.round(t / 0.01), 0), steps - 1)
+    reach[s] = Math.max(reach[s], distance)
+  }
+  const widened = reach.map((_, s) => Math.max(...[-2, -1, 0, 1, 2].map(d => reach[Math.min(Math.max(s + d, 0), steps - 1)])))
+  return {
+    chain, lengths, total,
+    reachAt(t) { return widened[Math.min(Math.max(Math.round(t / 0.01), 0), steps - 1)] },
+    // The point on the leg's line at height y (between the hip and the ankle), and the direction it runs.
+    atHeight(y) {
+      for (let k = 1; k < chain.length; k++) {
+        const a = chain[k - 1], b = chain[k]
+        if (y <= a[1] && y >= b[1] || k === chain.length - 1) {
+          const u = (a[1] - y) / ((a[1] - b[1]) || 1)
+          return { point: add3(a, scale(sub(b, a), u)), direction: normalize(sub(b, a)), t: lengths[k - 1] + u * (lengths[k] - lengths[k - 1]) }
+        }
+      }
     }
   }
 }

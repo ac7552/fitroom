@@ -14,6 +14,8 @@ export const CLOTHS = {
   twill: { stretch: 2e-8, bend: 4e-5, drag: 1.4, thickness: 0.004 },
   shell: { stretch: 2e-8, bend: 6e-5, drag: 1.5, thickness: 0.004 },
   wool: { stretch: 3e-8, bend: 2.5e-5, drag: 1.6, thickness: 0.005 },
+  // Jeans: stiff, heavy cotton that keeps its shape down the leg.
+  denim: { stretch: 1.5e-8, bend: 1.6e-5, drag: 1.6, thickness: 0.005 },
   // Dresses: stretch cloth gives a lot (so a dress cut smaller than the body clings), leather is stiff and
   // heavy-looking, silk and chiffon light and soft.
   stretch: { stretch: 9e-7, bend: 1.5e-4, drag: 1.2, thickness: 0.003 },
@@ -41,8 +43,14 @@ export class Drape {
   // outside the slices' convex outline, so it hangs round the hips and legs instead of folding in between.
   // attach: placeCloth's band attachments; while they're held (see holdBands), bands ride on the edges they're
   // sewn to and only the body's own seams are sewn.
-  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null } = {}) {
+  // floor: a height cloth can't fall below (pants longer than the leg pile up there), or null.
+  // ring: { points (cloth point indices round a waist) }: a waistband, which holds the garment up (see
+  // holdRing).
+  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null } = {}) {
     this.envelope = envelope
+    this.hangs = Boolean(envelope)   // hangs round both legs (a skirt, a dress), in any pose
+    this.floor = floor
+    this.ring = ring && ring.points.length >= 8 ? { ...ring, order: ringOrder(ring.points, start) } : null
     this.friction = friction
     this.selfRadius = selfRadius
     this.cloth = cloth
@@ -173,7 +181,9 @@ export class Drape {
   }
 
   // One frame (1/60 s). gravity: on or off (off while the seams close), or a share of it.
-  step({ gravity = true, sew = !this.sewn } = {}) {
+  // still: the cloth keeps no speed from one small step to the next, so it eases into shape instead of
+  // springing (see phases' relaxFrames).
+  step({ gravity = true, sew = !this.sewn, still = false } = {}) {
     const h = FRAME / SUBSTEPS
     const { x, p, v, w } = this
     const n = this.x.length / 3
@@ -193,13 +203,27 @@ export class Drape {
       solveDistances(p, w, this.bends, this.bendRest, bend, bend * HEM_BEND, this.bendHem)
       if (this.sewn && s % 2 === 1) this.selfCollide()
       this.collide()
+      if (this.ring) this.holdRing()
       if (this.attach) this.reattach(p)
       for (let i = 0; i < 3 * n; i++) {
-        v[i] = ((p[i] - x[i]) / h) * drag
+        v[i] = still ? 0 : ((p[i] - x[i]) / h) * drag
         x[i] = p[i]
       }
     }
     this.frame++
+  }
+
+  // A waistband holds the garment up where it fits: while the rest is sewn on, it stays at the height it was
+  // placed at (where the body is as round as it), and afterwards it can't slip more than a centimetre below
+  // where it was sewn. The cloth below it hangs and folds as it will.
+  holdRing() {
+    const { p, x } = this
+    const points = this.map ? this.ring.order.map(i => this.map[i]) : this.ring.order
+    if (this.sewn && !this.ring.sewnAt) this.ring.sewnAt = new Map(points.map(j => [j, x[3 * j + 1]]))
+    for (const j of points) {
+      if (!this.sewn) p[3 * j + 1] = x[3 * j + 1]
+      else p[3 * j + 1] = Math.max(p[3 * j + 1], this.ring.sewnAt.get(j) - 0.01)
+    }
   }
 
   // Each pair of points the sewing joins moves together, a little at a time.
@@ -249,6 +273,15 @@ export class Drape {
       p[3 * i] = qx; p[3 * i + 1] = qy; p[3 * i + 2] = qz
     }
     if (this.envelope) this.stayOutside()
+    if (this.floor !== null) {
+      // On the floor, cloth stays put rather than sliding (it rests on it).
+      for (let i = 0; i < n; i++) {
+        if (p[3 * i + 1] >= this.floor) continue
+        p[3 * i + 1] = this.floor
+        p[3 * i] = x[3 * i] + (p[3 * i] - x[3 * i]) * 0.3
+        p[3 * i + 2] = x[3 * i + 2] + (p[3 * i + 2] - x[3 * i + 2]) * 0.3
+      }
+    }
   }
 
   // Cloth can't pass through itself: points closer than `selfRadius` (that aren't within two steps of each
@@ -312,11 +345,12 @@ export class Drape {
 
   // Moves the finished cloth (its joined points, see closeSeams) to new positions on a new body: the same
   // garment skinned into another pose, to settle there.
-  repose(positions, field) {
+  // envelope: the new body's (see the constructor), to keep a skirt round both legs there too, or null.
+  repose(positions, field, envelope = null) {
     this.x.set(positions)
     this.v.fill(0)
     this.field = field
-    this.envelope = null
+    this.envelope = envelope
   }
 
   // Settles it where it is, a frame at a time (see phases), calming it at the end.
@@ -421,10 +455,17 @@ export function drapeGarment(cloth, start, body, options = {}, onFrame = null) {
 
 // The same, a frame at a time: a generator that yields after each frame with the phase it's in ("sewing",
 // "settling"), so a page can run a few frames between redraws.
+// relaxFrames: frames at the start in which the placed cloth only eases to its own size, keeping no speed.
+// Cloth laid round a body starts a little stretched in places (round a waist, over the hips); let go at once
+// it springs back hard enough to fling the hem up and crumple it.
 // sewGravity: a share of gravity while sewing, to hold a long garment's skirt down as its seams close (with
 // none, the cloth draws up as it's pulled together, and a skirt rides up the legs and crumples coming down).
-Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmFrames = 50, sewGravity = false } = {}) {
+Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmFrames = 50, sewGravity = false, relaxFrames = 0 } = {}) {
   let f = 0
+  for (let k = 0; k < relaxFrames; k++, f++) {
+    this.step({ gravity: 0, sew: false, still: true })
+    yield "sewing"
+  }
   // Sewing stops once every seam has closed to a few millimetres, or has stopped closing any further.
   const sew = function* (drape, limit) {
     let best = Infinity, since = 0
@@ -451,4 +492,13 @@ Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmF
     yield "settling"
   }
   this.params.drag = drag
+}
+
+// A waist's points in order round it (by angle about their middle, seen from above), each once.
+function ringOrder(points, positions) {
+  const unique = [...new Set(points)]
+  let cx = 0, cz = 0
+  for (const i of unique) { cx += positions[3 * i]; cz += positions[3 * i + 2] }
+  cx /= unique.length; cz /= unique.length
+  return unique.sort((a, b) => Math.atan2(positions[3 * a] - cx, positions[3 * a + 2] - cz) - Math.atan2(positions[3 * b] - cx, positions[3 * b + 2] - cz))
 }

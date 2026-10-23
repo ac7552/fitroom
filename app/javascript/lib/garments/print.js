@@ -194,6 +194,7 @@ export function findPrint(data, w, h, shape = null) {
     }
   }
   if (kept.reduce((sum, a) => sum + a, 0) > before * 0.4) alpha.set(kept)
+  dropStreaks(alpha, pw, ph)
   const solid = boxBlur(alpha, pw, ph, 2)
   let covered = 0
   const out = new Uint8ClampedArray(4 * pw * ph)
@@ -211,6 +212,35 @@ export function findPrint(data, w, h, shape = null) {
   }
   const print = coverage > 0.01 ? { data: out, width: pw, height: ph, coverage } : null
   return { color, print, rect: [x0, top, x1, bottom] }
+}
+
+// Long, thin marks aren't a print: a hem's fold catching the light runs across the front in a line, and the
+// shadow between a sleeve and the body runs down its side. Each mark (8-connected) much longer than it is
+// thick, across or down, is cleared.
+function dropStreaks(alpha, w, h) {
+  const seen = new Uint8Array(w * h)
+  const stack = [], piece = []
+  for (let start = 0; start < w * h; start++) {
+    if (seen[start] || alpha[start] <= 0.2) continue
+    stack.push(start); seen[start] = 1; piece.length = 0
+    let x0 = w, x1 = -1, y0 = h, y1 = -1
+    while (stack.length) {
+      const k = stack.pop(), x = k % w, y = (k - x) / w
+      piece.push(k)
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y)
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue
+        const j = yy * w + xx
+        if (!seen[j] && alpha[j] > 0.2) { seen[j] = 1; stack.push(j) }
+      }
+    }
+    const across = x1 - x0 + 1, down = y1 - y0 + 1
+    // How thick it is: its area over its length (across and down, so a line that turns a corner counts too).
+    const thick = piece.length / (across + down)
+    const streak = (across >= w * 0.2 || down >= h * 0.15) && thick <= Math.max(2, 0.02 * Math.max(w, h))
+    if (streak) for (const k of piece) alpha[k] = 0
+  }
 }
 
 // The garment in a photo: each pixel's Lab colour, the background's colour (the median round the photo's
@@ -401,6 +431,73 @@ export function measureTop(data, w, h) {
   return {
     length: body / chest, waist: median([0.6, 0.63, 0.66, 0.7].map(at)), hem: median([0.93, 0.95, 0.97].map(at)),
     sleeve: Math.hypot(drop, outer) / chest, sleeveDown: drop / body, armpit: armpit < 0 ? null : (armpit - shoulders) / body
+  }
+}
+
+// Pants, shorts or a skirt's shape in a photo (see measureBottom), or null.
+export async function readBottomShape(src) {
+  const pixels = await loadPixels(src)
+  return pixels && measureBottom(pixels.data, pixels.w, pixels.h)
+}
+
+// The garment's outline in a photo (or a render): { mask (1 where garment), w, h } or null.
+export function garmentMask(data, w, h) {
+  const cut = cutOut(data, w, h)
+  return cut && { mask: cut.garment.mask, w, h }
+}
+
+// Pants, shorts or a skirt in a photo, as shares of the waist's width: { length: waist to hem, hips: the
+// widest point in the top third, rise: waist to crotch over the length (null for a skirt), thigh: one
+// leg's width just below the crotch, knee: one leg's width halfway down the leg, hem: one leg's width at
+// the hem (a skirt's whole hem) }. Null when it can't be read.
+export function measureBottom(data, w, h) {
+  const cut = cutOut(data, w, h)
+  return cut && measureBottomMask(cut.garment.mask, w, h)
+}
+
+export function measureBottomMask(mask, w, h) {
+  const on = (x, y) => mask[y * w + x] === 1
+  // The stretches of garment across a row (small gaps, a seam's shadow, don't split one).
+  const gap = Math.max(2, Math.round(w * 0.01))
+  const runs = y => {
+    const out = []
+    let start = -1, last = -1
+    for (let x = 0; x < w; x++) {
+      if (!on(x, y)) continue
+      if (start < 0) start = x
+      else if (x - last > gap) { out.push([start, last]); start = x }
+      last = x
+    }
+    if (start >= 0) out.push([start, last])
+    return out.filter(([a, b]) => b - a > w * 0.01)
+  }
+  let top = -1, bottom = -1
+  for (let y = 0; y < h; y++) if (runs(y).length) { if (top < 0) top = y; bottom = y }
+  if (top < 0) return null
+  const tall = bottom - top + 1
+  const row = f => Math.min(bottom, Math.round(top + tall * f))
+  const span = y => { const r = runs(y); return r.length ? r[r.length - 1][1] - r[0][0] : 0 }
+  const waist = median(Array.from({ length: Math.max(1, Math.round(tall * 0.03)) }, (_, k) => span(top + 1 + k)))
+  if (waist < w * 0.08) return null
+  let hips = 0
+  for (let y = row(0.02); y <= row(0.33); y++) hips = Math.max(hips, span(y))
+  // The crotch: the first row, a little way down, where the garment parts into two legs (and stays parted).
+  let crotch = -1
+  for (let y = row(0.12); y <= row(0.85) && crotch < 0; y++) {
+    if (runs(y).length === 2 && [1, 2, 3].every(k => runs(Math.min(bottom, y + Math.round(tall * 0.02) * k)).length === 2)) crotch = y
+  }
+  const leg = y => { const r = runs(y); return r.length === 2 ? median([r[0][1] - r[0][0], r[1][1] - r[1][0]]) : null }
+  const at = (y, n = 5) => median(Array.from({ length: n }, (_, k) => leg(Math.min(bottom, y + k))).filter(v => v != null)) / waist
+  if (crotch < 0) {
+    // A skirt: its hem's whole width.
+    const hem = median([0.93, 0.95, 0.97].map(f => span(row(f))))
+    return { length: tall / waist, hips: hips / waist, rise: null, thigh: null, knee: null, hem: hem / waist, skirt: true }
+  }
+  const legLength = bottom - crotch
+  return {
+    length: tall / waist, hips: hips / waist, rise: (crotch - top) / tall,
+    thigh: at(crotch + Math.round(legLength * 0.05)), knee: at(crotch + Math.round(legLength * 0.5)),
+    hem: at(bottom - Math.max(3, Math.round(legLength * 0.04)), 3), skirt: false
   }
 }
 

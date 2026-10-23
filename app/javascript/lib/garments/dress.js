@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { bodyFrame, SkinField } from "lib/garments/body"
 import { STYLES, draftTop } from "lib/garments/pattern"
+import { BOTTOM_STYLES, draftBottoms } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
 import { Drape } from "lib/garments/drape"
@@ -12,6 +13,7 @@ import { clothMaterial } from "lib/garments/fabric"
 
 export const TOP_STYLES = Object.keys(STYLES)
 const SPACING = 1.6   // cm between the cloth's points
+const BOTTOM_SPACING = 2   // pants have more cloth, and less fine detail to show
 
 // The body as it's shaped and posed now, in world space: positions, normals, triangles, skin weights and bone
 // names (for bodyFrame), from the mannequin's skinned mesh.
@@ -98,7 +100,9 @@ function normalizeAll(normals) {
 // collision field around it, so it's kept well below any hem), without the hands (sleeves end at the wrist),
 // and the display mannequin's egg in place of the head.
 // bodyCount: how many of the vertices are the body's own (the rest, garments under the cloth, all count).
-export function collisionBody(body, frame, egg, bodyCount = body.positions.length / 3) {
+// arms: false for pants (hands rest on the outside of them; an arm coming down into a pose would trap the
+// cloth against the hips).
+export function collisionBody(body, frame, egg, bodyCount = body.positions.length / 3, { arms = true } = {}) {
   const n = body.positions.length / 3
   const keep = new Uint8Array(n)
   const knee = frame.floor + 0.1
@@ -109,6 +113,7 @@ export function collisionBody(body, frame, egg, bodyCount = body.positions.lengt
     if (egg && body.head && body.head[i] > 0.5) continue
     const part = frame.part[i]
     if (part === 1 || part === 2) {
+      if (!arms) continue
       const arm = frame.arms[part === 1 ? "L" : "R"]
       if (arm.locate([p[3 * i], p[3 * i + 1], p[3 * i + 2]]).t > arm.lengths[2] + 0.02) continue
     }
@@ -124,11 +129,26 @@ function surfaceFor(style, fabric) {
   if (style === "dress" && ["stretch", "jersey"].includes(fabric)) return fabric
   // Silk and leather look like themselves on any top (a silk shirt, a leather tee).
   if (fabric === "silk" || (fabric === "leather" && style !== "zip" && style !== "bomber")) return fabric
+  // Knitwear's own knit.
+  if (STYLES[style]?.surface && !["silk", "leather", "nylon"].includes(fabric)) return STYLES[style].surface
   const own = STYLES[style]?.fabric ?? "jersey"
   if (fabric === "denim") return "twill"
   if (fabric === "nylon" || fabric === "leather") return "shell"
   if (fabric === "wool" && own !== "shell") return own === "jersey" ? "jersey" : "wool"
   return own
+}
+
+// How pants look: jeans in denim twill, joggers in fleece, leggings in a fine stretch knit, the rest in
+// their shop's fabric (a nylon pant in a matte shell, wool in wool, cotton in twill).
+function bottomSurface(style, fabric) {
+  if (style === "leggings") return "stretch"
+  if (style === "joggers") return fabric === "nylon" ? "satin" : "fleece"
+  if (style === "jeans" || fabric === "denim") return "twill"
+  if (fabric === "nylon") return "satin"
+  if (fabric === "wool") return "wool"
+  if (fabric === "leather") return "leather"
+  if (fabric === "silk") return "silk"
+  return BOTTOM_STYLES[style]?.fabric === "fleece" ? "fleece" : "twill"
 }
 
 // One top on the mannequin: drafted, sewn and settled a few frames at a time.
@@ -137,16 +157,36 @@ function surfaceFor(style, fabric) {
 export class DrapedTop {
   constructor({ item, body, frame, field, measures, renderer }) {
     this.item = item
-    this.pattern = draftTop(item.style, item.size, { ...measures, ...frame.measures }, item.cut ?? null)
-    this.cloth = buildCloth(this.pattern, SPACING)
+    this.bottoms = item.kind === "trousers"
+    const wearer = { ...measures, ...frame.measures }
+    if (this.bottoms) {
+      // From the crotch up to the natural waist (about at the navel), on this body.
+      wearer.rise = (frame.hps[1] - (measures.height ?? 175) * 0.00235 - frame.crotch) * 100
+    }
+    this.pattern = this.bottoms ? draftBottoms(item.style, item.size, wearer, item.cut ?? null) : draftTop(item.style, item.size, wearer, item.cut ?? null)
+    this.cloth = buildCloth(this.pattern, this.bottoms ? BOTTOM_SPACING : SPACING)
     const { positions, attach } = placeCloth(this.cloth, this.pattern, frame)
-    const envelope = { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor }
+    // A skirt hangs round both legs; pants go round each.
+    const envelope = this.bottoms && item.style !== "skirt" ? null : { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor }
     // A dress held up by straps or round the bust grips where it rests (as straps and boning do, rather than
-    // sliding off the shoulders' slope); others slide over the body as usual.
+    // sliding off the shoulders' slope); pants grip at the waist; others slide over the body as usual.
     const holds = ["strapless", "one_shoulder", "straps", "thin_straps", "none"].includes(item.cut?.sleeves)
-    this.drape = new Drape(this.cloth, positions, { ...body, field }, { fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7 })
-    // A long garment (a dress) has further to fall, so it settles for longer.
-    this.steps = this.drape.phases(this.pattern.style === "dress" || this.pattern.measures.length > 85 ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4 } : { settleFrames: 140, calmFrames: 45 })
+    // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist.
+    const ring = this.bottoms ? {
+      points: Object.entries(this.cloth.edges).filter(([key]) => /^(front|back)(_[LR])?\/waist$/.test(key)).flatMap(([, idx]) => idx),
+      length: this.pattern.measures.waist / 100
+    } : null
+    this.drape = new Drape(this.cloth, positions, { ...body, field }, {
+      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring
+    })
+    // A long garment (a dress, pants) has further to fall, so it settles for longer.
+    const long = this.pattern.style === "dress" || this.pattern.measures.length > 85
+    // Pants are sewn without gravity (nothing holds them up until they're closed); a skirt, held at its
+    // waistband, is sewn hanging, so it falls straight.
+    const skirt = this.bottoms && item.style === "skirt"
+    this.steps = this.drape.phases(skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
+      : this.bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0 }
+      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4 } : { settleFrames: 140, calmFrames: 45 })
     this.phase = "sewing"
     this.done = false
     this.frame = frame
@@ -202,7 +242,7 @@ export class DrapedTop {
 
   makeMaterials(renderer) {
     const { item, pattern } = this
-    const surface = surfaceFor(item.style, item.fabric)
+    const surface = this.bottoms ? bottomSurface(item.style, item.fabric) : surfaceFor(item.style, item.fabric)
     const knit = ["jersey", "fleece", "rib"].includes(surface)
     const details = {
       stitch: knit ? "hem" : "topstitch", closure: pattern.closure, pocket: item.style === "hoodie" ? "kangaroo" : null,
@@ -226,6 +266,7 @@ export class DrapedTop {
 
   // A print from the shop's photo (print.js's readPhoto; null for none), laid on the front.
   setPrint(print) {
+    if (this.bottoms) print = null   // a print is read off a top's front
     if (print?.image === this.printImage) return
     this.printImage = print?.image ?? null
     this.printTexture?.dispose()
@@ -331,6 +372,20 @@ export class DrapedTop {
     const m = this.pattern.measures
     const { cloth } = this
     const out = this.geometry.attributes.color.array
+    if (this.bottoms) {
+      // Pants: the waist (and waistband), the seat, the thigh, then down the leg to the hem (its length).
+      const legs = { waist: colorOf("waist"), seat: colorOf("seat"), thigh: colorOf("thigh"), inseam: colorOf("inseam"), leg_opening: colorOf("leg_opening") }
+      for (let i = 0; i < cloth.points.length; i++) {
+        const name = cloth.panels[cloth.panel[i]]
+        const py = cloth.points[i][1]
+        const part = name === "waistband" ? "waist" : name.startsWith("cuff") ? "leg_opening"
+          : py > -6 ? "waist" : py > -m.rise ? "seat" : py > -(m.rise + m.kneeAt * 0.6) ? "thigh" : py > -(m.length - 10) ? "inseam" : "leg_opening"
+        const c = status[part] ? legs[part] : neutral
+        out[3 * i] = c.r; out[3 * i + 1] = c.g; out[3 * i + 2] = c.b
+      }
+      this.geometry.attributes.color.needsUpdate = true
+      return
+    }
     const mixed = new THREE.Color()
     for (let i = 0; i < cloth.points.length; i++) {
       const name = cloth.panels[cloth.panel[i]]
@@ -389,10 +444,10 @@ function hemisphere(count) {
 
 // The frame and collision field for a body snapshot, with the egg in place of the head. over: snapshots of
 // garments already on the body (trousers) for the cloth to lie over as well.
-export function prepareBody(body, egg, over = []) {
+export function prepareBody(body, egg, over = [], { arms = true } = {}) {
   const frame = bodyFrame(body)
   if (egg) frame.head = { centre: egg.centre, rx: egg.radii[0], rz: egg.radii[2], top: egg.centre[1] + egg.radii[1] }
-  const field = collisionBody(merge(body, over), frame, egg, body.positions.length / 3)
+  const field = collisionBody(merge(body, over), frame, egg, body.positions.length / 3, { arms })
   return { frame, field }
 }
 

@@ -72,6 +72,25 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "hoodie", top("Pullover Hoodie")[:style]
   end
 
+  test "polos, tank tops, sweaters and cardigans are drawn as themselves" do
+    assert_equal "polo", top("Kith Tilden Polo")[:style]
+    assert_equal "tank", top("Kith Crest Ribbed Tank")[:style]
+    assert_equal "sweater", top("Wyona Sweater")[:style]
+    assert_equal "sweater", top("Merino Crewneck Sweater")[:style]
+    assert_equal "cardigan", top("Color-Blocked Cardigan")[:style]
+    assert_equal "sweatshirt", top("Undercover Cindy Sherman Sweatshirt")[:style]
+  end
+
+  test "shorts, skirts, leggings and joggers are bottoms in their own styles" do
+    import = GarmentImport.new
+    read = ->(name, category) { product = { name:, category:, sorted: true }; [ import.send(:kind_of, product), import.send(:bottom_style_of, product) ] }
+    assert_equal [ "trousers", "shorts" ], read.("Teatora Wallet Short Resort", "Shorts")
+    assert_equal [ "trousers", "skirt" ], read.("Aya Muse Obra Skirt", "Mini Skirts")
+    assert_equal [ "trousers", "leggings" ], read.("Kith Women Avery Tights", "Leggings")
+    assert_equal [ "trousers", "joggers" ], read.("Loose Fit Sweatpant", "Sweatpants")
+    assert_equal [ "trousers", "jeans" ], read.("Maria Slim Bootcut Jean", "Jeans")
+  end
+
   test "reads a resale listing's own measurements, skipping style tags between label and value" do
     garment = GarmentImport.new.from_page(page("resale-coat"), source_url: "https://shop.example/coat")
 

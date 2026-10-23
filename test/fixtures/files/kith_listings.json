@@ -534,7 +534,8 @@
 "waist": 87,
 "seat": 114
 }
-}
+},
+"style": "trousers"
 }
 },
 {
@@ -641,7 +642,8 @@
 ],
 "expect": {
 "garment": "trousers",
-"women": false
+"women": false,
+"style": "trousers"
 }
 },
 {
@@ -667,7 +669,8 @@
 "tables": [],
 "expect": {
 "garment": "trousers",
-"women": true
+"women": true,
+"style": "jeans"
 }
 },
 {
@@ -691,7 +694,8 @@
 "tables": [],
 "expect": {
 "garment": "trousers",
-"women": true
+"women": true,
+"style": "trousers"
 }
 },
 {
@@ -715,7 +719,8 @@
 "tables": [],
 "expect": {
 "garment": "trousers",
-"women": true
+"women": true,
+"style": "trousers"
 }
 },
 {
@@ -742,7 +747,9 @@
 ],
 "tables": [],
 "expect": {
-"error": "not_supported"
+"garment": "trousers",
+"style": "shorts",
+"women": false
 }
 },
 {
@@ -765,7 +772,9 @@
 ],
 "tables": [],
 "expect": {
-"error": "not_supported"
+"garment": "trousers",
+"style": "skirt",
+"women": true
 }
 },
 {
@@ -788,7 +797,9 @@
 ],
 "tables": [],
 "expect": {
-"error": "not_supported"
+"garment": "trousers",
+"style": "skirt",
+"women": true
 }
 },
 {

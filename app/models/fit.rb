@@ -36,6 +36,29 @@ module Fit
   SIZE_MEASUREMENTS = %w[chest waist shoulders sleeve length].freeze
   TROUSER_MEASUREMENTS = %w[waist seat thigh inseam leg_opening].freeze
 
+  # Leggings stretch over the body: made a little smaller than it, at the waist and the seat.
+  LEGGINGS_WAIST_EASE = -12..1
+  LEGGINGS_SEAT_EASE = { "slim" => -16..-4, "regular" => -14..-2, "classic" => -10..1 }.freeze
+  # The knee is about this share of the way down from the crotch to the floor.
+  KNEE_SHARE = 0.47
+
+  # Where a skirt ends, from the waist down: the knee is about this far below it, a little under a third of
+  # the height (or the inseam's share, when given).
+  def skirt_length(length, inseam, height)
+    knee = inseam ? inseam * (1 - KNEE_SHARE) + height.to_f * 0.13 : height.to_f * 0.32
+    above = (knee - length).round
+    note = above >= 3 ? "Ends about #{above} cm above the knee" : above <= -3 ? "Ends about #{-above} cm below the knee" : "Ends at the knee"
+    note = "Ends near the ankle" if length > knee + 25
+    Check.new(part: "length", label: "Length", ease: (length - knee).round(1), status: "good", fix: nil, penalty: 0, note:)
+  end
+
+  # Where shorts end: above or at the knee, said in centimetres.
+  def shorts_length(inseam, leg)
+    above = (leg * KNEE_SHARE - inseam).round
+    note = above >= 2 ? "Ends about #{above} cm above the knee" : above <= -2 ? "Ends about #{-above} cm below the knee" : "Ends at the knee"
+    Check.new(part: "inseam", label: "Length", ease: (inseam - leg * KNEE_SHARE).round(1), status: "good", fix: nil, penalty: 0, note:)
+  end
+
   # Trousers sit at the waist with a little room, need more over the seat (by cut), and break just above
   # the shoe: about 3 cm shorter than the inseam measured to the floor.
   TROUSER_WAIST_EASE = 0..3
@@ -139,24 +162,31 @@ module Fit
     Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
   end
 
-  def check_trousers(body, size, cut = "regular")
+  # style: "shorts" (their length is where they end, not right or wrong), "leggings" (stretch, made smaller
+  # than the body), or another (trousers, jeans, joggers).
+  def check_trousers(body, size, cut = "regular", style: nil)
+    stretch = style == "leggings"
     checks = [
-      given(size, "waist", "Waist") { range_check(:trouser_waist, "Waist", it - body["waist"], TROUSER_WAIST_EASE, shown_as: "waist") },
+      given(size, "waist", "Waist") { range_check(:trouser_waist, "Waist", it - body["waist"], stretch ? LEGGINGS_WAIST_EASE : TROUSER_WAIST_EASE, shown_as: "waist") },
       given(size, "seat", "Seat") do |seat|
         next needs(:seat, "Seat", "hips") unless body["hips"]
 
-        range_check(:seat, "Seat", seat - body["hips"], SEAT_EASE.fetch(cut))
+        range = stretch ? LEGGINGS_SEAT_EASE.fetch(cut) : SEAT_EASE.fetch(cut)
+        found = range_check(:seat, "Seat", seat - body["hips"], range)
+        stretch && found.status == "good" ? found.with(note: "Stretches to fit close to the body") : found
       end,
-      given(size, "inseam", "Length") do |inseam|
+      (style == "skirt" ? given(size, "length", "Length") { skirt_length(it, body["inseam"], body["height"]) } : nil),
+      (style == "skirt" ? nil : given(size, "inseam", "Length") do |inseam|
         next needs(:inseam, "Length", "inseam") unless body["inseam"]
+        next shorts_length(inseam, body["inseam"]) if style == "shorts"
 
         hem_check(inseam - (body["inseam"] - HEM_ABOVE_FLOOR))
-      end,
-      given(size, "leg_opening", "Leg") do |opening|
-        style = LEG_OPENINGS.find { |limit, _| opening < limit }.last
-        Check.new(part: "leg_opening", label: "Leg", ease: nil, status: "good", fix: nil, penalty: 0, note: "Cut with #{style}")
-      end
-    ]
+      end),
+      (style == "skirt" ? nil : given(size, "leg_opening", "Leg") do |opening|
+        leg = LEG_OPENINGS.find { |limit, _| opening < limit }.last
+        Check.new(part: "leg_opening", label: "Leg", ease: nil, status: "good", fix: nil, penalty: 0, note: "Cut with #{leg}")
+      end)
+    ].compact
     Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
   end
 
@@ -283,7 +313,7 @@ module Fit
     cuts = nil
     results = sizes.map do |size|
       case garment
-      when "trousers" then check_trousers(body, size, cut)
+      when "trousers" then check_trousers(body, size, cut, style:)
       when "top" then style == "dress" ? check_dress(body, size, cut, details.to_h) : check_top(body, size, cut, cuts ||= design(sizes, details.to_h), style:, details: details.to_h)
       else check_size(body, size, cut, garment)
       end

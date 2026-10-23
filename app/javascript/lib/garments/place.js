@@ -17,7 +17,7 @@ export function placeCloth(cloth, pattern, frame) {
   // A long garment (a dress) is lifted whole (see torso): fading the lift out would stretch it below the arms,
   // and as it springs back while it's sewn it hauls the skirt up the legs.
   const long = m.length > 85
-  const radius = m.chest / (2 * Math.PI) / 100
+  const radius = (m.chest ?? m.seat) / (2 * Math.PI) / 100
   const hpsY = frame.hps[1]
 
   // How far each row (by cm down from the shoulder's high point) of the body panels reaches out to the side.
@@ -114,6 +114,115 @@ export function placeCloth(cloth, pattern, frame) {
     return [h.centre[0] + r * Math.sin(angle), y, h.centre[2] + r * Math.cos(angle)]
   }
 
+  // Pants: each leg piece round its quarter of the hips above the crotch, and round its half of the leg
+  // below it. The crotch point hangs a little below the body's; a leg longer than the leg starts gathered
+  // above the ankle, as extra length stacks there.
+  const legRows = new Map()
+  function legSpan(name) {
+    if (legRows.has(name)) return legRows.get(name)
+    const edges = pattern.panels[name].edges
+    const along = e => edges.find(x => x.name === e).points
+    const xAt = (points, y) => {
+      for (let k = 1; k < points.length; k++) {
+        const [x0, y0] = points[k - 1], [x1, y1] = points[k]
+        if ((y - y0) * (y - y1) <= 0 && y0 !== y1) return x0 + (x1 - x0) * (y - y0) / (y1 - y0)
+      }
+      // Past its ends: the nearer end's x.
+      const first = points[0], last = points[points.length - 1]
+      return Math.abs(y - first[1]) < Math.abs(y - last[1]) ? first[0] : last[0]
+    }
+    const side = along("side"), inseam = along("inseam"), crotch = along("crotch")
+    const span = py => [py < -m.rise ? xAt(inseam, py) : xAt(crotch, py), xAt(side, py)]
+    legRows.set(name, span)
+    return span
+  }
+  const topY = frame.crotch - 0.015 + m.rise / 100
+  // How far off the body to start a waist or a hip: the usual gap where the cloth has room, but no more
+  // than its own round allows (a skirt's 72 cm waist on a 71 cm body starts a few millimetres off it, not
+  // 2 cm, which would stretch it a fifth bigger and send it riding up as it springs back).
+  const girths = new Map()
+  const bodyGirth = (y, outline) => {
+    const key = `${outline}:${Math.round(y * 500)}`
+    if (!girths.has(key)) {
+      const at = (yy, a) => frame.torso[outline](yy, a)
+      let sum = 0, last = null, first = null
+      for (let k = 0; k < 48; k++) {
+        const a = (k / 48) * 2 * Math.PI, r = at(y, a), q = [r * Math.sin(a), r * Math.cos(a)]
+        if (last) sum += Math.hypot(q[0] - last[0], q[1] - last[1]); else first = q
+        last = q
+      }
+      girths.set(key, sum + Math.hypot(first[0] - last[0], first[1] - last[1]))
+    }
+    return girths.get(key)
+  }
+  const gapFor = (y, round, outline) => Math.min(GAP, Math.max(0.003, (round - bodyGirth(y, outline)) / (2 * Math.PI)))
+  function leg([px, py], place, name) {
+    const [inner, outer] = legSpan(name)(py)
+    const sign = place.side === "L" ? 1 : -1
+    if (py >= -m.rise) {
+      const y = topY + py / 100
+      const angle = (place.part === "back" ? Math.PI : 0) + (px / Math.max(Math.abs(outer), 1)) * (Math.PI / 2)
+      // The slice's convex outline (the tape's round), not the widened reach kept for collisions, which
+      // runs several centimetres bigger.
+      const reach = frame.torso.envelope(y, angle)
+      const round = (Math.abs(outer) * 4) / 100
+      const r = Math.max(reach + gapFor(y, round, "envelope"), round / (2 * Math.PI))
+      return [r * Math.sin(angle), y, frame.torso.centreAt(y) + r * Math.cos(angle)]
+    }
+    const legLine = frame.legs[place.side]
+    const below = (-py - m.rise) / 100
+    const room = frame.crotch - 0.015 - (frame.floor + 0.02)
+    let drop = below
+    if (m.inseam / 100 > room) {
+      const free = 0.55 * room, k = (room - free) / (m.inseam / 100 - free)
+      drop = below <= free ? below : free + (below - free) * k
+    }
+    const y = frame.crotch - 0.015 - drop
+    const { point, t } = legLine.atHeight(Math.max(y, legLine.chain[2][1]))
+    const u = Math.min(Math.max((px - inner) / ((outer - inner) || 1), 0), 1)
+    const theta = (u - 0.5) * Math.PI
+    const width = Math.abs(outer - inner) / 100
+    const r = Math.max(width / Math.PI, legLine.reachAt(t) + GAP)
+    const facing = place.part === "back" ? -1 : 1
+    return [point[0] + r * Math.sin(theta) * sign, y, point[2] + r * Math.cos(theta) * facing]
+  }
+
+  // A skirt: round the hips from its top, and below the crotch round both legs together (their convex
+  // outline), a little off them.
+  // Below the seat a flared skirt is a cone: its side seams are straight lines that meet above it. Laid on
+  // that cone (each piece a slice of it, the way a circle skirt is cut), the cloth starts at its own size
+  // both round and down; laid in level rings, its sides would start a few per cent too long and spring
+  // back, crumpling the hem.
+  const cone = (() => {
+    if (!m.skirt) return null
+    const hh = m.seat / 4, he = m.hem / 4, run = m.length - m.seatAt
+    const k = (he - hh) / run
+    if (k < 0.02) return null
+    const apex = -m.seatAt + hh / k                    // pattern y where the side lines meet
+    const alpha = Math.atan(k)                          // each half piece's angle at the apex
+    const spread = (2 * alpha) / Math.PI                // the cone's radius per unit of slant
+    return { apex, alpha, spread, fall: Math.sqrt(Math.max(1 - spread * spread, 0)), seatSlant: apex + m.seatAt }
+  })()
+  function skirt([px, py], place, name) {
+    if (cone && py < -m.seatAt) {
+      const dy = cone.apex - py, rho = Math.hypot(px, dy), phi = Math.atan2(px, dy)
+      const theta = (place.part === "back" ? Math.PI : 0) + (phi / cone.alpha) * (Math.PI / 2)
+      // Down its own line from the seat's row, which is level.
+      const y = topY + (-m.seatAt - (rho - cone.seatSlant / Math.cos(phi)) * cone.fall) / 100
+      const reach = frame.torso.envelope(y, theta)
+      const r = Math.max(reach + 0.003, (rho * cone.spread) / 100)
+      return [r * Math.sin(theta), y, frame.torso.centreAt(y) + r * Math.cos(theta)]
+    }
+    const y = topY + py / 100
+    const edges = pattern.panels[name].edges
+    const sideX = Math.abs(edges.find(e => e.name.startsWith("side_")).points.reduce((best, [x, yy]) => (Math.abs(yy - py) < Math.abs(best[1] - py) ? [x, yy] : best))[0])
+    const angle = (place.part === "back" ? Math.PI : 0) + (px / Math.max(sideX, 1)) * (Math.PI / 2)
+    const reach = frame.torso.envelope(y, angle)
+    const round = (sideX * 4) / 100
+    const r = Math.max(reach + gapFor(y, round, "envelope"), round / (2 * Math.PI))
+    return [r * Math.sin(angle), y, frame.torso.centreAt(y) + r * Math.cos(angle)]
+  }
+
   cloth.panels.forEach((name, panelIndex) => {
     const place = pattern.panels[name].place
     if (place.at === "band") return
@@ -139,7 +248,8 @@ export function placeCloth(cloth, pattern, frame) {
     for (let i = 0; i < n; i++) {
       if (cloth.panel[i] !== panelIndex) continue
       const p = cloth.points[i]
-      const q = place.at === "torso" ? torso(p, place.side, lift) : place.at === "arm" ? arm(p, place.side, widthAt, squeeze) : head(p, place.side, width, tall)
+      const q = place.at === "torso" ? torso(p, place.side, lift) : place.at === "arm" ? arm(p, place.side, widthAt, squeeze)
+        : place.at === "leg" ? leg(p, place, name) : place.at === "skirt" ? skirt(p, place, name) : head(p, place.side, width, tall)
       out.set(q, 3 * i)
       done[i] = 1
     }

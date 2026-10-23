@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, measureTop } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, measureTop, measureBottom } from "../../app/javascript/lib/garments/print.js"
 
 // A made-up product photo: a navy tee on a light grey background, with a white square printed on its chest.
 function photo({ print = true } = {}) {
@@ -56,4 +56,45 @@ test("reads how high a tee's arms are sewn in, against its width", () => {
   assert.ok(close.armpit * close.length < 0.62, `close depth ${close.armpit * close.length}`)
   assert.ok(roomy.armpit * roomy.length >= 0.72, `roomy depth ${roomy.armpit * roomy.length}`)
   assert.ok(close.waist > 0.95 && close.waist < 1.05, `waist ${close.waist}`)
+})
+
+// Pants laid flat: a waistband, a seat, two legs from the crotch down; or a skirt flaring out.
+function bottoms({ hem = 30, skirt = false }) {
+  const w = 240, h = 300, data = new Uint8ClampedArray(4 * w * h)
+  const top = 20, crotch = 100, bottom = 280, x0 = 70, x1 = 170
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let on = false
+      if (y > top && y < bottom) {
+        const t = (y - crotch) / (bottom - crotch)
+        if (skirt) { const half = 50 + (y - top) * 0.25; on = Math.abs(x - 120) < half }
+        else if (y < crotch) on = x > x0 && x < x1
+        else { const legW = 48 + (hem - 48) * t; on = (x > x0 && x < x0 + legW) || (x < x1 && x > x1 - legW) }
+      }
+      data.set([...(on ? [40, 40, 44] : [236, 236, 236]), 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h }
+}
+
+test("reads pants' legs and a skirt's flare, against the waist", () => {
+  const wide = bottoms({ hem: 48 }), slim = bottoms({ hem: 24 }), skirt = bottoms({ skirt: true })
+  const a = measureBottom(wide.data, wide.w, wide.h), b = measureBottom(slim.data, slim.w, slim.h), c = measureBottom(skirt.data, skirt.w, skirt.h)
+  assert.ok(Math.abs(a.length - 260 / 100) < 0.1, `length ${a.length}`)
+  assert.ok(Math.abs(a.rise - 80 / 260) < 0.05, `rise ${a.rise}`)
+  assert.ok(a.hem > 0.42 && b.hem < 0.3, `hems ${a.hem} ${b.hem}`)
+  assert.equal(c.skirt, true)
+  assert.ok(c.hem > 1.6, `skirt hem ${c.hem}`)
+})
+
+test("a hem's fold of light and a shadow down the side aren't taken for a print", () => {
+  const { data, w, h } = photo({ print: true })
+  // A light line across near the hem, and a dark-grey streak down one side of the body.
+  for (let x = 55; x < 145; x++) for (let y = 148; y < 150; y++) data.set([200, 200, 205, 255], 4 * (y * w + x))
+  for (let y = 75; y < 150; y++) for (let x = 53; x < 55; x++) data.set([150, 150, 155, 255], 4 * (y * w + x))
+  const found = findPrint(data, w, h)
+  const at = (x, y) => 4 * (y * found.print.width + x)
+  const [x0, top] = found.rect
+  assert.equal(found.print.data[at(60 - x0, 149 - top) + 3], 0, "the hem's line is gone")
+  assert.equal(found.print.data[at(49, 50) + 3], 255, "the print stays")
 })

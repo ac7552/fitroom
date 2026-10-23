@@ -25,6 +25,13 @@ export const STYLES = {
   bomber: { sleeve: "long", collar: "rib", cuffs: "rib", hem: "rib", fabric: "shell", ease: 18, length: 0.38, closure: "zip" },
   shirt: { sleeve: "long", collar: "stand", cuffs: "band", hem: "band", fabric: "twill", ease: 14, length: 0.38, closure: "buttons" },
   coat: { sleeve: "long", collar: "stand", cuffs: null, hem: null, fabric: "wool", ease: 20, length: 0.55, closure: "buttons" },
+  // A polo: a knit collar, a short buttoned placket, banded sleeves.
+  polo: { sleeve: "short", collar: "stand", cuffs: null, hem: null, fabric: "jersey", ease: 10, length: 0.41, closure: "placket" },
+  // A tank top: no sleeves, deep armholes, its straps in from the shoulders.
+  tank: { sleeve: null, collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 6, length: 0.41 },
+  // Knitwear: a sweater (ribbed neck, cuffs and hem) and a cardigan (the same, buttoned down a V front).
+  sweater: { sleeve: "long", collar: "rib", cuffs: "rib", hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4 },
+  cardigan: { sleeve: "long", collar: "band", cuffs: "rib", hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4, closure: "buttons", neck: 20 },
   // Short sleeves, a round neck, close at the waist and flaring out to about the knee.
   dress: { sleeve: "short", collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 8, length: 0.53, shaped: true }
 }
@@ -45,8 +52,10 @@ const HEMS = { rib: { height: 6.5, stretch: 0.86, fabric: "rib" }, band: { heigh
 // cut: a dress's cut (see GarmentImport::DressCut), for styleName "dress".
 export function draftTop(styleName, size, body, cut = null) {
   if (styleName === "dress" && cut && !["short", "long"].includes(cut.sleeves)) return draftDress(size, body, cut)
+  if (styleName === "tank") return draftTank(size, body)
   const style = dressStyle(STYLES[styleName] ?? STYLES.tee, cut)
   const m = measures(style, size, body)
+  if (style.neck) m.frontNeck = style.neck
   if (style.shaped) {
     shapeSkirt(m, size, body, cut)
     if (cut?.neckline) m.frontNeck = NECK_DEPTH[cut.neckline] ?? m.frontNeck
@@ -313,6 +322,30 @@ function shapeSkirt(m, size, body, cut) {
   m.hem = Math.max(m.shaped.hips, m.chest * 0.9) * (HEM_FLARE[fit] ?? 1.05)
   // A shaped side can't come in to a waist wider than the chest.
   m.shaped.waist = Math.min(m.shaped.waist, m.chest)
+}
+
+// A tank top: a front and a back joined at the sides and over the shoulders on wide straps, its armholes
+// cut deep and its neck scooped, both faced (no bands).
+function draftTank(size, body) {
+  const style = STYLES.tank
+  const m = measures({ ...style, sleeve: "short" }, size, body)
+  const shoulderBone = body.shoulders / 2
+  m.shoulders = 2 * (shoulderBone - 4)
+  m.neckWidth = Math.max(m.neckWidth + 1.5, shoulderBone - 4 - 6)
+  m.shoulderDrop = 2
+  m.armhole += 5
+  m.frontNeck = 13
+  m.backNeck = 4
+  const panels = {
+    front: { edges: bodice(m, "front"), place: { at: "torso", side: "front" }, fabric: "main" },
+    back: { edges: bodice(m, "back"), place: { at: "torso", side: "back" }, fabric: "main" }
+  }
+  const seams = []
+  for (const s of ["L", "R"]) {
+    seams.push(["front", `side_${s}`, "back", `side_${s}`])
+    seams.push(["front", `shoulder_${s}`, "back", `shoulder_${s}`])
+  }
+  return { panels, seams, style: "tank", closure: null, fabric: style.fabric, measures: m }
 }
 
 // How each sleeveless cut sits on the shoulder: how far in from the shoulder bone its strap's outside edge is,
