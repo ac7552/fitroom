@@ -5,9 +5,11 @@ no accounts, no uploads, no photos, nothing saved about the user on the server o
 
 ## Now
 
-Build an outfit (a jacket, a coat over it, trousers) from links, pasted charts or photos with measurements,
-and see it on a white display mannequin in your shape, in any sizes and a few poses, with a fit map and a
-tailor's verdict for each item. The web page and a future mobile app share one JSON API.
+Build an outfit (a top, a jacket, a coat over it, pants or a skirt) from links, pasted charts or photos with
+measurements, and see it on a white display mannequin in your shape, in any sizes and a few poses, with a
+fit map and a tailor's verdict for each item. Tops, casual jackets, pants and skirts are sewn from patterns
+and draped in layers; a tee, polo, tank or shirt can be worn tucked in. The web page and a future mobile app
+share one JSON API.
 
 ## Next
 
@@ -24,7 +26,11 @@ measurements fine-tune them.
 **The details of complicated clothes.** Belts, ties and sashes, scarves, cut-outs, sheer panels, ruffles and
 uneven hems are named on the item card but not drawn yet.
 
-**Trousers and skirts draped like the tops,** and women's blazers and coats (today they're the men's cut).
+**Women's blazers and coats** (today they're the men's cut), and suit jackets and coats draped like the
+casual jackets, so a top shows under them.
+
+**Shoes, socks and belts.** Imports turn them away today. Shoes would be a simple shell round the foot, fit
+by foot length; socks a tight tube under the pants; belts a band at the waistband, fit by waist.
 
 **A test set of real listings.** Shirts, pants, dresses and things Fitroom doesn't fit yet (belts, shoes),
 each with what it should come out as, run against every change.
