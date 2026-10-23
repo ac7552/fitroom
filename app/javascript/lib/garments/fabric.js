@@ -9,6 +9,7 @@ import * as THREE from "three"
 //   aPiece   which piece it's on (1 the front, 0 the rest)
 //   aShade   how open to the room it is (1) or tucked into a fold or under the hood (less): ambient light
 //            reaching it, worked out from the drape
+//   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
 
 // Each cloth: the texture, its tile (metres of cloth one repeat covers), and its finish.
 const CLOTHS = {
@@ -17,8 +18,9 @@ const CLOTHS = {
   fleece: { surface: "fleece", tile: 0.025, roughness: 0.97, sheen: 0.75, sheenRoughness: 0.85, normal: 0.4 },
   twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5 },
   shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25 },
-  // Nylon pants: a soft satin sheen, far less glossy than a jacket's shell.
-  satin: { surface: "fine", tile: 0.012, roughness: 0.62, sheen: 0.35, sheenRoughness: 0.4, normal: 0.1, clearcoat: 0.04, clearcoatRoughness: 0.6 },
+  // Nylon pants (track pants, technical trousers): a tight plain weave, matte, with only a faint sheen along
+  // the folds; nothing like a jacket's glossy shell.
+  matte: { surface: "plain", tile: 0.006, roughness: 0.82, sheen: 0.16, sheenRoughness: 0.55, normal: 0.12 },
   wool: { surface: "felt", tile: 0.03, roughness: 0.95, sheen: 0.4, sheenRoughness: 0.6, normal: 0.35 },
   // Leather: a fine grain, mostly matte with a soft sheen, not a plastic shine.
   leather: { surface: "grain", tile: 0.04, roughness: 0.62, sheen: 0.2, sheenRoughness: 0.45, normal: 0.22, clearcoat: 0.12, clearcoatRoughness: 0.7 },
@@ -87,6 +89,12 @@ function heightField(kind) {
           // Diagonal ridges of the weave, with the yarns' slubs.
           const ridge = 0.5 + 0.5 * Math.cos((u + v) * 2 * Math.PI * 16)
           value = ridge * 0.7 + noise(u, v, 16) * 0.2 + noise(u, v, 3) * 0.1
+          break
+        }
+        case "plain": {
+          // Over-under: each crossing of warp and weft is a little bump, in a checkerboard.
+          const weave = Math.sin(u * 2 * Math.PI * 24) * Math.sin(v * 2 * Math.PI * 24)
+          value = 0.5 + weave * 0.3 + noise(u, v, 12) * 0.2
           break
         }
         case "ripstop": {
@@ -182,13 +190,15 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aHem;
         attribute float aPiece;
         attribute float aShade;
+        attribute float aHide;
+        varying float vHide;
         varying float vEdge;
         varying float vHem;
         varying float vPiece;
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vPattern = uv * 100.0;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPattern = uv * 100.0;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
     shader.fragmentShader = shader.fragmentShader
@@ -204,6 +214,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPrintOn;
         uniform float uPrintHalf;
         uniform float uPrintLength;
+        varying float vHide;
         varying float vEdge;
         varying float vHem;
         varying float vPiece;
@@ -228,6 +239,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           return d;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+        if ( vHide > 0.0 ) discard;
         vec3 thread = uThread;
         float groove = 1.0 - smoothstep( 0.0, 0.45, vEdge );
         float stitch = 0.0, metal = 0.0, shadow = 0.0;

@@ -46,8 +46,24 @@ export class Drape {
   // floor: a height cloth can't fall below (pants longer than the leg pile up there), or null.
   // ring: { points (cloth point indices round a waist) }: a waistband, which holds the garment up (see
   // holdRing).
-  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null } = {}) {
+  // feet: bodyFrame's feet, for pants: each leg's cloth stays outside its own foot's outline (see stayOffFeet).
+  // snug: how far round (m) a pant leg's hem can stretch, for stayOffFeet: a cuff smaller than the foot stays
+  // above the ankle instead of being pulled down over it.
+  // tuck: { table (body.js's torso table), top (a height), raise (m higher at the middle of the back), inside
+  // (m) }: a top tucked into pants. Below `top` its body pieces stay within `inside` of the body's convex
+  // outline, gathered as a waistband holds them.
+  // hemStrip: false keeps a hem's edge in a smooth line without stiffening the strip above it. Round a pant
+  // leg, a stiff, heavy strip hinged on softer cloth rolls outwards like a turned-up cuff.
+  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, tuck = null, hemStrip = true } = {}) {
+    this.hemStrip = hemStrip
+    this.snug = snug
+    this.tuck = tuck
+    // The pieces a tuck gathers: the body's own, not the sleeves (in some poses the hands hang lower).
+    this.tucks = Uint8Array.from(cloth.panel, p => (/^(front|back|waistband)/.test(cloth.panels[p]) ? 1 : 0))
     this.envelope = envelope
+    this.feet = feet
+    // Which leg each pattern point is on: 1 the left, -1 the right, 0 neither.
+    this.legSide = Int8Array.from(cloth.panel, p => { const name = cloth.panels[p]; return /_L$/.test(name) ? 1 : /_R$/.test(name) ? -1 : 0 })
     this.hangs = Boolean(envelope)   // hangs round both legs (a skirt, a dress), in any pose
     this.floor = floor
     this.ring = ring && ring.points.length >= 8 ? { ...ring, order: ringOrder(ring.points, start) } : null
@@ -120,7 +136,7 @@ export class Drape {
         const flatKey = i < j ? `${i},${j}` : `${j},${i}`
         const o = opposite.get(flatKey)
         if (o === undefined) opposite.set(flatKey, k)
-        else if (map[o] !== map[k]) bends.push(map[o], map[k], Math.hypot(pts[o][0] - pts[k][0], pts[o][1] - pts[k][1]) / 100, this.isHem[o] && this.isHem[k])
+        else if (map[o] !== map[k]) bends.push(map[o], map[k], Math.hypot(pts[o][0] - pts[k][0], pts[o][1] - pts[k][1]) / 100, this.hemStrip && this.isHem[o] && this.isHem[k])
       }
     }
     const count = edgeRest.size
@@ -258,10 +274,19 @@ export class Drape {
     const hit = field.hit
     const thick = this.params.thickness, keep = this.friction
     const n = p.length / 3
+    const tucks = this.tuck ? this.tuckedPoints() : null
     for (let i = 0; i < n; i++) {
       const px = p[3 * i], py = p[3 * i + 1], pz = p[3 * i + 2]
       const d = field.at(px, py, pz)
-      if (d >= thick) continue
+      if (d >= thick) {
+        // Tucked in, cloth is pressed onto the body all the way round, into its hollows (the small of the back)
+        // as well: the pants over it follow the body there too.
+        if (tucks?.[i] && d < 0.05 && this.underTuck(px, py, pz)) {
+          const pull = d - thick
+          p[3 * i] -= hit[0] * pull; p[3 * i + 1] -= hit[1] * pull; p[3 * i + 2] -= hit[2] * pull
+        }
+        continue
+      }
       const nx = hit[0], ny = hit[1], nz = hit[2]
       const push = thick - d
       let qx = px + nx * push, qy = py + ny * push, qz = pz + nz * push
@@ -273,6 +298,8 @@ export class Drape {
       p[3 * i] = qx; p[3 * i + 1] = qy; p[3 * i + 2] = qz
     }
     if (this.envelope) this.stayOutside()
+    if (this.tuck) this.stayTucked()
+    if (this.feet) this.stayOffFeet()
     if (this.floor !== null) {
       // On the floor, cloth stays put rather than sliding (it rests on it).
       for (let i = 0; i < n; i++) {
@@ -304,11 +331,17 @@ export class Drape {
     }
     const r2 = radius * radius
     const start = this.neighbourStart, nb = this.neighbours
+    // Tucked under a waistband, cloth gathers in layers too thin to keep apart; it's hidden there anyway.
+    let quiet = null
+    if (this.tuck && this.simTucks) {
+      quiet = this.quiet?.length === n ? this.quiet : (this.quiet = new Uint8Array(n))
+      for (let i = 0; i < n; i++) quiet[i] = this.simTucks[i] && this.underTuck(p[3 * i], p[3 * i + 1], p[3 * i + 2]) ? 1 : 0
+    }
     for (let i = 0; i < n; i++) {
       const ix = Math.floor(p[3 * i] / cell), iy = Math.floor(p[3 * i + 1] / cell), iz = Math.floor(p[3 * i + 2] / cell)
       for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) for (let oz = -1; oz <= 1; oz++) {
         for (let j = head[key(ix + ox, iy + oy, iz + oz)]; j >= 0; j = next[j]) {
-          if (j <= i) continue
+          if (j <= i || (quiet && quiet[i] && quiet[j])) continue
           const dx = p[3 * j] - p[3 * i], dy = p[3 * j + 1] - p[3 * i + 1], dz = p[3 * j + 2] - p[3 * i + 2]
           const d2 = dx * dx + dy * dy + dz * dz
           if (d2 >= r2 || d2 < 1e-14) continue
@@ -320,6 +353,100 @@ export class Drape {
           p[3 * j] += dx * push; p[3 * j + 1] += dy * push; p[3 * j + 2] += dz * push
         }
       }
+    }
+  }
+
+  // Near the floor, each leg's points go out of their own foot: up onto it (the instep, the heel) when its top
+  // is nearer, else out to the nearest side of its outline. Pushed only sideways, a hem landing on the instep
+  // is shoved round the foot and twists the leg.
+  stayOffFeet() {
+    const { p } = this
+    const thick = this.params.thickness
+    const map = this.map
+    if (map && !this.simSide) {
+      this.simSide = new Int8Array(this.x.length / 3)
+      for (let i = 0; i < map.length; i++) if (this.legSide[i]) this.simSide[map[i]] = this.legSide[i]
+    }
+    const side = map ? this.simSide : this.legSide
+    const n = p.length / 3
+    for (let i = 0; i < n; i++) {
+      if (!side[i]) continue
+      const foot = side[i] > 0 ? this.feet.L : this.feet.R
+      const y = p[3 * i + 1]
+      if (y > foot.top) continue
+      // A snug hem can't slip lower than the foot lets it; there it stays put, as on the floor.
+      const low = this.snug ? ((foot.snugAt ??= new Map()).get(this.snug) ?? foot.snugAt.set(this.snug, foot.lowest(this.snug)).get(this.snug)) : -Infinity
+      if (y < low) {
+        p[3 * i + 1] = low
+        p[3 * i] = this.x[3 * i] + (p[3 * i] - this.x[3 * i]) * 0.3
+        p[3 * i + 2] = this.x[3 * i + 2] + (p[3 * i + 2] - this.x[3 * i + 2]) * 0.3
+        continue
+      }
+      const hull = foot.at(y)
+      if (!hull) continue
+      const px = p[3 * i], pz = p[3 * i + 2]
+      let best = Infinity, bx = 0, bz = 0
+      let inside = true
+      for (let k = 0; k < hull.length; k++) {
+        const [ax, az] = hull[k], [cx, cz] = hull[(k + 1) % hull.length]
+        const ex = cx - ax, ez = cz - az, len = Math.hypot(ex, ez) || 1
+        const d = (ex * (pz - az) - ez * (px - ax)) / len   // > 0: inside (left of an anticlockwise edge)
+        if (d < -thick) { inside = false; break }
+        if (d < best) { best = d; bx = ez / len; bz = -ex / len }
+      }
+      if (!inside) continue
+      // How high the foot rises over this point: up the slices while it's still inside them.
+      let r = Math.floor((y - foot.floor) / foot.step)
+      while (r + 1 < foot.hulls.length && foot.hulls[r + 1] && insideHull(foot.hulls[r + 1], px, pz)) r++
+      const up = foot.floor + (r + 1) * foot.step - y
+      if (up < best) {
+        p[3 * i + 1] = y + up + thick
+        // Resting on it, it stays put rather than sliding off (as on the floor).
+        p[3 * i] = this.x[3 * i] + (px - this.x[3 * i]) * 0.3
+        p[3 * i + 2] = this.x[3 * i + 2] + (pz - this.x[3 * i + 2]) * 0.3
+      } else {
+        p[3 * i] = px + bx * (best + thick)
+        p[3 * i + 2] = pz + bz * (best + thick)
+      }
+    }
+  }
+
+  // Whether a point is below the tuck's top (which rises towards the middle of the back).
+  underTuck(x, y, z) {
+    const { table, top, raise = 0 } = this.tuck
+    if (y > top + raise) return false
+    return y <= top + raise * Math.max(0, -Math.cos(Math.atan2(x, z - table.centreAt(y))))
+  }
+
+  // Which simulated points are on a tucked top's body pieces.
+  tuckedPoints() {
+    if (!this.map) return this.tucks
+    if (!this.simTucks) {
+      this.simTucks = new Uint8Array(this.x.length / 3)
+      for (let i = 0; i < this.map.length; i++) if (this.tucks[i]) this.simTucks[this.map[i]] = 1
+    }
+    return this.simTucks
+  }
+
+  // A tucked top's body pieces, below the tuck's top: pulled in towards the body's middle line until they're
+  // within the tuck's room of its convex outline.
+  stayTucked() {
+    const { p } = this
+    const { table, inside } = this.tuck
+    const tucks = this.tuckedPoints()
+    const n = p.length / 3
+    for (let i = 0; i < n; i++) {
+      if (!tucks[i]) continue
+      const y = p[3 * i + 1]
+      if (!this.underTuck(p[3 * i], y, p[3 * i + 2])) continue
+      const x = p[3 * i], z = p[3 * i + 2] - table.centreAt(y)
+      const angle = Math.atan2(x, z)
+      const r = Math.hypot(x, z)
+      const reach = table.envelope(y, angle) + inside
+      if (r <= reach) continue
+      const s = reach / r
+      p[3 * i] = x * s
+      p[3 * i + 2] = table.centreAt(y) + z * s
     }
   }
 
@@ -346,11 +473,12 @@ export class Drape {
   // Moves the finished cloth (its joined points, see closeSeams) to new positions on a new body: the same
   // garment skinned into another pose, to settle there.
   // envelope: the new body's (see the constructor), to keep a skirt round both legs there too, or null.
-  repose(positions, field, envelope = null) {
+  repose(positions, field, envelope = null, feet = null) {
     this.x.set(positions)
     this.v.fill(0)
     this.field = field
     this.envelope = envelope
+    this.feet = feet
   }
 
   // Settles it where it is, a frame at a time (see phases), calming it at the end.
@@ -492,6 +620,15 @@ Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmF
     yield "settling"
   }
   this.params.drag = drag
+}
+
+// Whether [x, z] is inside a convex outline whose points run anticlockwise.
+function insideHull(hull, x, z) {
+  for (let k = 0; k < hull.length; k++) {
+    const [ax, az] = hull[k], [cx, cz] = hull[(k + 1) % hull.length]
+    if ((cx - ax) * (z - az) - (cz - az) * (x - ax) < 0) return false
+  }
+  return true
 }
 
 // A waist's points in order round it (by angle about their middle, seen from above), each once.

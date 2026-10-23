@@ -27,6 +27,8 @@ const SKIRT_HEM = { fitted: 0.92, slim: 1.02, relaxed: 1.15, flared: 1.45, pleat
 
 // The front takes a little less of each round than the back (the seat is behind).
 const FRONT = 0.47
+// How much higher (cm) the back's waist rises at its middle, over the seat.
+export const BACK_RAISE = 4
 
 // size: { waist, seat, thigh, knee, inseam, leg_opening, rise } (cm round, or long; any but the waist may be
 // null). body: the wearer in cm ({ waist, hips, inseam, height }, and from the mesh: rise, the height from the
@@ -82,16 +84,21 @@ export function bottomMeasures(styleName, size, body) {
   // Where the pants sit: at the height where the body is as round as their waist (a low-rise jean sits on
   // the hips, a trouser at the waist), between the crotch and the natural waist.
   const naturalRise = body.rise ?? body.height * 0.135
-  const sitAt = waist <= body.waist ? 1 : waist >= hips ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hips - body.waist)
-  // A chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that.
-  const rise = Math.max(14, size.rise ? size.rise * 0.9 : naturalRise * sitAt + 3)
+  let sitAt = waist <= body.waist ? 1 : waist >= hips ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hips - body.waist)
+  // An elastic waist (joggers) is cut smaller than the body and stretches on: it sits below the navel, not
+  // wherever the body is as small as its relaxed size.
+  if (style.band.stretch < 0.9 && styleName !== "leggings") sitAt = Math.min(sitAt, 0.75)
+  // The waistband's middle sits on that line (the pattern's top, y = 0, is the band's seam, below it). A
+  // chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that.
+  const rise = Math.max(14, size.rise ? size.rise * 0.9 : naturalRise * sitAt - style.band.height / 2)
   const inseam = size.inseam ?? (styleName === "shorts" ? 18 : body.inseam ?? body.height * 0.45)
   return {
     waist, seat, thigh, knee, opening, rise, inseam,
     // The seat's fullest point, below the top; the knee, down the inseam.
     seatAt: Math.min(rise * 0.62, 18), kneeAt: Math.min(inseam, (body.inseam ?? inseam) * 0.47),
     band: style.band.height, cuff: style.cuff?.height ?? 0,
-    length: rise + inseam
+    // The leg pieces stop where a cuff starts: a chart's inseam runs to the bottom of the cuff.
+    length: rise + inseam - (style.cuff?.height ?? 0)
   }
 }
 
@@ -108,7 +115,7 @@ function draftSkirt(size, body, cut) {
   const hem = hips * (SKIRT_HEM[cut?.fit] ?? SKIRT_HEM.slim)
   const naturalRise = body.rise ?? body.height * 0.135
   const sitAt = waist <= body.waist ? 1 : waist >= hipsBody ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hipsBody - body.waist)
-  const top = naturalRise * sitAt + 3   // from the crotch up to the skirt's top
+  const top = naturalRise * sitAt - style.band.height / 2   // from the crotch up to the waistband's seam
   const m = { waist, seat: hips, hips, hem, length, rise: top, seatAt: Math.min(top * 0.62, 18), inseam: Math.max(0, length - top), band: style.band.height, cuff: 0, skirt: true }
   const piece = () => {
     const hw = waist / 4, hh = hips / 4, he = hem / 4
@@ -163,7 +170,7 @@ function legPiece(m, part) {
   const half = round => (round * share) / 2
   const hemY = -m.length, kneeY = -(m.rise + m.kneeAt), crotchY = -m.rise, seatY = -m.seatAt
   // The back rises higher at the middle, over the seat.
-  const backRaise = part === "back" ? 4 : 0
+  const backRaise = part === "back" ? BACK_RAISE : 0
   const thighY = crotchY - Math.min(8, m.inseam * 0.3)
   const outer = [
     [centre + half(m.opening), hemY],

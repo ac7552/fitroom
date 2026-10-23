@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import { bodyFrame, SkinField } from "lib/garments/body"
 import { STYLES, draftTop } from "lib/garments/pattern"
-import { BOTTOM_STYLES, draftBottoms } from "lib/garments/pants"
+import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
 import { Drape } from "lib/garments/drape"
@@ -139,31 +139,84 @@ function surfaceFor(style, fabric) {
 }
 
 // How pants look: jeans in denim twill, joggers in fleece, leggings in a fine stretch knit, the rest in
-// their shop's fabric (a nylon pant in a matte shell, wool in wool, cotton in twill).
+// their shop's fabric (a nylon pant in a matte weave, wool in wool, cotton in twill).
 function bottomSurface(style, fabric) {
   if (style === "leggings") return "stretch"
-  if (style === "joggers") return fabric === "nylon" ? "satin" : "fleece"
+  if (style === "joggers") return fabric === "nylon" ? "matte" : "fleece"
   if (style === "jeans" || fabric === "denim") return "twill"
-  if (fabric === "nylon") return "satin"
+  if (fabric === "nylon") return "matte"
   if (fabric === "wool") return "wool"
   if (fabric === "leather") return "leather"
   if (fabric === "silk") return "silk"
   return BOTTOM_STYLES[style]?.fabric === "fleece" ? "fleece" : "twill"
 }
 
+// How far round (m) a snug pant hem can stretch: a rib cuff a long way, a stretch knit (leggings) a little.
+// Null for a woven hem, which tilts to rest on the instep and drops behind the heel.
+function snugRound(style, pattern) {
+  const cuff = BOTTOM_STYLES[style]?.cuff
+  const m = pattern.measures
+  if (cuff) return (m.opening * cuff.stretch * 1.4) / 100
+  return pattern.fabric === "stretch" ? (m.opening * 1.1) / 100 : null
+}
+
+// A tucked top ends this far (cm) below the waistband's seam, inside the pants, and below the top of the
+// waistband is held this close (m) round the body, gathered as tucking gathers it: closer than any pants
+// sit (see drape.js's CLOTHS), so they cover it.
+const TUCK_DEPTH = 10
+const TUCK_ROOM = 0.004
+const TUCK_HIDDEN = 0.02    // m below the tuck's top that a tucked top stops being drawn
+const RIM_SHOWN = 0.002     // and is drawn only from this far above the pants' waistband's top, as it lies
+
+// The height of a ring of [angle, height] pairs (sorted by angle) at an angle, between its neighbours.
+function rimAt(rim, angle) {
+  let k = rim.findIndex(([a]) => a >= angle)
+  if (k < 0) k = rim.length
+  const [a0, y0] = rim[(k - 1 + rim.length) % rim.length], [a1, y1] = rim[k % rim.length]
+  let span = a1 - a0, at = angle - a0
+  if (span <= 0) span += 2 * Math.PI
+  if (at < 0) at += 2 * Math.PI
+  return y0 + (y1 - y0) * Math.min(Math.max(at / span, 0), 1)
+}
+// The tops that tuck in.
+export const TUCKABLE = ["tee", "longsleeve", "polo", "tank", "shirt"]
+
+// The wearer as pants are drafted for them: their measurements, the body's, and from the crotch up to the
+// natural waist (about at the navel).
+function bottomWearer(measures, frame) {
+  return { ...measures, ...frame.measures, rise: (frame.hps[1] - (measures.height ?? 175) * 0.00235 - frame.crotch) * 100 }
+}
+
+// Where pants or a skirt sit on this body (heights in m): their waistband's seam and its top at the sides,
+// and how much higher it rises at the middle of the back (see pants.js's legPiece).
+export function waistband(item, frame, measures) {
+  const wearer = bottomWearer(measures, frame)
+  const skirt = item.style === "skirt"
+  const m = skirt ? draftBottoms("skirt", item.size, wearer, item.cut ?? null).measures : bottomMeasures(item.style, item.size, wearer)
+  const seam = frame.crotch - 0.015 + m.rise / 100
+  return { seam, top: seam + m.band / 100, raise: skirt ? 0 : BACK_RAISE / 100 }
+}
+
 // One top on the mannequin: drafted, sewn and settled a few frames at a time.
-// item: { style, size (cm), color, fabric }. body: bodySnapshot; frame: bodyFrame of it; field: its
-// collision field; measures: the wearer in cm (for the parts a chart doesn't give).
+// item: { style, size (cm), color, fabric, tuck }. tuck: the pants it's tucked into ({ style, size, cut }),
+// or none. body: bodySnapshot; frame: bodyFrame of it; field: its collision field; measures: the wearer in
+// cm (for the parts a chart doesn't give).
 export class DrapedTop {
   constructor({ item, body, frame, field, measures, renderer }) {
     this.item = item
     this.bottoms = item.kind === "trousers"
-    const wearer = { ...measures, ...frame.measures }
-    if (this.bottoms) {
-      // From the crotch up to the natural waist (about at the navel), on this body.
-      wearer.rise = (frame.hps[1] - (measures.height ?? 175) * 0.00235 - frame.crotch) * 100
+    const wearer = this.bottoms ? bottomWearer(measures, frame) : { ...measures, ...frame.measures }
+    // Tucked in, a top is cut off a little below the waistband (the rest would be hidden in the pants) and
+    // gathered round the body from the top of the waistband down.
+    let size = item.size, tuck = null
+    if (!this.bottoms && item.tuck) {
+      const band = waistband(item.tuck, frame, measures)
+      size = { ...size, length: Math.min(size.length ?? Infinity, (frame.hps[1] - band.seam) * 100 + TUCK_DEPTH) }
+      // Up to just over the waistband's top, so the cloth comes out of it there; higher at the back, as the
+      // back of the pants rises over the seat.
+      tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM }
     }
-    this.pattern = this.bottoms ? draftBottoms(item.style, item.size, wearer, item.cut ?? null) : draftTop(item.style, item.size, wearer, item.cut ?? null)
+    this.pattern = this.bottoms ? draftBottoms(item.style, size, wearer, item.cut ?? null) : draftTop(item.style, size, wearer, item.cut ?? null)
     this.cloth = buildCloth(this.pattern, this.bottoms ? BOTTOM_SPACING : SPACING)
     const { positions, attach } = placeCloth(this.cloth, this.pattern, frame)
     // A skirt hangs round both legs; pants go round each.
@@ -177,7 +230,13 @@ export class DrapedTop {
       length: this.pattern.measures.waist / 100
     } : null
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
-      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring
+      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
+      feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
+      snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
+      tuck,
+      // A long hem (pants, skirts, dresses) keeps a smooth edge, but the strip above it is no stiffer than
+      // the rest: stiffened, it rolls out like a cuff and flicks up at the side seams.
+      hemStrip: !this.bottoms && item.style !== "dress"
     })
     // A long garment (a dress, pants) has further to fall, so it settles for longer.
     const long = this.pattern.style === "dress" || this.pattern.measures.length > 85
@@ -229,6 +288,7 @@ export class DrapedTop {
     const front = cloth.panels.indexOf("front")
     geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : 0)), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
+    geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -309,6 +369,47 @@ export class DrapedTop {
     geometry.attributes.position.needsUpdate = true
     geometry.attributes.normal.needsUpdate = true
     geometry.computeBoundingSphere()
+    if (drape.tuck) this.hideTucked()
+  }
+
+  // A tucked top isn't drawn from a little below the waistband's top down: it's inside the pants there,
+  // pressed so close to the body that, drawn, it would show through them in places.
+  hideTucked() {
+    this.geometry.attributes.aHide.array.set(this.tuckedAway(this.drape.x, TUCK_HIDDEN, this.rim))
+    this.geometry.attributes.aHide.needsUpdate = true
+  }
+
+  // Where the pants' waistband's top edge lies (its points, in m), once they're draped: the top isn't drawn
+  // below a little under it, wherever the pants settled.
+  setRim(points) {
+    const table = this.drape.tuck.table
+    const rim = points.map(([x, y, z]) => [Math.atan2(x, z - table.centreAt(y)), y]).sort((a, b) => a[0] - b[0])
+    this.rim = rim.length >= 8 ? rim : null
+    this.hideTucked()
+  }
+
+  // How far (m) each pattern point of a tucked top is inside the pants, with the cloth at x (the drape's
+  // joined points): above 0 where it's out of sight there, below 0 where it shows, so the line between
+  // falls smoothly across the cloth. Null when it isn't tucked. below: how far below the tuck's top (m)
+  // that starts.
+  // rim: the pants' waistband's top edge ([angle round the body, height] pairs, by angle), to go by instead
+  // of where the pants were expected to sit, when they lie lower.
+  tuckedAway(x, below = TUCK_HIDDEN, rim = null) {
+    const { drape } = this
+    if (!drape.tuck) return null
+    const { table, top, raise = 0 } = drape.tuck
+    const map = drape.map, n = this.cloth.points.length
+    const away = new Float32Array(n).fill(-1)
+    for (let i = 0; i < n; i++) {
+      if (!drape.tucks[i]) continue
+      const j = map ? map[i] : i
+      const px = x[3 * j], py = x[3 * j + 1], pz = x[3 * j + 2] - table.centreAt(py)
+      const angle = Math.atan2(px, pz)
+      let line = top - below + raise * Math.max(0, -Math.cos(angle))
+      if (rim) line = rimAt(rim, angle) + RIM_SHOWN
+      away[i] = line - py
+    }
+    return away
   }
 
   // How much of the room each point of the cloth sees: rays out from it over the side it faces, stopped by
@@ -473,8 +574,9 @@ function merge(body, others) {
 // name; body and frame: the rest pose's.
 // still: bones the body panels shouldn't follow (a sleeveless dress's straps stay on the shoulders when the
 // arms move), with `fallback`, the bone a point follows when all it had was those.
-export function garmentWeights(points, pieces, body, frame, { still = null, fallback = 0 } = {}) {
-  const parts = name => (name.endsWith("_L") && /^(sleeve|cuff)/.test(name) ? [1] : name.endsWith("_R") && /^(sleeve|cuff)/.test(name) ? [2] : name.startsWith("hood") ? [3] : [0, 4])
+// legs: the garment is pants, whose cuffs are at the ankles (a top's are at the wrists, on the arms).
+export function garmentWeights(points, pieces, body, frame, { still = null, fallback = 0, legs = false } = {}) {
+  const parts = name => (legs ? [0, 4] : name.endsWith("_L") && /^(sleeve|cuff)/.test(name) ? [1] : name.endsWith("_R") && /^(sleeve|cuff)/.test(name) ? [2] : name.startsWith("hood") ? [3] : [0, 4])
   const cell = 0.04
   const grids = [new Map(), new Map(), new Map(), new Map(), new Map()]
   const key = (x, y, z) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`
@@ -507,7 +609,7 @@ export function garmentWeights(points, pieces, body, frame, { still = null, fall
     let total = 0
     for (let k = 0; k < 4; k++) {
       const bone = body.skinIndex[4 * best + k]
-      const w = still?.has(bone) && !/^(sleeve|cuff)/.test(pieces[j]) ? 0 : body.skinWeight[4 * best + k]
+      const w = still?.has(bone) && (legs || !/^(sleeve|cuff)/.test(pieces[j])) ? 0 : body.skinWeight[4 * best + k]
       skinIndex[4 * j + k] = bone; skinWeight[4 * j + k] = w
       total += w
     }

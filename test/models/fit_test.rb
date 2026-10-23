@@ -98,4 +98,19 @@ class FitTest < ActiveSupport::TestCase
     boxy = Fit.rank(body, sizes, "regular", "top", style: "tee", details: { "dropped" => true }).first
     assert_equal %w[good good], boxy.checks.values_at(0, 4).map(&:status)
   end
+
+  test "joggers' elastic waist stretches onto the body, and a tailor can't let it out" do
+    sizes = [ { "name" => "L", "waist" => 86, "seat" => 112, "thigh" => 67, "inseam" => 81, "leg_opening" => 26 },
+              { "name" => "XS", "waist" => 71, "seat" => 97, "thigh" => 58, "inseam" => 81, "leg_opening" => 26 } ]
+    body = BODY.merge("waist" => 87.6)
+
+    snug = Fit.check_trousers(body, sizes[0], style: "joggers").checks.find { it.part == "waist" }
+    assert_equal "good", snug.status
+    assert_match(/elastic/i, snug.note)
+    small = Fit.check_trousers(body, sizes[1], style: "joggers").checks.find { it.part == "waist" }
+    assert_equal "tight", small.status
+    assert_nil small.fix
+    # Trousers with no elastic are let out by a tailor.
+    assert_equal "let_out_waist", Fit.check_trousers(body, sizes[0]).checks.find { it.part == "waist" }.fix.action
+  end
 end

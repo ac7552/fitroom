@@ -26,7 +26,7 @@ export const STYLES = {
   shirt: { sleeve: "long", collar: "stand", cuffs: "band", hem: "band", fabric: "twill", ease: 14, length: 0.38, closure: "buttons" },
   coat: { sleeve: "long", collar: "stand", cuffs: null, hem: null, fabric: "wool", ease: 20, length: 0.55, closure: "buttons" },
   // A polo: a knit collar, a short buttoned placket, banded sleeves.
-  polo: { sleeve: "short", collar: "stand", cuffs: null, hem: null, fabric: "jersey", ease: 10, length: 0.41, closure: "placket" },
+  polo: { sleeve: "short", collar: "polo", cuffs: null, hem: null, fabric: "jersey", ease: 10, length: 0.41, closure: "placket" },
   // A tank top: no sleeves, deep armholes, its straps in from the shoulders.
   tank: { sleeve: null, collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 6, length: 0.41 },
   // Knitwear: a sweater (ribbed neck, cuffs and hem) and a cardigan (the same, buttoned down a V front).
@@ -41,7 +41,10 @@ export const STYLES = {
 const BANDS = {
   band: { height: 2, stretch: 0.88, fabric: "rib" },
   rib: { height: 5.5, stretch: 0.86, fabric: "rib" },
-  stand: { height: 6, stretch: 1, fabric: "main" }
+  stand: { height: 6, stretch: 1, fabric: "main" },
+  // A polo's knit collar, folded down over the shoulders: its outer edge is cut longer than its sewn edge
+  // (by `fall`), so it lies flat round the neck instead of standing up.
+  polo: { height: 6.5, stretch: 1, fabric: "rib", fall: 1.3 }
 }
 const CUFFS = { rib: { height: 7, stretch: 0.74, fabric: "rib" }, band: { height: 5, stretch: 0.92, fabric: "main" } }
 const HEMS = { rib: { height: 6.5, stretch: 0.86, fabric: "rib" }, band: { height: 4.5, stretch: 0.98, fabric: "main" } }
@@ -99,7 +102,9 @@ export function draftTop(styleName, size, body, cut = null) {
     seams.push(["hood_L", "crown", "hood_R", "crown"])
   } else if (style.collar !== null) {
     const collar = BANDS[style.collar] ?? BANDS.band
-    panels.collar = { edges: band(neckLengths, collar.stretch, collar.height, "up"), place: { at: "band", toward: "up" }, fabric: collar.fabric }
+    panels.collar = collar.fall
+      ? { edges: fallingCollar(neckLengths, collar.height, collar.fall), place: { at: "band", toward: "fall", spread: collar.fall }, fabric: collar.fabric }
+      : { edges: band(neckLengths, collar.stretch, collar.height, "up"), place: { at: "band", toward: "up" }, fabric: collar.fabric }
     necklines.forEach(([p, e], i) => seams.push([p, e, "collar", `sewn_${i}`]))
     seams.push(["collar", "end_a", "collar", "end_b"])
   }
@@ -255,6 +260,20 @@ function band(lengths, stretch, height, direction) {
     { name: "end_b", points: line([width, -height], [width, 0]) },
     ...lengths.map((_, i) => ({ name: `sewn_${i}`, points: line([width - cuts[i], 0], [width - cuts[i + 1], 0]) })),
     { name: "end_a", points: line([0, 0], [0, -height]) }
+  ]
+}
+
+// A collar that lies down round the neck: sewn by its upper edge (as a "down" band), its outer edge `fall`
+// times as long, so the strip is a slice of a ring and lies flat over the shoulders.
+function fallingCollar(lengths, height, fall) {
+  const cuts = [0]
+  for (const l of lengths) cuts.push(cuts[cuts.length - 1] + l)
+  const width = cuts[cuts.length - 1], extra = (width * (fall - 1)) / 2
+  return [
+    { name: "rim", points: line([-extra, -height], [width + extra, -height]) },
+    { name: "end_b", points: line([width + extra, -height], [width, 0]) },
+    ...lengths.map((_, i) => ({ name: `sewn_${i}`, points: line([width - cuts[i], 0], [width - cuts[i + 1], 0]) })),
+    { name: "end_a", points: line([0, 0], [-extra, -height]) }
   ]
 }
 

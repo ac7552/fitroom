@@ -39,6 +39,9 @@ module Fit
   # Leggings stretch over the body: made a little smaller than it, at the waist and the seat.
   LEGGINGS_WAIST_EASE = -12..1
   LEGGINGS_SEAT_EASE = { "slim" => -16..-4, "regular" => -14..-2, "classic" => -10..1 }.freeze
+  # An elastic waist (joggers, sweatpants) is made smaller than the body and stretches on; a tailor can't
+  # let it out.
+  ELASTIC_WAIST_EASE = -10..6
   # The knee is about this share of the way down from the crotch to the floor.
   KNEE_SHARE = 0.47
 
@@ -126,7 +129,7 @@ module Fit
   SHORT_SLEEVE = 40   # a sleeve shorter than this (cm, from the shoulder seam) is a short sleeve
 
   # Penalty per centimetre outside the target, plus a flat cost when no tailor can fix it.
-  WEIGHT = { shoulders: 4, chest: 3, length: 2, waist: 1, sleeve: 0.5, trouser_waist: 2, seat: 2, inseam: 0.4, hips: 2 }.freeze
+  WEIGHT = { shoulders: 4, chest: 3, length: 2, waist: 1, sleeve: 0.5, trouser_waist: 2, elastic_waist: 2, seat: 2, inseam: 0.4, hips: 2 }.freeze
   UNFIXABLE = 6
 
   Fix = Data.define(:action, :text, :amount)
@@ -166,8 +169,14 @@ module Fit
   # than the body), or another (trousers, jeans, joggers).
   def check_trousers(body, size, cut = "regular", style: nil)
     stretch = style == "leggings"
+    elastic = style == "joggers"
     checks = [
-      given(size, "waist", "Waist") { range_check(:trouser_waist, "Waist", it - body["waist"], stretch ? LEGGINGS_WAIST_EASE : TROUSER_WAIST_EASE, shown_as: "waist") },
+      given(size, "waist", "Waist") do |waist|
+        next range_check(:trouser_waist, "Waist", waist - body["waist"], stretch ? LEGGINGS_WAIST_EASE : TROUSER_WAIST_EASE, shown_as: "waist") unless elastic
+
+        found = range_check(:elastic_waist, "Waist", waist - body["waist"], ELASTIC_WAIST_EASE, shown_as: "waist")
+        found.status == "good" && waist < body["waist"] ? found.with(note: "The elastic waist stretches to fit") : found
+      end,
       given(size, "seat", "Seat") do |seat|
         next needs(:seat, "Seat", "hips") unless body["hips"]
 

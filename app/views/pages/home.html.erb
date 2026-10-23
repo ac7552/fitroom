@@ -231,6 +231,10 @@
                 <label><input type="radio" name="pose" value="<%= key %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changePose"><span><%= label %></span></label>
               <% end %>
             </div>
+            <div class="segmented segmented--dark" role="radiogroup" aria-label="Top" data-fitting-room-target="tuck" hidden>
+              <label><input type="radio" name="tuck" value="out" checked autocomplete="off" data-action="fitting-room#changeTuck"><span>Not tucked</span></label>
+              <label><input type="radio" name="tuck" value="in" autocomplete="off" data-action="fitting-room#changeTuck"><span>Tucked in</span></label>
+            </div>
             <div class="segmented segmented--dark" role="radiogroup" aria-label="Mannequin">
               <label><input type="radio" name="body-type-stage" value="men" checked autocomplete="off" data-fitting-room-target="bodyType" data-action="fitting-room#changeBodyType"><span>Man</span></label>
               <label><input type="radio" name="body-type-stage" value="women" autocomplete="off" data-fitting-room-target="bodyType" data-action="fitting-room#changeBodyType"><span>Woman</span></label>
@@ -240,12 +244,6 @@
             <% { "#f4f2ee" => "White", "#ecd0b6" => "Light", "#cfa07a" => "Medium", "#a8724c" => "Tan", "#7c4e31" => "Brown", "#4b2f20" => "Deep" }.each_with_index do |(color, label), i| %>
               <label title="<%= label %>"><input type="radio" name="tone" value="<%= color %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changeTone"><span style="background: <%= color %>" aria-hidden="true"></span><span class="visually-hidden"><%= label %></span></label>
             <% end %>
-          </div>
-          <div class="studio-start">
-            <label class="studio-exact" title="Sends the stores' photos and the picture to FASHN's try-on service, which deletes them afterward">
-              <input type="checkbox" checked autocomplete="off" data-fitting-room-target="exact"> Use store photos (AI)
-            </label>
-            <button type="button" class="button button--dark" data-action="fitting-room#studioPhoto">Take a photo</button>
           </div>
           <p class="stage-note" data-fitting-room-target="stageNote"></p>
         </div>

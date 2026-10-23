@@ -43,8 +43,9 @@ Optional settings are environment variables, listed in `.env.example`. Fitroom r
 - **Clothes from a link:** reads the shop's product details and its size chart, in inches or cm, garment
   or body measurements. With no chart, it uses the usual measurements for each size, and the shop photo
   says how the piece is cut (a baby tee, or a boxy tee with dropped shoulders).
-- **Sewn, not stretched:** tops, shirts, hoodies, zip-ups, bombers and dresses get a real sewing pattern
-  for each size, and a cloth simulation drapes them in the browser.
+- **Sewn, not stretched:** tops, shirts, hoodies, zip-ups, bombers, dresses, pants, shorts, joggers,
+  leggings and skirts get a real sewing pattern for each size, and a cloth simulation drapes them in the
+  browser.
 - **Dresses as they're cut:** strapless, one shoulder, thin or wide straps, sleeves; mini to maxi; fitted
   to flared; stretch, jersey, silk, leather or cotton. All read from the listing.
 - **The shop's look:** the cloth takes the colour and front print from the store photo.
@@ -54,7 +55,7 @@ Optional settings are environment variables, listed in `.env.example`. Fitroom r
   made smaller than the body.
 - **Private:** no accounts. Your measurements are used for one answer and never stored or logged, and
   photos are read in your browser.
-- **Clear about the rest:** shoes, belts, hats, shorts and skirts get a plain "not yet".
+- **Clear about the rest:** shoes, socks, belts and hats get a plain "not yet".
 
 ## How it's built
 

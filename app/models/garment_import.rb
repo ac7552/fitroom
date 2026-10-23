@@ -109,7 +109,7 @@ class GarmentImport
   KINDS = %w[top jacket coat trousers].freeze
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 11
+  FORMAT = 12
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -170,6 +170,18 @@ class GarmentImport
     chart ||= linked_guide_chart(page, kind, product, source_url)
     chart ||= DressCut.usual_sizes(DressCut.read(product), [ page.stated_size ].compact) if dress?(kind, product)
     chart ||= usual_chart(kind, page.stated_size, usual_key(kind, top_style_of(product), product))
+    # No chart anywhere: the sizes the page offers, with their usual measurements (marked as guessed), so
+    # the link still works and the person picks their size on the mannequin. Pants always get some (by
+    # waist, or the usual waists); other clothes only when the page lists its sizes.
+    unless chart
+      product = product.merge(sizes: page.size_names)
+      product[:women] = women?(product, source_url)
+      if kind == "trousers"
+        chart = bottom_style_of(product) == "skirt" ? usual_skirts(product) : usual_trousers(product)
+      elsif product[:sizes].size >= 2 && !dress?(kind, product)
+        chart = usual_sizes(kind, top_style_of(product), product)
+      end
+    end
     unless chart
       raise Error.new("no_size_chart", "Couldn't find a size chart on that page. Many shops load it in a pop-up: " \
                                        "copy the chart from there and paste it instead.")
@@ -715,7 +727,11 @@ class GarmentImport
     name = product[:name].to_s.delete_prefix(product[:brand].to_s)
     words = [ name, *product.values_at(:category, :description) ].join(" ")
     found = [ shell, words ].find { |text| FABRICS.any? { |_, pattern| text.to_s.match?(pattern) } }
-    FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
+    fabric = FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
+    # Denim is a cotton cloth: a "Denim Jacket" made of "100% Cotton" is denim.
+    return "denim" if fabric == "cotton" && [ name, product[:category] ].join(" ").match?(FABRICS.to_h.fetch("denim"))
+
+    fabric
   end
 
   # A T-shirt's sleeve is short, so a long one on its chart was measured from the centre of the back (as
