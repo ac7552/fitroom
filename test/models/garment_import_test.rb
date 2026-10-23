@@ -285,6 +285,40 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_in_delta 16 * 2.54, first["leg_opening"], 0.01
   end
 
+  test "pants with no size chart get the waist sizes their page offers, to pick from on the mannequin" do
+    html = <<~HTML
+      <html><head><title>Athletic-Fit Linen-Blend Pant | Banana Republic Factory</title></head><body>
+        <h1>Athletic-Fit Linen-Blend Pant</h1><p>$39.99</p>
+        <div class="pdp-dimension--waist"><h3>Waist</h3><button>28W</button><button>30W</button><button>32W</button><button>34W</button></div>
+        <div class="pdp-dimension--length"><h3>Length</h3><button>30L</button><button>32L</button></div>
+        <a href="/size-guide">Size Guide</a>
+      </body></html>
+    HTML
+    garment = GarmentImport.new(fetch_page: ->(_) { "<html></html>" }).from_page(html, source_url: "https://bananarepublicfactory.gapfactory.com/browse/product.do?pid=1")
+
+    assert_equal [ "trousers", "trousers" ], garment.values_at(:garment, :style)
+    assert_equal %w[28 30 32 34], garment[:chart][:sizes].map { it["name"] }
+    assert_in_delta 32 * 2.54, garment[:chart][:sizes][2]["waist"], 0.1
+  end
+
+  test "pants whose page shows no sizes at all still get the usual waists" do
+    garment = GarmentImport.new.from_page("<html><title>Pleated Wool Trousers</title></html>", source_url: "x")
+
+    assert_equal "trousers", garment[:garment]
+    assert_operator garment[:chart][:sizes].size, :>=, 5
+  end
+
+  test "a top with no chart gets the letter sizes its page lists" do
+    html = <<~HTML
+      <html><title>Heavyweight Pocket Tee</title><body>
+        <fieldset class="size-selector"><label>S</label><label>M</label><label>L</label><label>XL</label></fieldset>
+      </body></html>
+    HTML
+    garment = GarmentImport.new.from_page(html, source_url: "x")
+
+    assert_equal %w[S M L XL], garment[:chart][:sizes].map { it["name"] }
+  end
+
   test "a page for trousers is read as trousers" do
     html = page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", "Navy Wool Trousers").gsub("Suit jackets", "Trousers")
       .sub(%r{<table>.*</table>}m, <<~TABLE)

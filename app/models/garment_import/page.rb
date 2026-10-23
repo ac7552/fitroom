@@ -66,6 +66,28 @@ class GarmentImport
       nil
     end
 
+    # The sizes a shop's page offers, as its size buttons, lists and drop-downs name them: letters ("S", "XL"),
+    # and waist sizes, written "32W" anywhere, or as plain numbers inside something marked as sizes.
+    # ["28", "30", "32"] or ["S", "M", "L"]; empty when the page shows none.
+    WAIST_W = /\A(2[2-9]|3\d|4[0-6])\s*W\z/i
+    WAIST = /\A(2[2-9]|3\d|4[0-6])\z/
+    LETTER_SIZE = /\A(XXS|XS|S|M|L|XL|XXL|XXXL|[2-4]XL)\z/i
+    SIZEISH = /size|waist/i
+
+    def size_names
+      found = []
+      @doc.css("option, button, label, li, span, a, div, input").each do |node|
+        text = node.name == "input" ? node["value"].to_s.strip : (node.element_children.empty? ? node.text.squish : next)
+        next if text.empty? || text.size > 6
+
+        if (waist = text[WAIST_W, 1]) then found << waist
+        elsif sizeish?(node) && text.match?(WAIST) then found << text
+        elsif sizeish?(node) && text.match?(LETTER_SIZE) then found << text.upcase
+        end
+      end
+      found.uniq.first(24)
+    end
+
     # The size a single-item listing says it is ("Size: M" on resale listings), or nil.
     def stated_size
       label = @doc.css("body *").lazy.map { it.element_children.empty? ? it.text.squish : nil }
@@ -93,6 +115,13 @@ class GarmentImport
     end
 
     private
+
+    # Whether the node, or something it's in (a few levels up), is marked as being about sizes.
+    def sizeish?(node)
+      [ node, *node.ancestors.select(&:element?).first(4) ].any? do |el|
+        el.attribute_nodes.any? { |a| %w[class id name aria-label data-testid for].include?(a.name) && a.value.match?(SIZEISH) }
+      end
+    end
 
     # The value written beside a label on the page ("Fabric" then "100% wool"), as resale listings do.
     def labelled(label)
