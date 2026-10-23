@@ -87,7 +87,9 @@ export function bodyFrame({ positions, normals, index, skinIndex, skinWeight, bo
     head: Math.PI * (head.rx + head.rz * 0.85) * 100
   }
 
-  return { count, part, joints, floor, top, torso, arms, legs, shoulderTop, head, hps, armpitY, crotch, neckSide, measures }
+  const feet = legs ? { L: footHull(positions, part, joints, floor, "L"), R: footHull(positions, part, joints, floor, "R") } : null
+
+  return { count, part, joints, floor, top, torso, arms, legs, feet, shoulderTop, head, hps, armpitY, crotch, neckSide, measures }
 }
 
 // Where the legs meet: the lowest point of the pelvis on the body's middle line. (Not of the whole body: with
@@ -289,6 +291,33 @@ function armReach(positions, part, which, joints, side) {
   }
 }
 
+// A foot's solid outline, seen from above, in 1 cm slices from the floor to just over the ankle: each slice's
+// convex outline ([x, z] points, anticlockwise), or null. A pant hem falling onto a thin, pointed foot can
+// slip through it; held outside these outlines it comes to rest on the instep and the heel.
+const FOOT_STEP = 0.01
+
+function footHull(positions, part, joints, floor, side) {
+  const top = joints[`ankle_${side}`][1] + 0.03
+  const rows = Math.ceil((top - floor) / FOOT_STEP)
+  const slices = Array.from({ length: rows }, () => [])
+  const sign = side === "L" ? 1 : -1
+  const n = positions.length / 3
+  for (let i = 0; i < n; i++) {
+    if (part[i] !== 4 || positions[3 * i] * sign <= 0) continue
+    const r = Math.floor((positions[3 * i + 1] - floor) / FOOT_STEP)
+    if (r >= 0 && r < rows) slices[r].push([positions[3 * i], positions[3 * i + 2]])
+  }
+  const hulls = slices.map(pts => (pts.length >= 3 ? convexHull(pts) : null))
+  return {
+    top, floor, step: FOOT_STEP, hulls,
+    // The outline at height y, or null above the foot.
+    at(y) {
+      const r = Math.floor((y - floor) / FOOT_STEP)
+      return r >= 0 && r < rows ? hulls[r] : null
+    }
+  }
+}
+
 // A leg's line (hip joint, knee, ankle) and how far the leg reaches from it along its length (1 cm steps),
 // from that leg's skin alone (the left leg is on +x).
 function legReach(positions, part, joints, side) {
@@ -302,6 +331,8 @@ function legReach(positions, part, joints, side) {
   const n = positions.length / 3
   for (let i = 0; i < n; i++) {
     if (part[i] !== 4 || positions[3 * i] * sign <= 0) continue
+    // The foot isn't the leg: below the ankle it would count the foot's length as the leg's reach.
+    if (positions[3 * i + 1] < chain[2][1]) continue
     const p = vec(positions, i)
     const { t, distance } = project(chain, lengths, p)
     const s = Math.min(Math.max(Math.round(t / 0.01), 0), steps - 1)

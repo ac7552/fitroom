@@ -46,8 +46,12 @@ export class Drape {
   // floor: a height cloth can't fall below (pants longer than the leg pile up there), or null.
   // ring: { points (cloth point indices round a waist) }: a waistband, which holds the garment up (see
   // holdRing).
-  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null } = {}) {
+  // feet: bodyFrame's feet, for pants: each leg's cloth stays outside its own foot's outline (see stayOffFeet).
+  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null } = {}) {
     this.envelope = envelope
+    this.feet = feet
+    // Which leg each pattern point is on: 1 the left, -1 the right, 0 neither.
+    this.legSide = Int8Array.from(cloth.panel, p => { const name = cloth.panels[p]; return /_L$/.test(name) ? 1 : /_R$/.test(name) ? -1 : 0 })
     this.hangs = Boolean(envelope)   // hangs round both legs (a skirt, a dress), in any pose
     this.floor = floor
     this.ring = ring && ring.points.length >= 8 ? { ...ring, order: ringOrder(ring.points, start) } : null
@@ -273,6 +277,7 @@ export class Drape {
       p[3 * i] = qx; p[3 * i + 1] = qy; p[3 * i + 2] = qz
     }
     if (this.envelope) this.stayOutside()
+    if (this.feet) this.stayOffFeet()
     if (this.floor !== null) {
       // On the floor, cloth stays put rather than sliding (it rests on it).
       for (let i = 0; i < n; i++) {
@@ -323,6 +328,53 @@ export class Drape {
     }
   }
 
+  // Near the floor, each leg's points go out of their own foot: up onto it (the instep, the heel) when its top
+  // is nearer, else out to the nearest side of its outline. Pushed only sideways, a hem landing on the instep
+  // is shoved round the foot and twists the leg.
+  stayOffFeet() {
+    const { p } = this
+    const thick = this.params.thickness
+    const map = this.map
+    if (map && !this.simSide) {
+      this.simSide = new Int8Array(this.x.length / 3)
+      for (let i = 0; i < map.length; i++) if (this.legSide[i]) this.simSide[map[i]] = this.legSide[i]
+    }
+    const side = map ? this.simSide : this.legSide
+    const n = p.length / 3
+    for (let i = 0; i < n; i++) {
+      if (!side[i]) continue
+      const foot = side[i] > 0 ? this.feet.L : this.feet.R
+      const y = p[3 * i + 1]
+      if (y > foot.top) continue
+      const hull = foot.at(y)
+      if (!hull) continue
+      const px = p[3 * i], pz = p[3 * i + 2]
+      let best = Infinity, bx = 0, bz = 0
+      let inside = true
+      for (let k = 0; k < hull.length; k++) {
+        const [ax, az] = hull[k], [cx, cz] = hull[(k + 1) % hull.length]
+        const ex = cx - ax, ez = cz - az, len = Math.hypot(ex, ez) || 1
+        const d = (ex * (pz - az) - ez * (px - ax)) / len   // > 0: inside (left of an anticlockwise edge)
+        if (d < -thick) { inside = false; break }
+        if (d < best) { best = d; bx = ez / len; bz = -ex / len }
+      }
+      if (!inside) continue
+      // How high the foot rises over this point: up the slices while it's still inside them.
+      let r = Math.floor((y - foot.floor) / foot.step)
+      while (r + 1 < foot.hulls.length && foot.hulls[r + 1] && insideHull(foot.hulls[r + 1], px, pz)) r++
+      const up = foot.floor + (r + 1) * foot.step - y
+      if (up < best) {
+        p[3 * i + 1] = y + up + thick
+        // Resting on it, it stays put rather than sliding off (as on the floor).
+        p[3 * i] = this.x[3 * i] + (px - this.x[3 * i]) * 0.3
+        p[3 * i + 2] = this.x[3 * i + 2] + (pz - this.x[3 * i + 2]) * 0.3
+      } else {
+        p[3 * i] = px + bx * (best + thick)
+        p[3 * i + 2] = pz + bz * (best + thick)
+      }
+    }
+  }
+
   // Below the envelope's top, push points out sideways from the body's middle line to its convex outline.
   stayOutside() {
     const { p } = this
@@ -346,11 +398,12 @@ export class Drape {
   // Moves the finished cloth (its joined points, see closeSeams) to new positions on a new body: the same
   // garment skinned into another pose, to settle there.
   // envelope: the new body's (see the constructor), to keep a skirt round both legs there too, or null.
-  repose(positions, field, envelope = null) {
+  repose(positions, field, envelope = null, feet = null) {
     this.x.set(positions)
     this.v.fill(0)
     this.field = field
     this.envelope = envelope
+    this.feet = feet
   }
 
   // Settles it where it is, a frame at a time (see phases), calming it at the end.
@@ -492,6 +545,15 @@ Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmF
     yield "settling"
   }
   this.params.drag = drag
+}
+
+// Whether [x, z] is inside a convex outline whose points run anticlockwise.
+function insideHull(hull, x, z) {
+  for (let k = 0; k < hull.length; k++) {
+    const [ax, az] = hull[k], [cx, cz] = hull[(k + 1) % hull.length]
+    if ((cx - ax) * (z - az) - (cz - az) * (x - ax) < 0) return false
+  }
+  return true
 }
 
 // A waist's points in order round it (by angle about their middle, seen from above), each once.

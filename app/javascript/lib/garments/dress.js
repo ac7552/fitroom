@@ -177,7 +177,8 @@ export class DrapedTop {
       length: this.pattern.measures.waist / 100
     } : null
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
-      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring
+      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
+      feet: this.bottoms && item.style !== "skirt" ? frame.feet : null
     })
     // A long garment (a dress, pants) has further to fall, so it settles for longer.
     const long = this.pattern.style === "dress" || this.pattern.measures.length > 85

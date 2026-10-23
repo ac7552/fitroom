@@ -82,9 +82,13 @@ export function bottomMeasures(styleName, size, body) {
   // Where the pants sit: at the height where the body is as round as their waist (a low-rise jean sits on
   // the hips, a trouser at the waist), between the crotch and the natural waist.
   const naturalRise = body.rise ?? body.height * 0.135
-  const sitAt = waist <= body.waist ? 1 : waist >= hips ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hips - body.waist)
-  // A chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that.
-  const rise = Math.max(14, size.rise ? size.rise * 0.9 : naturalRise * sitAt + 3)
+  let sitAt = waist <= body.waist ? 1 : waist >= hips ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hips - body.waist)
+  // An elastic waist (joggers) is cut smaller than the body and stretches on: it sits below the navel, not
+  // wherever the body is as small as its relaxed size.
+  if (style.band.stretch < 0.9 && styleName !== "leggings") sitAt = Math.min(sitAt, 0.75)
+  // The waistband's middle sits on that line (the pattern's top, y = 0, is the band's seam, below it). A
+  // chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that.
+  const rise = Math.max(14, size.rise ? size.rise * 0.9 : naturalRise * sitAt - style.band.height / 2)
   const inseam = size.inseam ?? (styleName === "shorts" ? 18 : body.inseam ?? body.height * 0.45)
   return {
     waist, seat, thigh, knee, opening, rise, inseam,
@@ -108,7 +112,7 @@ function draftSkirt(size, body, cut) {
   const hem = hips * (SKIRT_HEM[cut?.fit] ?? SKIRT_HEM.slim)
   const naturalRise = body.rise ?? body.height * 0.135
   const sitAt = waist <= body.waist ? 1 : waist >= hipsBody ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hipsBody - body.waist)
-  const top = naturalRise * sitAt + 3   // from the crotch up to the skirt's top
+  const top = naturalRise * sitAt - style.band.height / 2   // from the crotch up to the waistband's seam
   const m = { waist, seat: hips, hips, hem, length, rise: top, seatAt: Math.min(top * 0.62, 18), inseam: Math.max(0, length - top), band: style.band.height, cuff: 0, skirt: true }
   const piece = () => {
     const hw = waist / 4, hh = hips / 4, he = hem / 4

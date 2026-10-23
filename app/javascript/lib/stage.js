@@ -54,6 +54,9 @@ const EASE_KEYS = {
 
 // Poses live in public/models/poses.json, shared with the studio renderer so a photo matches the screen.
 
+// The draped layers, from the skin out.
+const LAYERS = ["bottom", "top", "outer"]
+
 export class FittingStage {
   constructor(canvas) {
     this.canvas = canvas
@@ -61,11 +64,12 @@ export class FittingStage {
     this.pose = "standing"
     this.outfit = []
     this.lastEase = {}
-    // What's draped: the pants ("bottom") and, over them, the top or casual jacket ("top"); and what's on
-    // screen while a new one is sewn (see removeDraped).
-    this.slots = { bottom: null, top: null }
-    this.leaving = { bottom: null, top: null }
-    this.waiting = null
+    // What's draped, in layers: the pants ("bottom"), over them the top ("top"), and over that a casual
+    // jacket ("outer"); and what's on screen while a new one is sewn (see removeDraped). Each layer waits for
+    // the ones under it to be sewn, then is sewn over them (this.waiting: the specs waiting, by layer).
+    this.slots = { bottom: null, top: null, outer: null }
+    this.leaving = { bottom: null, top: null, outer: null }
+    this.waiting = {}
     this.drapeBudget = 20   // milliseconds of draping per frame
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -89,6 +93,7 @@ export class FittingStage {
     this.resize()
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(canvas.parentElement)
+    this.resizeObserver.observe(canvas)
     this.visible = true
     this.intersectionObserver = new IntersectionObserver(([entry]) => {
       this.visible = entry.isIntersecting
@@ -179,8 +184,8 @@ export class FittingStage {
     }
     // Clothes draped on the other body don't fit this one: take them off now, rather than leave them on
     // until the new drape is ready.
-    for (const slot of ["bottom", "top"]) if (this.slots[slot] && this.slots[slot].bodyType !== type) this.removeDraped(slot)
-    if (this.waiting) this.waiting = null
+    for (const slot of LAYERS) if (this.slots[slot] && this.slots[slot].bodyType !== type) this.removeDraped(slot)
+    this.waiting = {}
     this.applyPose()
     if (this.measures) this.setBody(this.measures)
   }
@@ -259,43 +264,50 @@ export class FittingStage {
     this.meshes.trousers.visible = false
 
     this.dressDraped("bottom", worn.trousers ?? null)
-    // What's draped over them: a casual jacket, or else the top, unless the suit's jacket or a coat is over it.
-    const draped = drapedJacket ? worn.jacket : worn.top && !tailored && !worn.coat ? worn.top : null
-    this.hiddenTop = Boolean(worn.top && !(draped === worn.top))
-    this.dressDraped("top", draped)
+    // Over them the top, unless the suit's jacket or a coat is over it (those are drawn from the model, and
+    // would show it through them); and over the top, a casual jacket.
+    const top = worn.top && !tailored && !worn.coat ? worn.top : null
+    this.hiddenTop = Boolean(worn.top && !top)
+    this.dressDraped("top", top)
+    this.dressDraped("outer", drapedJacket ? worn.jacket : null)
   }
 
   // Draping
 
   // The top's slot (the page checks on it).
   get draped() {
-    return this.slots.top
+    return this.slots.top ?? this.slots.outer
   }
 
   // Whether everything draped is sewn, settled and in the pose shown.
   get settled() {
-    return !this.waiting && Object.values(this.slots).every(d => !d || (d.top.done && d.posedAs === this.pose && !d.posing))
+    return Object.keys(this.waiting).length === 0 && Object.values(this.slots).every(d => !d || (d.top.done && d.posedAs === this.pose && !d.posing))
   }
 
-  // slot: "bottom" (pants) or "top". item: the outfit item drawn there, or null for none.
+  // The layers draped under this one.
+  under(slot) {
+    return LAYERS.slice(0, LAYERS.indexOf(slot)).map(s => this.slots[s]).filter(Boolean)
+  }
+
+  // slot: "bottom" (pants), "top" or "outer" (a casual jacket). item: the outfit item drawn there, or null.
   dressDraped(slot, item) {
     if (!item) {
       this.removeDraped(slot)
-      if (slot === "top") this.waiting = null
+      delete this.waiting[slot]
       return
     }
     const style = slot === "bottom" ? item.style ?? "trousers" : DRAPED_STYLES.includes(item.style) ? item.style : "tee"
-    // A top is sewn over the pants it's worn with, so new pants are a new drape for it too.
-    const over = slot === "top" ? this.slots.bottom?.key ?? null : null
+    // Each layer is sewn over the ones under it, so a new one under it is a new drape for it too.
+    const over = this.under(slot).map(d => d.key)
     const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, this.fitted.scale, this.fitted.influences, over])
-    if (this.slots[slot]?.key !== key && this.waiting?.key !== key) {
+    if (this.slots[slot]?.key !== key && this.waiting[slot]?.key !== key) {
       // The garment shown stays until the new one is sewn and in the pose shown, so nothing jumps about.
       this.removeDraped(slot, { keepShown: true })
       const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null } }
-      // A top waits for the pants under it to be sewn, then is sewn over them.
-      if (slot === "top" && this.slots.bottom && !this.slots.bottom.top.done) this.waiting = spec
+      // It waits for the layers under it to be sewn, then is sewn over them.
+      if (this.under(slot).some(d => !d.top.done)) this.waiting[slot] = spec
       else {
-        if (slot === "top") this.waiting = null
+        delete this.waiting[slot]
         this.startDrape(spec)
       }
     }
@@ -309,12 +321,14 @@ export class FittingStage {
   }
 
   // The cloth is sewn and settled on the mannequin in its rest pose (arms out, as garment tools do it), then
-  // moved into the pose shown and settled again there. A top is sewn over the pants, as they lie in that pose.
+  // moved into the pose shown and settled again there. Each layer is sewn over those under it, as they lie
+  // in that pose.
   startDrape({ slot, key, item }) {
     const rest = this.restSnapshot()
-    const bottom = this.slots.bottom
-    const over = slot === "top" && bottom?.top.done ? [...rest.over, clothSnapshot(bottom.restX ?? bottom.top.drape.x, bottom.top)] : rest.over
+    const over = [...rest.over, ...this.under(slot).filter(d => d.top.done).map(d => clothSnapshot(d.restX ?? d.top.drape.x, d.top))]
     const { frame, field } = prepareBody(rest.body, rest.egg, over, { arms: slot !== "bottom" })
+    // A jacket over a top starts clear of the top's cloth.
+    if (slot === "outer" && this.slots.top) frame.gap = 0.03
     const top = new DrapedTop({ item, body: rest.body, frame, field, measures: this.measures, renderer: this.renderer })
     top.mesh.visible = false
     this.scene.add(top.mesh)
@@ -358,12 +372,11 @@ export class FittingStage {
     return snapshot
   }
 
-  // slot: whose drape this is for; a top's includes the draped pants as they are now.
+  // slot: whose drape this is for; it includes the layers draped under it as they are now.
   snapshotNow(slot = null) {
     const body = bodySnapshot(this.meshes.body)
     const over = this.meshes.trousers.visible ? [bodySnapshot(this.meshes.trousers)] : []
-    const bottom = this.slots.bottom
-    if (slot === "top" && bottom?.top.done) over.push(clothSnapshot(bottom.top.drape.x, bottom.top))
+    if (slot) for (const d of this.under(slot)) if (d.top.done) over.push(clothSnapshot(d.top.drape.x, d.top))
     return { body, over, egg: this.eggShape() }
   }
 
@@ -430,12 +443,15 @@ export class FittingStage {
       // A skirt or dress keeps hanging round both legs as they come together, rather than falling in
       // between them.
       const envelope = drape.hangs ? { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor } : null
-      if (!before) drape.repose(posed, field, envelope)
+      // Pants stay off the feet where the feet now are.
+      const feet = drape.feet ? frame.feet : null
+      if (!before) drape.repose(posed, field, envelope, feet)
       else {
         for (let i = 0; i < posed.length; i++) drape.x[i] += posed[i] - before[i]
         drape.v.fill(0)
         drape.field = field
         drape.envelope = envelope
+        drape.feet = feet
       }
       before = posed
       if (s < steps) { yield* drape.settle(14, 6); continue }
@@ -617,11 +633,12 @@ export class FittingStage {
   // Head to toe, a little from the side, like a lookbook photo.
   frame() {
     const H = this.calibration.body.height / 100
-    // Tall phone screens have the controls stacked over the picture, so leave more room around the figure.
-    const margin = this.camera.aspect < 0.8 ? 0.8 : 0.62
+    // Room above the head for the controls and below the feet for the size rows (on a phone the controls
+    // sit above the picture instead, and the narrow picture needs a little more room round the figure).
+    const margin = this.camera.aspect < 0.8 ? 0.8 : 0.74
     const distance = (H * margin) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))
-    this.controls.target.set(0, H * 0.52, 0)
-    this.camera.position.set(Math.sin(0.25) * distance, H * 0.56, Math.cos(0.25) * distance)
+    this.controls.target.set(0, H * 0.5, 0)
+    this.camera.position.set(Math.sin(0.25) * distance, H * 0.54, Math.cos(0.25) * distance)
     this.controls.update()
   }
 
@@ -662,11 +679,13 @@ export class FittingStage {
 
   // Whether what's worn includes a draped garment (a top or casual jacket), which only the page can draw.
   get hasDraped() {
-    return Boolean(this.slots.top || this.slots.bottom)
+    return Object.values(this.slots).some(Boolean)
   }
 
   resize() {
-    const { clientWidth: width, clientHeight: height } = this.canvas.parentElement
+    // The canvas's own box (on a phone the controls sit above it), else its container's.
+    const box = this.canvas.clientHeight > 0 ? this.canvas : this.canvas.parentElement
+    const { clientWidth: width, clientHeight: height } = box
     if (!width || !height) return
     this.renderer.setSize(width, height, false)
     this.camera.aspect = width / height
@@ -689,13 +708,15 @@ export class FittingStage {
   // A few milliseconds of draping per frame, so the page stays smooth while the cloth settles: the pants
   // first, then the top over them.
   advanceDrape() {
-    if (this.waiting && this.slots.bottom?.top.done) {
-      const spec = this.waiting
-      this.waiting = null
-      this.startDrape(spec)
-      this.redraw()
+    for (const slot of LAYERS) {
+      const spec = this.waiting[slot]
+      if (spec && this.under(slot).every(d => d.top.done)) {
+        delete this.waiting[slot]
+        this.startDrape(spec)
+        this.redraw()
+      }
     }
-    for (const slot of ["bottom", "top"]) {
+    for (const slot of LAYERS) {
       const d = this.slots[slot]
       if (!d) continue
       if (!d.top.done) {
@@ -703,9 +724,8 @@ export class FittingStage {
         this.onDrape?.(d.top.phase, d.top.done)
         return
       }
-      // A top moves into a pose once the pants under it are there.
-      const bottom = this.slots.bottom
-      if (slot === "top" && bottom && (bottom.posedAs !== this.pose || bottom.posing)) return
+      // It moves into a pose once the layers under it are there.
+      if (this.under(slot).some(u => u.posedAs !== this.pose || u.posing)) return
       if (d.posedAs !== this.pose) {
         this.reposeDraped(d)
         return
@@ -731,8 +751,7 @@ export class FittingStage {
 
   dispose() {
     cancelAnimationFrame(this.frameId)
-    this.removeDraped("bottom")
-    this.removeDraped("top")
+    for (const slot of LAYERS) this.removeDraped(slot)
     this.resizeObserver.disconnect()
     this.intersectionObserver.disconnect()
     this.controls.dispose()

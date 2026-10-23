@@ -241,12 +241,6 @@
               <label title="<%= label %>"><input type="radio" name="tone" value="<%= color %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changeTone"><span style="background: <%= color %>" aria-hidden="true"></span><span class="visually-hidden"><%= label %></span></label>
             <% end %>
           </div>
-          <div class="studio-start">
-            <label class="studio-exact" title="Sends the stores' photos and the picture to FASHN's try-on service, which deletes them afterward">
-              <input type="checkbox" checked autocomplete="off" data-fitting-room-target="exact"> Use store photos (AI)
-            </label>
-            <button type="button" class="button button--dark" data-action="fitting-room#studioPhoto">Take a photo</button>
-          </div>
           <p class="stage-note" data-fitting-room-target="stageNote"></p>
         </div>
         <div class="studio" data-fitting-room-target="studio" hidden>

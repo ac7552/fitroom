@@ -10,6 +10,8 @@ const SLEEVE_START = 0.03  // how far down the arm from the shoulder joint the t
 // cloth: from cloth.js. pattern: from pattern.js. frame: from body.js. Returns { positions (Float32Array, metres),
 // lift, attach (see the bands, below) }.
 export function placeCloth(cloth, pattern, frame) {
+  // A layer over another garment (a jacket over a top) starts further out, clear of the cloth under it.
+  const gap = frame.gap ?? GAP
   const n = cloth.points.length
   const out = new Float32Array(3 * n)
   const done = new Uint8Array(n)
@@ -54,7 +56,7 @@ export function placeCloth(cloth, pattern, frame) {
     // gap between them with the widest reach nearby, which would start a skirt far too wide, to shrink and ride
     // up the legs.
     const reach = y < frame.crotch ? frame.torso.envelope(y, angle) : frame.torso.at(y, angle)
-    const r = Math.max(round, reach + GAP)
+    const r = Math.max(round, reach + gap)
     const q = [r * Math.sin(angle), y, frame.torso.centreAt(y) + r * Math.cos(angle)]
     if (side === "front" || side === "back") clearOfArms(q, side === "front" ? 1 : -1)
     return q
@@ -64,7 +66,7 @@ export function placeCloth(cloth, pattern, frame) {
     for (const a of [frame.arms.L, frame.arms.R]) {
       for (let k = 0; k < 40; k++) {
         const { t, distance } = a.locate(q)
-        if (t < 0.005 || t > a.lengths[1] || distance >= a.reachAt(t) + GAP) break
+        if (t < 0.005 || t > a.lengths[1] || distance >= a.reachAt(t) + gap) break
         q[2] += 0.005 * towards
       }
     }
@@ -84,7 +86,7 @@ export function placeCloth(cloth, pattern, frame) {
     const across = side === "L" ? scale(front, -1) : front
     const half = widthAt(py)
     const rs = half / Math.PI / 100
-    const r = Math.max(rs, a.reachAt(t) + GAP)
+    const r = Math.max(rs, a.reachAt(t) + gap)
     const angle = (px / half) * Math.PI
     return add3(point, add3(scale(up, r * Math.cos(angle)), scale(across, r * Math.sin(angle))))
   }
@@ -171,7 +173,9 @@ export function placeCloth(cloth, pattern, frame) {
     }
     const legLine = frame.legs[place.side]
     const below = (-py - m.rise) / 100
-    const room = frame.crotch - 0.015 - (frame.floor + 0.02)
+    // Down to just above the ankle: a hem laid round the foot would start two or three times its size and
+    // snap in. From there it falls, and comes to rest on the instep and the heel (see Drape's stayOffFeet).
+    const room = frame.crotch - 0.015 - Math.max(frame.floor + 0.02, legLine.chain[2][1] + 0.02)
     let drop = below
     if (m.inseam / 100 > room) {
       const free = 0.55 * room, k = (room - free) / (m.inseam / 100 - free)
@@ -279,16 +283,29 @@ export function placeCloth(cloth, pattern, frame) {
       }
       if (along.length < 2) return
       along.sort((a, b) => a[0] - b[0])
-      const direction = panel.place.toward === "up" ? [0, 1, 0] : panel.place.toward === "down" ? [0, -1, 0]
+      const fall = panel.place.toward === "fall"
+      const panelDirection = panel.place.toward === "up" ? [0, 1, 0] : panel.place.toward === "down" || fall ? [0, -1, 0]
         : frame.arms[panel.place.side].along(frame.arms[panel.place.side].total).direction
+      const width = along[along.length - 1][0] - along[0][0]
       for (let i = 0; i < n; i++) {
         if (cloth.panel[i] !== panelIndex || done[i]) continue
-        const [px, py] = cloth.points[i]
+        let [px, py] = cloth.points[i]
+        // A falling collar's wider outer edge maps back onto its sewn edge, spreading out as it goes down.
+        if (fall) {
+          const extra = (width * (panel.place.spread - 1)) / 2 * (Math.abs(py) / Math.max(...panel.edges.find(e => e.name === "end_a").points.map(q => Math.abs(q[1]))))
+          px = along[0][0] + ((px - along[0][0] + extra) * width) / (width + 2 * extra || 1)
+        }
         let k = 1
         while (k < along.length - 1 && along[k][0] < px) k++
         const [x0, h0] = along[k - 1], [x1, h1] = along[k]
         const u = x1 === x0 ? 0 : Math.min(Math.max((px - x0) / (x1 - x0), 0), 1)
         const base = [0, 1, 2].map(c => out[3 * h0 + c] * (1 - u) + out[3 * h1 + c] * u)
+        // A falling collar goes out from the neck as much as down, over the shoulders.
+        let direction = panelDirection
+        if (fall) {
+          const ox = base[0], oz = base[2] - frame.torso.centreAt(base[1]), ol = Math.hypot(ox, oz) || 1
+          direction = [0.72 * ox / ol, -0.69, 0.72 * oz / ol]
+        }
         out.set(add3(base, scale(direction, Math.abs(py) / 100)), 3 * i)
         attach.points.push(i); attach.from.push(h0); attach.to.push(h1); attach.u.push(u)
         attach.offset.push(Math.abs(py) / 100); attach.direction.push(...direction)
