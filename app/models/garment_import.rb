@@ -727,7 +727,11 @@ class GarmentImport
     name = product[:name].to_s.delete_prefix(product[:brand].to_s)
     words = [ name, *product.values_at(:category, :description) ].join(" ")
     found = [ shell, words ].find { |text| FABRICS.any? { |_, pattern| text.to_s.match?(pattern) } }
-    FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
+    fabric = FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
+    # Denim is a cotton cloth: a "Denim Jacket" made of "100% Cotton" is denim.
+    return "denim" if fabric == "cotton" && [ name, product[:category] ].join(" ").match?(FABRICS.to_h.fetch("denim"))
+
+    fabric
   end
 
   # A T-shirt's sleeve is short, so a long one on its chart was measured from the centre of the back (as

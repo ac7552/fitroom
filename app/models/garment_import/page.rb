@@ -8,6 +8,9 @@ class GarmentImport
             "seat|hips?|thigh|inseam|inside leg|rise|leg opening|hem|ankle opening"
     LABEL = /\A(#{WORDS})\z/i
     INLINE = /\A(#{WORDS})\s*[:\-–]\s*(\d.*)\z/i
+    # A measurement written beside its label: a number, maybe with a unit ("46.5\"", "18 in", "58 cm"), not a
+    # size's name ("28W", "30L").
+    MEASUREMENT = %r{\A\d+(?:[.,]\d+)?(?:\s+\d/\d)?\s*(?:"|”|''|in\.?|inch(?:es)?|cm)?\z}i
 
     def initialize(html)
       @doc = Nokogiri::HTML(html)
@@ -106,7 +109,7 @@ class GarmentImport
           pairs[inline[1].capitalize] ||= inline[2]
         elsif text.match?(LABEL)
           value = (next_content(node) || next_content(node.parent))&.text&.squish
-          pairs[text.capitalize] ||= value if value&.match?(/\A\d/)
+          pairs[text.capitalize] ||= value if value&.match?(MEASUREMENT)
         end
       end
       return if pairs.size < 2
