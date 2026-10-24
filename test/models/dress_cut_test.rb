@@ -51,4 +51,18 @@ class DressCutTest < ActiveSupport::TestCase
     assert_equal "Sleeveless", best.checks.find { it.part == "sleeve" }.note
     assert_nil best.checks.find { it.part == "shoulders" }
   end
+
+  test "where a dress is cut out, sheer, or has a scarf, which the 3D view draws" do
+    read = ->(name, description) { GarmentImport::DressCut.read({ name:, category: "Dresses", description: }) }
+    belle = read.("Belle Anna Duo Dress - Grey", "Merino wool Halter strap Plunging neckline Attached scarf on the side Open back Slim fit")
+    assert_equal [ [ "back" ], "side", nil ], belle.values_at(:cutouts, :scarf, :sheer)
+    aya = read.("Aya Muse Zair Layered Gown - Caramel", "Lyocell blend Adjustable straps on the front Cutouts on the shoulder Raw sleeve cuffs Sweetheart neck Flared hem Maxi fit")
+    assert_equal [ [ "shoulders" ], "long" ], aya.values_at(:cutouts, :sleeves)
+    gaultier = read.("Jean Paul Gaultier The Smoking Women Long Dress - Black", "Printed nylon Semi sheer Raw sleeve cuffs and hem Loop accent on the back Slim fit")
+    assert_equal [ "all", "semi", "long" ], gaultier.values_at(:sheer, :sheer_kind, :sleeves)
+    assert_equal "sleeves", read.("Mesh Dress", "Sheer sleeves")[:sheer]
+    assert_equal [ "neck" ], [ cut(:cyrielle)[:scarf] ]
+    refute_includes cut(:mireli)[:details], "cut-outs"
+    assert_equal [ "back" ], cut(:mireli)[:cutouts]
+  end
 end

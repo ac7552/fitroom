@@ -30,7 +30,7 @@ export async function localStudioReady() {
 // What's worn, in words the model knows: "a black sweatshirt with a printed picture on the front, light
 // blue denim jeans".
 export function describeOutfit(items) {
-  const words = { tee: "t-shirt", longsleeve: "long-sleeve t-shirt", sweatshirt: "crewneck sweatshirt", hoodie: "hoodie", polo: "polo shirt", tank: "tank top", shirt: "button-up shirt", shortshirt: "short-sleeve button-up shirt", sweater: "knit sweater", shortknit: "short-sleeve knit sweater", cardigan: "cardigan", zip: "zip jacket", bomber: "bomber jacket", tailored: "tailored jacket", coat: "coat", dress: "dress", jeans: "jeans", trousers: "trousers", joggers: "joggers", shorts: "shorts", leggings: "leggings", skirt: "skirt" }
+  const words = { tee: "t-shirt", longsleeve: "long-sleeve t-shirt", sweatshirt: "crewneck sweatshirt", hoodie: "hoodie", polo: "polo shirt", tank: "tank top", shirt: "button-up shirt", shortshirt: "short-sleeve button-up shirt", sweater: "knit sweater", shortknit: "short-sleeve knit sweater", cardigan: "cardigan", zip: "zip jacket", bomber: "bomber jacket", tailored: "tailored jacket", coat: "coat", dress: "dress", jeans: "jeans", trousers: "trousers", joggers: "joggers", shorts: "shorts", leggings: "leggings", skirt: "skirt", sneaker: "sneakers", hightop: "high-top sneakers", boot: "boots", loafer: "loafers", sandal: "sandals", crew: "crew socks", ankle: "ankle socks", knee: "knee socks", belt: "belt" }
   return items.map(({ garment }) => {
     const what = words[garment.style] ?? garment.style ?? "clothes"
     const cloth = garment.fabric && !["cotton", "jersey"].includes(garment.fabric) ? `${garment.fabric} ` : ""

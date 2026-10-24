@@ -1098,7 +1098,18 @@
 ],
 "tables": [],
 "expect": {
-"error": "not_supported"
+"garment": "belt",
+"style": "belt",
+"women": false,
+"names": [
+"32",
+"34",
+"36",
+"38",
+"40",
+"42",
+"44"
+]
 }
 },
 {
@@ -1172,7 +1183,9 @@
 ]
 ],
 "expect": {
-"error": "not_supported"
+"garment": "shoes",
+"style": "sneaker",
+"women": false
 }
 },
 {
@@ -1230,7 +1243,9 @@
 ]
 ],
 "expect": {
-"error": "not_supported"
+"garment": "shoes",
+"style": "boot",
+"women": false
 }
 },
 {

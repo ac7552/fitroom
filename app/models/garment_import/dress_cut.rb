@@ -19,6 +19,8 @@ class GarmentImport
       [ "one_shoulder", /one[- ]shoulder|single[- ]shoulder|asymmetric(?:al)? (?:neck|shoulder)/i ],
       [ "long", /long[- ]sleeves?|\bl\/s\b|full[- ]length sleeves?|bishop sleeves?|raglan sleeves?/i ],
       [ "short", /short[- ]sleeves?|cap sleeves?|puff sleeves?|t-?shirt dress|tee dress|flutter sleeves?/i ],
+      # Sleeves the listing only mentions in passing ("raw sleeve cuffs", "cold shoulder") are long ones.
+      [ "long", /sleeve cuffs?|cold[- ]shoulder|cut[- ]?outs? (?:on|at) the shoulders?/i ],
       [ "thin_straps", /spaghetti|thin straps?|skinny straps?|narrow straps?|slip dress|\bslip\b|cami\b|camisole|adjustable straps?/i ],
       [ "straps", /wide straps?|\bstraps?\b|halter|racer ?back|tank dress|\btank\b|square neck/i ],
       [ "none", /sleeveless/i ]
@@ -53,6 +55,26 @@ class GarmentImport
 
     module_function
 
+    # Where a dress is cut out ("cut-outs on the shoulder", "open back", "keyhole"), where it's see-through
+    # ("sheer sleeves"; "semi sheer" alone means all of it), and where a scarf is attached ("on the side").
+    CUTOUT_PLACES = { "shoulders" => /shoulders?/i, "back" => /back/i, "front" => /front|chest|bust|neck/i, "sides" => /sides?/i, "waist" => /waist|hips?|midriff/i }.freeze
+    SHEER_PLACES = { "sleeves" => /sleeves?/i, "back" => /back/i, "sides" => /sides?|panels?/i, "skirt" => /skirt|hem|overlay/i }.freeze
+
+    def cutouts(words)
+      places = words.scan(/cut[- ]?outs?\s+(?:on|at|along|to|across)\s+(?:the\s+)?(\w+)/i).flatten.filter_map { |w| CUTOUT_PLACES.find { |_, p| w.match?(p) }&.first }
+      places << "back" if words.match?(/open[- ]back|backless|low[- ]back|cut[- ]?out back/i)
+      places << "front" if words.match?(/keyhole/i)
+      places << "waist" if places.empty? && words.match?(/cut[- ]?outs?/i)
+      places.uniq
+    end
+
+    def sheer(words)
+      return unless words.match?(/sheer|\bmesh\b|tulle/i)
+
+      place = words[/sheer\s+(\w+)/i, 1]
+      [ SHEER_PLACES.find { |_, p| place.to_s.match?(p) }&.first || "all", words.match?(/semi[- ]?sheer/i) ? "semi" : "sheer" ]
+    end
+
     # product: { name:, category:, description:, fabric: }
     def read(product)
       name = product.values_at(:name, :category).join(" ")
@@ -69,7 +91,12 @@ class GarmentImport
         stretch:,
         fabric: fabric(words, stretch),
         printed: words.match?(PRINTED),
-        details: DETAILS.filter_map { |detail, pattern| detail if words.match?(pattern) }
+        cutouts: cutouts(words),
+        sheer: sheer(words)&.first,
+        sheer_kind: sheer(words)&.last,
+        scarf: words.match?(/scarf/i) ? (words.match?(/scarf\s+(?:on|at)\s+the\s+side|side scarf/i) ? "side" : "neck") : nil,
+        # What the 3D view doesn't draw (cut-outs, sheer parts and scarves it does).
+        details: DETAILS.filter_map { |detail, pattern| detail if words.match?(pattern) && !%w[cut-outs sheer\ panels scarf].include?(detail) }
       }
     end
 

@@ -101,6 +101,34 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_nil pants.call("Fleece Jogger Drawstring")[:cut]
   end
 
+  test "a romper is a tank tucked into shorts, a jumpsuit a top tucked into pants, one piece" do
+    import = GarmentImport.new
+    romper = import.send(:one_piece, { name: "Kith Women Aire Plunge Cross Back Romper - Legacy", category: "Rompers", description: "Elasticated straps", sizes: %w[XS S M L], women: true }, "x") { |part, kind| import.send(:usual_for, kind, import.send(:top_style_of, part), part) }
+    assert_equal [ "onepiece", "romper" ], romper.values_at(:garment, :style)
+    assert_equal [ "tank", "shorts" ], [ romper[:parts][:top][:style], romper[:parts][:trousers][:style] ]
+    assert romper[:parts].values.all? { it[:one_piece] }
+    jumpsuit = import.send(:one_piece, { name: "Long Sleeve Utility Jumpsuit", category: "Jumpsuits", sizes: %w[S M L] }, "x") { |part, kind| import.send(:usual_for, kind, import.send(:top_style_of, part), part) }
+    assert_equal [ "longsleeve", "trousers" ], [ jumpsuit[:parts][:top][:style], jumpsuit[:parts][:trousers][:style] ]
+  end
+
+  test "shoes, socks and belts are drawn, in their own styles, with the shop's sizes" do
+    import = GarmentImport.new
+    kind = ->(name, category) { import.send(:kind_of, { name:, category:, sorted: true }) }
+    assert_equal "shoes", kind.("New Balance Made in UK 991v1 Luxe Suede - Cocoa", "Low Top Sneakers")
+    assert_equal "shoes", kind.("Dr. Martens Wayborne Boot Mayhem - Dark Brown", "Boots")
+    assert_equal "socks", kind.("Kith Classic Crew Sock - White", "Socks")
+    assert_equal "belt", kind.("Anderson's Leather Black Belt - Black", "Belts")
+    assert_raises(GarmentImport::Error) { kind.("Giorgio Armani & Kith Belt Bag - Tan", "Belts") }
+    assert_raises(GarmentImport::Error) { kind.("Kith Boxer Brief - Black", "Underwear") }
+    shoe = import.send(:accessory, { name: "Timberland 6 Inch Premium Boot - Wheat", category: "Boots", sizes: %w[8 9 10] }, "shoes", "x")
+    assert_equal [ "shoes", "boot" ], shoe.values_at(:garment, :style)
+    assert_equal %w[8 9 10], shoe[:chart][:sizes].map { it["name"] }
+    assert_equal "loafer", import.send(:accessory, { name: "G.H. Bass Larson Penny Loafer", category: "Shoes" }, "shoes", "x")[:style]
+    assert_equal "ankle", import.send(:accessory, { name: "Kith Ankle Sock 3-Pack", category: "Socks" }, "socks", "x")[:style]
+    belt = import.send(:accessory, { name: "Leather Belt", category: "Belts", description: "Brass buckle", sizes: [ "Default Title" ] }, "belt", "x")
+    assert_equal [ "gold", [ "One size" ] ], [ belt[:buckle], belt[:chart][:sizes].map { it["name"] } ]
+  end
+
   test "shorts whose chart gives their whole length as the inseam are measured from the crotch" do
     chart = GarmentImport::ChartReader::Chart.new(sizes: [ { "name" => "48", "waist" => 87, "inseam" => 58.0 }, { "name" => "50", "waist" => 91, "inseam" => 20.0 } ], unit: "cm", kind: "garment", missing: [])
     shorts = GarmentImport.new.send(:garment, { name: "Cupro Cargo Short", category: "Shorts" }, chart, kind: "trousers", source_url: "x")
@@ -131,8 +159,7 @@ class GarmentImportTest < ActiveSupport::TestCase
     # A coat with no chart gets a coat's usual length, not a tee's.
     coat = GarmentImport.new.send(:usual_sizes, "coat", "tee", { name: "Rick Owens Poiret Coat", sizes: %w[S M L] })
     assert_operator coat.sizes.find { it["name"] == "M" }["length"], :>, 90
-    error = assert_raises(GarmentImport::Error) { GarmentImport.new.send(:kind_of, { name: "Kith Women Aire Plunge Cross Back Romper - Legacy", category: "Rompers" }) }
-    assert_match(/rompers and jumpsuits/, error.message)
+    assert_equal "onepiece", GarmentImport.new.send(:kind_of, { name: "Kith Women Aire Plunge Cross Back Romper - Legacy", category: "Rompers" })
     assert_equal "cotton", GarmentImport.new.send(:fabric_of, { name: "Polo", description: "Body 1: 100% Lyocell / Body 2: 60% Viscose / 35% Nylon / 5% Cashmere" }, "top")
     # A cardigan is worn open over a top, as a jacket is, so a tee can go under it.
     assert_equal [ "jacket", "cardigan" ], top("Color-Blocked Cardigan").values_at(:garment, :style)

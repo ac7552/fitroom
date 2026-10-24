@@ -203,6 +203,96 @@ export function waistband(item, frame, measures) {
 // item: { style, size (cm), color, fabric, tuck }. tuck: the pants it's tucked into ({ style, size, cut }),
 // or none. body: bodySnapshot; frame: bodyFrame of it; field: its collision field; measures: the wearer in
 // cm (for the parts a chart doesn't give).
+// Where a dress is cut out and where it's sheer, as its listing says ("cut-outs on the shoulder", "open back",
+// "sheer sleeves"): per pattern point, how far inside a cut-out it is (cm, above 0 inside; the shader leaves
+// those out, with a smooth edge between points), and whether it's sheer (1). On the pattern: x across from the
+// middle, y down from the shoulder (cm), each piece its own.
+export function dressDetails(item, pattern, cloth) {
+  const n = cloth.points.length
+  const hole = new Float32Array(n).fill(-1), sheer = new Float32Array(n)
+  const cut = item.cut
+  if (!cut || item.kind === "trousers") return { hole, sheer }
+  const m = pattern.measures
+  const waistAt = m.shaped?.waistAt ?? m.length * 0.55
+  const halfWaist = (m.shaped?.waist ?? m.chest) / 4, halfChest = m.chest / 4
+  const armhole = m.armhole
+  // Each cut-out: [pieces, x (both sides when mirrored), y, half width, half height].
+  const holes = []
+  for (const place of cut.cutouts ?? []) {
+    if (place === "waist") holes.push([["front"], halfWaist * 0.68, -waistAt, 3, 5.5, true])
+    if (place === "sides") holes.push([["front", "back"], halfWaist * 0.86, -(armhole + waistAt) / 2 - 2, 3, 8, true])
+    if (place === "back") {
+      const top = armhole * 0.45, bottom = waistAt - 4
+      holes.push([["back"], 0, -(top + bottom) / 2, halfChest * 0.42, (bottom - top) / 2, false])
+    }
+    if (place === "front") holes.push([["front"], 0, -(m.frontNeck + 5), 2.5, 4, false])
+    if (place === "shoulders") holes.push([["sleeve_L", "sleeve_R"], 0, -7, m.bicep * 0.22, 5, false])
+  }
+  for (let i = 0; i < n; i++) {
+    const piece = cloth.panels[cloth.panel[i]]
+    const [x, y] = cloth.points[i]
+    for (const [pieces, cx, cy, rx, ry, mirrored] of holes) {
+      if (!pieces.includes(piece)) continue
+      const dx = (mirrored ? Math.abs(x) : x) - cx, dy = y - cy
+      // A rounded rectangle more than an oval (an open back is cut square at its sides).
+      const p = 2.6, d = (1 - Math.pow(Math.pow(Math.abs(dx / rx), p) + Math.pow(Math.abs(dy / ry), p), 1 / p)) * Math.min(rx, ry)
+      hole[i] = Math.max(hole[i], d)
+    }
+    const sleeve = /^sleeve/.test(piece), body = piece === "front" || piece === "back"
+    const zone = cut.sheer
+    if (zone === "all" || (zone === "sleeves" && sleeve) || (zone === "back" && piece === "back") ||
+        (zone === "sides" && body && Math.abs(x) > halfWaist * 0.6) || (zone === "skirt" && body && y < -waistAt - 4)) sheer[i] = 1
+  }
+  return { hole, sheer }
+}
+
+// Which points of an inner garment poke out through one worn over it: within `reach` (m) of the outer cloth
+// and no nearer the body than it (less `gap`). inner, outer: DrapedTops as they're draped now; field: the
+// body as the inner garment was draped on (its skin distance). Returns a Float32Array, 1 where covered.
+// Which points of an inner garment poke out through one worn over it: within `reach` (m) of the outer cloth
+// and not behind its surface (along its outward normal, less `gap`). inner, outer: DrapedTops as they're
+// draped now (their meshes up to date). Returns a Float32Array, 1 where covered.
+export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {}) {
+  const field = outer.drape.field
+  const a = inner.geometry.attributes.position.array
+  const b = outer.geometry.attributes.position.array, normals = outer.geometry.attributes.normal.array
+  const cell = reach, grid = new Map()
+  const key = (x, y, z) => `${x},${y},${z}`
+  // Not near the outer garment's edges (an open front, a hem, a cuff): what shows past them is meant to.
+  const free = outer.cloth.toFree ?? []
+  const nb = b.length / 3
+  for (let j = 0; j < nb; j++) {
+    if (free[j] < 0.8) continue
+    const k = key(Math.floor(b[3 * j] / cell), Math.floor(b[3 * j + 1] / cell), Math.floor(b[3 * j + 2] / cell))
+    let list = grid.get(k)
+    if (!list) grid.set(k, (list = []))
+    list.push(j)
+  }
+  const na = a.length / 3, covered = new Float32Array(na)
+  for (let i = 0; i < na; i++) {
+    const x = a[3 * i], y = a[3 * i + 1], z = a[3 * i + 2]
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell)
+    let nearest = Infinity, near = -1
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      for (const j of grid.get(key(cx + dx, cy + dy, cz + dz)) ?? []) {
+        const d = (b[3 * j] - x) ** 2 + (b[3 * j + 1] - y) ** 2 + (b[3 * j + 2] - z) ** 2
+        if (d < nearest) { nearest = d; near = j }
+      }
+    }
+    if (near < 0 || nearest > reach * reach) continue
+    // The outer cloth's normal, turned to face away from the body (a piece's normals may face either way).
+    let nx = normals[3 * near], ny = normals[3 * near + 1], nz = normals[3 * near + 2]
+    if (field) {
+      field.at(b[3 * near], b[3 * near + 1], b[3 * near + 2])
+      const h = field.hit
+      if (nx * h[0] + ny * h[1] + nz * h[2] < 0) { nx = -nx; ny = -ny; nz = -nz }
+    }
+    const out = (x - b[3 * near]) * nx + (y - b[3 * near + 1]) * ny + (z - b[3 * near + 2]) * nz
+    if (out > -gap) covered[i] = 1
+  }
+  return covered
+}
+
 export class DrapedTop {
   constructor({ item, body, frame, field, measures, renderer }) {
     this.item = item
@@ -234,7 +324,10 @@ export class DrapedTop {
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
       // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
       // hang caught on them, short).
-      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
+      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, ring,
+      // Pants, and a dress or coat long enough to reach it, rest on the floor (a gown's hem carries its weight
+      // there, rather than pulling it off the shoulders).
+      floor: this.bottoms || item.style === "dress" || item.style === "coat" ? frame.floor + 0.004 : null,
       feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
       snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
       tuck,
@@ -295,6 +388,11 @@ export class DrapedTop {
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
     geometry.setAttribute("aPhoto", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
+    // A dress's cut-outs and sheer parts, from its listing (see dressDetails).
+    const { hole, sheer } = dressDetails(this.item, this.pattern, cloth)
+    geometry.setAttribute("aHole", new THREE.BufferAttribute(hole, 1))
+    geometry.setAttribute("aSheer", new THREE.BufferAttribute(sheer, 1))
+    geometry.setAttribute("aCover", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -312,7 +410,9 @@ export class DrapedTop {
     const knit = ["jersey", "fleece", "rib"].includes(surface)
     const details = {
       stitch: knit ? "hem" : "topstitch", closure: pattern.closure, pocket: item.style === "hoodie" ? "kangaroo" : null,
-      neckDepth: pattern.measures.frontNeck, length: pattern.measures.length
+      neckDepth: pattern.measures.frontNeck, length: pattern.measures.length,
+      // Semi-sheer cloth shows more of its colour than sheer.
+      sheer: item.cut?.sheer ? (item.cut.sheer_kind === "semi" ? 0.78 : 0.5) : 1
     }
     return {
       main: clothMaterial({ color: item.color, cloth: surface, details, renderer }),
@@ -320,6 +420,14 @@ export class DrapedTop {
       fitMain: clothMaterial({ color: "#ffffff", cloth: surface, details, fitMap: true, renderer }),
       fitRib: clothMaterial({ color: "#ffffff", cloth: knit ? "rib" : surface, fitMap: true, renderer })
     }
+  }
+
+  // Points a garment over this one covers (see coveredPoints), left undrawn; null shows them all.
+  setCovered(covered) {
+    const attribute = this.geometry.attributes.aCover
+    if (covered) attribute.array.set(covered)
+    else attribute.array.fill(0)
+    attribute.needsUpdate = true
   }
 
   setColor(color) {

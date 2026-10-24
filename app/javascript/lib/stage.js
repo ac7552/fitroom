@@ -3,7 +3,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
-import { DrapedTop, TUCKABLE, bodySnapshot, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
+import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
+import { bodyFrame } from "lib/garments/body"
+import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, shoeGeometry, sockGeometry, strapGeometry } from "lib/garments/accessories"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
 // script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
@@ -78,6 +80,11 @@ export class FittingStage {
     this.order = LAYERS
     this.tucked = false     // whether a top is worn tucked into the pants (when it can be)
     this.drapeBudget = 20   // milliseconds of draping per frame
+    // Shoes and socks (on the calves' bones, so they follow the pose) and a belt (round the pants' waistband).
+    this.feet = { key: null, meshes: [], shoes: {} }
+    this.belt = { stamp: null, mesh: null, buckle: null }
+    this.scarf = { stamp: null, mesh: null }
+    this.collars = { stamp: null, meshes: [] }
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
@@ -290,14 +297,249 @@ export class FittingStage {
     // it through them), over the pants or tucked into them; and over the top, a casual jacket.
     const top = worn.top && !tailored && !modelCoat ? worn.top : null
     this.hiddenTop = Boolean(worn.top && !top)
-    const tuck = this.tucked && this.canTuck()
+    // A romper's or jumpsuit's top is always in its shorts or pants: they're one piece.
+    this.onePiece = Boolean(worn.top?.onePiece && worn.trousers?.onePiece)
+    const tuck = (this.tucked || this.onePiece) && this.canTuck()
     this.order = tuck ? TUCKED_LAYERS : LAYERS
     const items = {
       bottom: worn.trousers ?? null,
       top: top && tuck ? { ...top, tuck: { style: worn.trousers.style ?? "trousers", size: worn.trousers.size, cut: worn.trousers.cut ?? null } } : top,
       outer: drapedJacket ? worn.jacket : drapedCoat ? { ...worn.coat, style: "coat" } : null
     }
+    this.dressFeet(worn.shoes ?? null, worn.socks ?? null)
+    this.beltItem = worn.belt ?? null
     for (const slot of this.order) this.dressDraped(slot, items[slot])
+  }
+
+  // Shoes and socks, lofted round the mannequin's feet and legs as they stand (see accessories.js), then hung
+  // on the calves' bones so they move with the legs. Rebuilt when the body or what's worn changes.
+  dressFeet(shoes, socks) {
+    const key = JSON.stringify([shoes && [shoes.style, shoes.color, shoes.sole, shoes.fabric], socks && [socks.style, socks.color],
+      this.fitted.scale, this.fitted.influences, this.bodyType])
+    if (key === this.feet.key) return
+    this.feet.key = key
+    for (const mesh of this.feet.meshes) {
+      mesh.parent?.remove(mesh)
+      mesh.geometry.dispose()
+      for (const m of [mesh.material].flat()) m.dispose()
+    }
+    this.feet.meshes = []
+    this.feet.shoes = {}
+    if (!shoes && !socks) return
+    // Built on the mannequin as it stands, whatever the pose shown.
+    const pose = this.pose
+    this.pose = "standing"
+    this.applyPose()
+    const body = bodySnapshot(this.meshes.body)
+    const frame = bodyFrame(body)
+    const hang = (mesh, side) => {
+      mesh.castShadow = mesh.receiveShadow = true
+      mesh.frustumCulled = false
+      const bone = this.model.getObjectByName(`calf_${side.toLowerCase()}`) ?? this.model
+      bone.attach(mesh)
+      this.feet.meshes.push(mesh)
+      return mesh
+    }
+    for (const side of ["L", "R"]) {
+      if (socks) hang(new THREE.Mesh(sockGeometry(body, frame, side, socks.style), accessoryMaterial("knit", socks.color)), side)
+      if (shoes) {
+        const upper = accessoryMaterial(shoes.fabric === "leather" || shoes.fabric === "suede" ? shoes.fabric : "canvas", shoes.color)
+        const sole = accessoryMaterial(shoes.style === "loafer" || shoes.style === "boot" ? "leather" : "rubber", shoes.sole ?? (shoes.style === "sneaker" || shoes.style === "hightop" ? "#ecebe6" : "#2a2522"))
+        const laces = accessoryMaterial("canvas", shoes.laces ?? (shoes.style === "boot" ? "#3a2a1e" : shoes.color))
+        this.feet.shoes[side] = hang(new THREE.Mesh(shoeGeometry(body, frame, side, shoes.style), [sole, upper, laces]), side)
+        if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side)
+      }
+    }
+    this.pose = pose
+    this.applyPose()
+  }
+
+  // Each shoe's outline as it stands now, for pants' hems to stay off (in place of the bare feet's).
+  shoeOutlines(floor) {
+    const outlines = {}
+    for (const side of ["L", "R"]) {
+      const mesh = this.feet.shoes[side]
+      if (!mesh) return null
+      mesh.updateWorldMatrix(true, false)
+      const a = mesh.geometry.attributes.position, v = new THREE.Vector3(), points = []
+      for (let i = 0; i < a.count; i++) { v.fromBufferAttribute(a, i).applyMatrix4(mesh.matrixWorld); points.push([v.x, v.y, v.z]) }
+      outlines[side] = outlineOf(points, floor)
+    }
+    return outlines
+  }
+
+  // The body as cloth sees it (see prepareBody), standing in shoes when they're worn.
+  prepare(snapshot, options) {
+    const prepared = prepareBody(snapshot.body, snapshot.egg, snapshot.over, options)
+    const shoes = this.shoeOutlines(prepared.frame.floor)
+    if (shoes && prepared.frame.feet) prepared.frame.feet = shoes
+    return prepared
+  }
+
+  // A dress's attached scarf, once the dress is draped: a long tail hanging from its side at the waist, or
+  // a band round the neck with its two ends hanging down the front. Laid on the dress where it hangs (found
+  // by looking along each height for the dress's surface), in the dress's colour.
+  wearScarf() {
+    const d = this.slots.top
+    const place = d?.top.item.cut?.scarf
+    const ready = place && d.shown && d.final && !d.posing && this.view !== "fit"
+    const stamp = ready ? `${d.top.drape.frame}:${d.posedAs}:${place}:${d.top.item.color}` : "none"
+    if (stamp === this.scarf.stamp) return
+    this.scarf.stamp = stamp
+    if (this.scarf.mesh) {
+      this.scarf.mesh.parent?.remove(this.scarf.mesh)
+      this.scarf.mesh.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.() })
+      this.scarf.mesh = null
+    }
+    if (!ready) return
+    const mesh = d.top.mesh
+    mesh.geometry.computeBoundingSphere()
+    const caster = new THREE.Raycaster()
+    const hit = (from, direction) => {
+      caster.set(new THREE.Vector3(...from), new THREE.Vector3(...direction).normalize())
+      const found = caster.intersectObject(mesh, false)[0]
+      return found ? found.point.toArray() : null
+    }
+    const frame = d.frame, m = d.top.pattern.measures
+    const s = this.fitted.scale ?? 1
+    const strips = []
+    // A strip down from `top` (m), hanging `length`, `width` across: each row found on the dress's surface by
+    // looking in along `inward` from outside, `across` the direction it spreads.
+    const strip = (top, length, width, inward, across, sway) => {
+      const rows = 24, positions = [], index = []
+      for (let r = 0; r <= rows; r++) {
+        const t = r / rows, y = top[1] - t * length
+        const w = width * (1 - 0.25 * t)
+        for (const side of [-1, 1]) {
+          const base = [top[0] + across[0] * side * w / 2 + sway * Math.sin(t * Math.PI * 1.3) * across[0], y, top[2] + across[2] * side * w / 2 + sway * Math.sin(t * Math.PI * 1.3) * across[2]]
+          const from = [base[0] - inward[0] * 0.6, y, base[2] - inward[2] * 0.6]
+          const on = hit(from, inward)
+          const p = on ? [on[0] - inward[0] * (0.009 + 0.012 * Math.sin(t * Math.PI)), y, on[2] - inward[2] * (0.009 + 0.012 * Math.sin(t * Math.PI))] : [base[0] - inward[0] * 0.02, y, base[2] - inward[2] * 0.02]
+          positions.push(...p)
+        }
+      }
+      for (let r = 0; r < rows; r++) { const a = 2 * r; index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2) }
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+      geometry.setIndex(index)
+      geometry.computeVertexNormals()
+      strips.push(geometry)
+    }
+    const waistY = frame.hps[1] - (m.shaped?.waistAt ?? 40) / 100
+    const cz = frame.torso?.centreAt?.(waistY) ?? 0
+    if (place === "side") {
+      // From the wearer's left side at the waist, down past the hip.
+      const from = hit([1, waistY, cz], [-1, 0, 0]) ?? [0.18 * s, waistY, cz]
+      strip([from[0], waistY + 0.02, from[2]], 0.62 * s, 0.11 * s, [-1, 0, 0], [0, 0, 1], 0.015)
+    } else {
+      // Round the neck, then both ends down the front.
+      const neckY = frame.hps[1] - 0.02
+      const ring = [], positions = [], index = []
+      const around = 40
+      for (let j = 0; j <= around; j++) {
+        const a = (j / around) * 2 * Math.PI
+        for (const dy of [0.025, -0.02]) {
+          const r = (frame.measures.neck / (2 * Math.PI)) / 100 + 0.018 + (dy < 0 ? 0.012 : 0)
+          positions.push(Math.sin(a) * r, neckY + dy, Math.cos(a) * r + 0.01)
+        }
+      }
+      for (let j = 0; j < around; j++) { const a = 2 * j; index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
+      const geometry = new THREE.BufferGeometry()
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+      geometry.setIndex(index)
+      geometry.computeVertexNormals()
+      strips.push(geometry)
+      void ring
+      for (const side of [-1, 1]) strip([side * 0.035 * s, neckY - 0.01, 0.2], 0.3 * s, 0.07 * s, [0, 0, -1], [1, 0, 0], 0.01 * side)
+    }
+    // Its own cloth, a shade off the dress's so its edges read.
+    const material = accessoryMaterial("knit", "#" + new THREE.Color(d.top.item.color).offsetHSL(0, 0, -0.06).getHexString())
+    const group = new THREE.Group()
+    for (const geometry of strips) {
+      const part = new THREE.Mesh(geometry, material)
+      part.castShadow = part.receiveShadow = true
+      group.add(part)
+    }
+    this.scene.add(group)
+    this.scarf.mesh = group
+  }
+
+  // A shirt's or polo's collar: the stand is draped with the shirt, and the collar itself (its "leaf") is
+  // laid folded down over it from its top edge, round the neck and over the yoke, its points coming down
+  // toward the chest and apart at the front. Laid on the shirt where it hangs, as the scarf is.
+  wearCollars() {
+    const slots = ["top", "outer"].filter(slot => ["shirt", "shortshirt", "polo"].includes(this.slots[slot]?.top.item.style))
+    const ready = slots.filter(slot => { const d = this.slots[slot]; return d.shown && d.final && !d.posing })
+    const stamp = ready.map(slot => `${slot}:${this.slots[slot].top.drape.frame}:${this.slots[slot].posedAs}:${this.slots[slot].top.item.color}`).join("|") + this.view
+    if (stamp === this.collars.stamp) return
+    this.collars.stamp = stamp
+    for (const mesh of this.collars.meshes) { this.scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose() }
+    this.collars.meshes = []
+    if (this.view === "fit") return
+    for (const slot of ready) {
+      const geometry = collarLeaf(this.slots[slot].top, this.fitted.scale ?? 1)
+      if (!geometry) continue
+      const item = this.slots[slot].top.item
+      const mesh = new THREE.Mesh(geometry, accessoryMaterial(item.style === "polo" ? "knit" : "canvas", item.color))
+      mesh.castShadow = mesh.receiveShadow = true
+      this.scene.add(mesh)
+      this.collars.meshes.push(mesh)
+    }
+  }
+
+  // Where a garment's drape leaves it a hair outside one worn over it, it would show through: those points of
+  // the one underneath aren't drawn. Worked out once both are settled in the pose shown.
+  hideCovered() {
+    const ready = d => d && d.shown && d.final && !d.posing
+    const pairs = this.order === TUCKED_LAYERS ? [["top", "outer"], ["bottom", "outer"]] : [["bottom", "top"], ["top", "outer"], ["bottom", "outer"]]
+    const stamp = pairs.map(([i, o]) => (ready(this.slots[i]) && ready(this.slots[o]) ? `${this.slots[i].top.drape.frame}/${this.slots[o].top.drape.frame}/${this.slots[o].posedAs}` : "-")).join(":") + this.order.join()
+    if (stamp === this.coverStamp) return
+    this.coverStamp = stamp
+    for (const slot of LAYERS) {
+      const inner = this.slots[slot]
+      if (!ready(inner)) continue
+      let covered = null
+      for (const [i, o] of pairs) {
+        if (i !== slot || !ready(this.slots[o])) continue
+        const c = coveredPoints(inner.top, this.slots[o].top)
+        covered = covered ? covered.map((v, k) => Math.max(v, c[k])) : c
+      }
+      inner.top.setCovered(covered)
+    }
+  }
+
+  // The belt, laid round the pants' waistband as they're draped now, when nothing hangs over it (a top worn
+  // out over the pants would). Redone as the pants move.
+  wearBelt() {
+    const bottom = this.slots.bottom
+    const covered = Boolean(this.slots.top) && this.order !== TUCKED_LAYERS
+    const ready = this.beltItem && bottom?.shown && bottom.final && !bottom.posing && !covered && this.view !== "fit"
+    const stamp = ready ? `${bottom.top.drape.frame}:${bottom.posedAs}:${this.beltItem.color}:${this.beltItem.buckle}` : "none"
+    if (stamp === this.belt.stamp) return
+    this.belt.stamp = stamp
+    for (const part of [this.belt.mesh, this.belt.buckle]) {
+      if (!part) continue
+      this.scene.remove(part)
+      part.geometry.dispose()
+      part.material.dispose()
+    }
+    this.belt.mesh = this.belt.buckle = null
+    if (!ready) return
+    const { drape, cloth } = bottom.top
+    const at = i => { const j = drape.map ? drape.map[i] : i; return [drape.x[3 * j], drape.x[3 * j + 1], drape.x[3 * j + 2]] }
+    const rim = (cloth.edges["waistband/rim"] ?? []).map(at)
+    const seam = Object.keys(cloth.edges).filter(k => k.startsWith("waistband/sewn_")).flatMap(k => cloth.edges[k].map(at))
+    const s = this.fitted.scale ?? 1
+    const belt = beltGeometry(rim, seam, { width: 0.033 * s, out: 0.004, thick: 0.004 })
+    if (!belt) return
+    this.belt.mesh = new THREE.Mesh(belt.geometry, accessoryMaterial(this.beltItem.fabric === "canvas" ? "canvas" : "leather", this.beltItem.color))
+    const buckle = new THREE.Mesh(buckleGeometry(belt.buckle.height), accessoryMaterial("metal", this.beltItem.buckle === "gold" ? "#c9a75e" : "#c7c9cc"))
+    buckle.position.fromArray(belt.buckle.position)
+    this.belt.buckle = buckle
+    for (const part of [this.belt.mesh, buckle]) {
+      part.castShadow = part.receiveShadow = true
+      this.scene.add(part)
+    }
   }
 
   // Draping
@@ -327,7 +569,7 @@ export class FittingStage {
     const style = slot === "bottom" ? item.style ?? "trousers" : DRAPED_STYLES.includes(item.style) ? item.style : "tee"
     // Each layer is sewn over the ones under it, so a new one under it is a new drape for it too.
     const over = this.under(slot).map(d => d.key)
-    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, item.tuck ?? null, this.fitted.scale, this.fitted.influences, over])
+    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, item.tuck ?? null, this.fitted.scale, this.fitted.influences, over, this.feet.key])
     if (this.slots[slot]?.key !== key && this.waiting[slot]?.key !== key) {
       // The garment shown stays until the new one is sewn and in the pose shown, so nothing jumps about.
       this.removeDraped(slot, { keepShown: true })
@@ -355,7 +597,7 @@ export class FittingStage {
   startDrape({ slot, key, item }) {
     const rest = this.restSnapshot()
     const over = [...rest.over, ...this.under(slot).filter(d => d.top.done).map(d => clothSnapshot(d.restX ?? d.top.drape.x, d.top, rest.body))]
-    const { frame, field } = prepareBody(rest.body, rest.egg, over, { arms: slot !== "bottom" })
+    const { frame, field } = this.prepare({ ...rest, over }, { arms: slot !== "bottom" })
     // A jacket over a top starts clear of the top's cloth (a tucked top lies close round the waist, so the
     // usual gap clears it; more would stretch the jacket's hem round the hips, to spring back and ride up).
     if (slot === "outer" && this.slots.top && this.order !== TUCKED_LAYERS) frame.gap = 0.03
@@ -406,6 +648,8 @@ export class FittingStage {
   snapshotNow(slot = null) {
     const body = bodySnapshot(this.meshes.body)
     const over = this.meshes.trousers.visible ? [bodySnapshot(this.meshes.trousers)] : []
+    // Shoes and socks are worn under everything: pants lie on them.
+    for (const mesh of this.feet.meshes) over.push(meshSnapshot(mesh))
     if (slot) for (const d of this.under(slot)) if (d.top.done) over.push(clothSnapshot(d.top.drape.x, d.top, body))
     return { body, over, egg: this.eggShape() }
   }
@@ -468,7 +712,7 @@ export class FittingStage {
       this.applyPose(s / steps)
       const posed = skinPoints(d.restBind, d.weights.skinIndex, d.weights.skinWeight, this.meshes.body)
       const now = this.snapshotNow(d.slot)
-      const { frame, field } = prepareBody(now.body, now.egg, now.over, { arms: d.slot !== "bottom" })
+      const { frame, field } = this.prepare(now, { arms: d.slot !== "bottom" })
       if (s < steps) this.applyPose()
       // A skirt or dress keeps hanging round both legs as they come together, rather than falling in
       // between them.
@@ -502,7 +746,8 @@ export class FittingStage {
       // The studio renderer has only the base body's shape keys (its own build is the men's body).
       body: Object.fromEntries(Object.entries(this.fitted.influences).filter(([name]) => name !== "women")),
       pose: this.pose,
-      items: this.outfit.map(item => ({
+      // Shoes, socks and belts are drawn only here, on the page.
+      items: this.outfit.filter(item => !["shoes", "socks", "belt"].includes(item.kind)).map(item => ({
         kind: item.kind, style: item.kind === "jacket" ? (item.style ?? "tailored") : item.kind === "top" ? (item.style ?? "tee") : undefined,
         color: item.color, fabric: item.fabric ?? "wool", ease: this.lastEase[item.kind] ?? {}
       }))
@@ -705,6 +950,10 @@ export class FittingStage {
   // A still picture of what's on screen, sharper than the screen: drawn once at `width` by `height` pixels
   // with finer shadows, then the view goes back as it was. Returns a PNG Blob. Nothing leaves the device.
   async photo({ width = 1600, height = 2000 } = {}) {
+    this.wearBelt()
+    this.wearScarf()
+    this.wearCollars()
+    this.hideCovered()
     const renderer = this.renderer
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
     const aspect = this.camera.aspect
@@ -762,6 +1011,10 @@ export class FittingStage {
     this.controls.update()
     this.advanceDrape()
     this.fitTuck()
+    this.wearBelt()
+    this.wearScarf()
+    this.wearCollars()
+    this.hideCovered()
     this.renderer.render(this.scene, this.camera)
     this.frameId = this.visible ? requestAnimationFrame(this.tick) : null
   }
@@ -845,6 +1098,77 @@ export class FittingStage {
     this.scene.environment?.dispose()
     this.renderer.dispose()
   }
+}
+
+// A collar's leaf (see wearCollars): from the stand's top edge, folded down over it and the shirt below, as
+// a strip round the neck, open at the front. top: the shirt's DrapedTop as draped now.
+function collarLeaf(top, scale) {
+  const { drape, cloth, mesh } = top
+  const rim = cloth.edges["collar/rim"]
+  if (!rim?.length) return null
+  const at = i => { const j = drape.map ? drape.map[i] : i; return new THREE.Vector3(drape.x[3 * j], drape.x[3 * j + 1], drape.x[3 * j + 2]) }
+  const points = rim.map(at)
+  const centre = points.reduce((c, p) => c.add(p), new THREE.Vector3()).multiplyScalar(1 / points.length)
+  const angle = p => Math.atan2(p.x - centre.x, p.z - centre.z)
+  // The rim by angle round the neck (0 at the front, toward +x), from the back round to the back.
+  const around = 72, columns = []
+  for (let j = 0; j <= around; j++) {
+    const a = (j / around) * 2 * Math.PI - Math.PI
+    if (Math.abs(a) < 0.16) { columns.push(null); continue }   // open at the front
+    let best = null, bestD = Infinity
+    for (const p of points) {
+      const d = Math.abs(Math.atan2(Math.sin(angle(p) - a), Math.cos(angle(p) - a)))
+      if (d < bestD) { bestD = d; best = p }
+    }
+    columns.push({ a, p: best })
+  }
+  mesh.geometry.computeBoundingSphere()
+  const caster = new THREE.Raycaster()
+  const polo = top.item.style === "polo"
+  const rows = 9, positions = [], index = [], start = []
+  for (const column of columns) {
+    if (!column) { start.push(-1); continue }
+    const { a, p } = column
+    start.push(positions.length / 3)
+    const u = new THREE.Vector3(Math.sin(a), 0, Math.cos(a))
+    // Longer toward the front, where the collar's points are.
+    const front = Math.max(0, Math.min(1, (1.1 - Math.abs(a)) / 0.9))
+    const drop = (polo ? 0.05 : 0.052 + 0.03 * front * front) * scale
+    const rimR = Math.hypot(p.x - centre.x, p.z - centre.z)
+    const spread = (polo ? 0.03 : 0.028 + 0.02 * front) * scale
+    for (let r = 0; r <= rows; r++) {
+      const t = r / rows
+      // Out from the neck as it comes down: over the stand's top, then flaring a little over the shirt.
+      const out = rimR + (0.003 + spread * Math.sin(Math.min(1, t * 1.25) * Math.PI / 2)) * (r === 0 ? 0.3 : 1)
+      const x = centre.x + u.x * out, z = centre.z + u.z * out
+      let y = p.y + 0.004 * scale - t * drop
+      // Never inside the shirt: over the shoulders' slope it lies on the yoke.
+      caster.set(new THREE.Vector3(x, p.y + 0.2, z), new THREE.Vector3(0, -1, 0))
+      const below = caster.intersectObject(mesh, false).find(h => h.point.y < p.y - 0.004)
+      if (below) y = Math.max(y, below.point.y + 0.004 * scale)
+      positions.push(x, y, z)
+    }
+  }
+  for (let c = 0; c + 1 < columns.length; c++) {
+    const a0 = start[c], b0 = start[c + 1]
+    if (a0 < 0 || b0 < 0) continue
+    for (let r = 0; r < rows; r++) index.push(a0 + r, b0 + r, a0 + r + 1, a0 + r + 1, b0 + r, b0 + r + 1)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(index)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+// A mesh as it stands now, in world space, as something to drape over.
+function meshSnapshot(mesh) {
+  mesh.updateWorldMatrix(true, false)
+  const a = mesh.geometry.attributes.position, v = new THREE.Vector3()
+  const positions = new Float32Array(3 * a.count)
+  for (let i = 0; i < a.count; i++) { v.fromBufferAttribute(a, i).applyMatrix4(mesh.matrixWorld); positions[3 * i] = v.x; positions[3 * i + 1] = v.y; positions[3 * i + 2] = v.z }
+  const index = Uint32Array.from(mesh.geometry.index.array)
+  return { positions, normals: vertexNormals(positions, index), index }
 }
 
 // A draped garment as something to drape over: its cloth's points (x, the drape's joined points) as a

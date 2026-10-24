@@ -25,7 +25,7 @@ class GarmentImport
     [ "socks", /\bsocks?\b|underwear|boxers?|briefs\b/i ],
     [ "scarves and ties", /scarf|scarves|\bties?\b|gloves?/i ],
     [ "swimwear", /swim|bikini/i ],
-    [ "rompers and jumpsuits", /romper|jumpsuit|playsuit|overalls?\b|dungarees|unitard|catsuit/i ],
+    [ "unitards", /unitard|catsuit|bodysuit/i ],
     [ "accessories", /accessor/i ]
   ].freeze
   # Dresses (a "dress shirt" or "dress pants" isn't one), drawn as a top cut long.
@@ -115,10 +115,30 @@ class GarmentImport
   end
 
   KINDS = %w[top jacket coat trousers].freeze
+  # One-piece outfits: drawn and fitted as a top tucked into shorts (a romper) or pants (a jumpsuit), one cloth.
+  ONE_PIECES = /romper|jumpsuit|playsuit|boiler ?suit|coveralls?|overalls?\b|dungarees|flight suit/i
+  # Worn but not fitted: drawn on the mannequin from the listing's colour and photo, in the size picked.
+  ACCESSORIES = %w[shoes socks belt].freeze
+  ACCESSORY_GROUPS = { "shoes" => "shoes", "socks" => "socks", "belt" => "belts" }.freeze
+  WORN_ON = {
+    "shoes" => /sneakers?|\bshoes?\b|\bboots?\b|footwear|loafers?|sandals?|slides?\b|mules?\b|clogs?|trainers?|derby|oxfords?\b|brogues?|moccasins?|\b\d{3}v?\d?\b|runners?|low top|high top/i,
+    "socks" => /\bsocks?\b/i,
+    "belt" => /\bbelts?\b/i
+  }.freeze
+  # How a shoe is drawn: a boot (up past the ankle), a loafer (cut low, a thin sole), a sandal (a sole and a
+  # strap), or a sneaker (a thick sole, laced to the ankle). First match wins.
+  SHOE_STYLES = [
+    [ "hightop", /high[- ]?tops?|\bhi\b/i ],
+    [ "sneaker", /sneakers?|trainers?|runners?|running shoes?/i ],
+    [ "boot", /\bboots?\b|chelsea|chukka|combat|hiking/i ],
+    [ "sandal", /sandals?|slides?\b|mules?\b|clogs?|flip[- ]?flops?|slippers?/i ],
+    [ "loafer", /loafers?|moccasins?|penny|derby|oxfords?\b|brogues?|monk strap|dress shoes?|ballet|flats?\b|pumps?\b|heels?\b/i ]
+  ].freeze
+  SOCK_STYLES = [ [ "knee", /knee|over[- ]the[- ]calf|\bhigh\b/i ], [ "ankle", /ankle|no[- ]show|low[- ]cut|quarter|trainer socks?/i ] ].freeze
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 19
+  FORMAT = 23
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -171,6 +191,11 @@ class GarmentImport
     page = Page.new(html)
     product = page.product
     kind = kind_of(product)
+    return accessory(product.merge(sizes: page.size_names), kind, source_url) if ACCESSORIES.include?(kind)
+    if kind == "onepiece"
+      sized = product.merge(sizes: page.size_names, women: women?(product, source_url))
+      return one_piece(sized, source_url) { |part, part_kind| usual_for(part_kind, top_style_of(part), part) }
+    end
 
     # The table that gives the most measurements wins; a resale listing's own measurements come next.
     chart = page.tables.filter_map { ChartReader.read(it.rows, context: it.context, garment: kind) }.min_by { it.missing.size }
@@ -235,10 +260,13 @@ class GarmentImport
     }
     product[:women] = women?(product, url)
     kind = kind_of(product)
+    return accessory(product, kind, url) if ACCESSORIES.include?(kind)
+
     style = usual_key(kind, top_style_of(product), product)
     sizing = given ? given["sizing"] : kiwi_answer(
       "shop" => shop, "product" => data["id"].to_s, "title" => data["title"], "tags" => Array(data["tags"]).join(",").split(/,\s*/).join(","),
       "type" => data["product_type"], "vendor" => data["vendor"])
+    return one_piece(product, url) { |part, part_kind| read_kiwi(sizing, part_kind) || usual_for(part_kind, top_style_of(part), part) } if kind == "onepiece"
     # Read by the server, a shop with no chart there may have one on its page; read by the browser, the page
     # is what the shop wouldn't give the server.
     if dress?(kind, product)
@@ -637,6 +665,60 @@ class GarmentImport
     "coat" => /coat|jacket/i, "trousers" => /trouser|pant|jean/i
   }.freeze
 
+  # Shoes, socks or a belt: their look (a shoe's style, a belt's buckle), colour and cloth, and the shop's sizes
+  # to pick from. Nothing is measured: they're drawn on the mannequin as they look.
+  def accessory(product, kind, source_url)
+    words = product.values_at(:name, :category, :description).join(" ")
+    named = product.values_at(:name, :category).join(" ")
+    style = case kind
+            when "shoes" then SHOE_STYLES.find { |_, pattern| named.match?(pattern) }&.first || "sneaker"
+            when "socks" then SOCK_STYLES.find { |_, pattern| named.match?(pattern) }&.first || "crew"
+            else "belt"
+            end
+    fabric = case words
+             when /suede/i then "suede"
+             when /leather/i then "leather"
+             when /canvas|nylon|webbing|mesh|knit/i then "canvas"
+             else kind == "socks" ? "knit" : kind == "belt" ? "leather" : "canvas"
+             end
+    names = Array(product[:sizes]).map(&:to_s).reject { it.match?(/\Adefault title\z/i) }.presence || [ "One size" ]
+    {
+      name: product[:name].presence || kind.capitalize,
+      brand: product[:brand],
+      color_name: product[:color],
+      color: color_hex(product.values_at(:color, :description, :name)),
+      fabric:,
+      style:,
+      **(product[:image] ? { image_url: product[:image] } : {}),
+      source_url:,
+      garment: kind,
+      **(kind == "belt" ? { buckle: words.match?(/gold|brass/i) ? "gold" : "silver" } : {}),
+      **(product[:women] ? { women: true } : {}),
+      chart: { sizes: names.first(30).map { { "name" => it } }, unit: "cm", kind: "sizes", missing: [] }
+    }
+  end
+
+  # A romper or a jumpsuit as its two halves, each fitted as its own kind: a top (a tank on straps, else a
+  # tee or a long-sleeve top, by its sleeves) and shorts or pants, with its colour and cloth. Yields each
+  # half's listing and kind for its chart.
+  def one_piece(product, source_url)
+    cut = DressCut.read(product)
+    words = product.values_at(:name, :category, :description).join(" ")
+    top_style = { "long" => "Long Sleeve Tee", "short" => "Tee" }.fetch(cut[:sleeves], "Tank")
+    shorts = words.match?(/romper|playsuit|short/i) && !words.match?(/jumpsuit|boiler|coverall|overall|dungaree|flight suit/i)
+    name = product[:name].to_s.sub(/\s+[-–]\s+[^-–]+\z/, "")
+    top = product.merge(name: "#{name} #{top_style}", category: top_style, description: product[:description].to_s.gsub(ONE_PIECES, ""))
+    bottom = product.merge(name: "#{name} #{shorts ? "Shorts" : "Pants"}", category: shorts ? "Shorts" : "Pants", description: product[:description].to_s.gsub(ONE_PIECES, ""))
+    parts = { top: garment(top, yield(top, "top"), kind: "top", source_url:), trousers: garment(bottom, yield(bottom, "trousers"), kind: "trousers", source_url:) }
+    parts.each_value { it.merge!(name: product[:name], color_name: product[:color], one_piece: true) }
+    {
+      name: product[:name], brand: product[:brand], color_name: product[:color], color: parts[:top][:color],
+      fabric: parts[:top][:fabric], garment: "onepiece", style: shorts ? "romper" : "jumpsuit",
+      **(product[:image] ? { image_url: product[:image] } : {}),
+      source_url:, **(product[:women] ? { women: true } : {}), parts:
+    }
+  end
+
   # Top, jacket, coat or trousers, from the product's name and category.
   def kind_of(product)
     # Not the colour after the name: Willy Chavarria's "Track Jacket - Peacoat" is a jacket, not a pea coat.
@@ -646,9 +728,15 @@ class GarmentImport
     # The category alone first: Teatora's "Wallet Short", filed under Shorts, is shorts, not a wallet.
     not_fitted = NOT_FITTED.find { |_, pattern| product[:category].to_s.match?(pattern) }
     not_fitted ||= NOT_FITTED.find { |_, pattern| sorted.match?(pattern) || words.match?(pattern) && !words.match?(Regexp.union(DRESSES, TOPS, JACKETS, TROUSERS)) } unless product[:category].to_s.match?(Regexp.union(DRESSES, TOPS, JACKETS, TROUSERS))
+    # Shoes, socks and belts are drawn (on the feet, on the legs, round the waist), with no fit to check.
+    if not_fitted && (worn = WORN_ON.find { |kind, pattern| not_fitted.first == ACCESSORY_GROUPS[kind] && words.match?(pattern) && !words.match?(/\bbags?\b|backpack|wallet/i) }&.first)
+      return worn
+    end
     if not_fitted
       raise Error.new("not_supported", "Fitroom can't try on #{not_fitted.first} yet. It works with tops, dresses, jackets, coats and pants.")
     end
+    # A romper or jumpsuit: a top and shorts or pants made as one piece.
+    return "onepiece" if words.match?(ONE_PIECES)
     # A "Maxi Coat" is a coat, not a dress (a "Trench Dress" is still a dress).
     return "coat" if words.match?(COATS) && !words.match?(NOT_COATS) && !words.match?(/\bdress\b/i)
     # A "maxi skirt" is a skirt, not a dress.

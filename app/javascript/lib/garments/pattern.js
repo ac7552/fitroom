@@ -23,9 +23,9 @@ export const STYLES = {
   hoodie: { sleeve: "long", collar: "hood", cuffs: "rib", hem: "rib", fabric: "fleece", ease: 16, length: 0.41 },
   zip: { sleeve: "long", collar: "stand", cuffs: "band", hem: "band", fabric: "shell", ease: 14, length: 0.4, closure: "zip" },
   bomber: { sleeve: "long", collar: "rib", cuffs: "rib", hem: "rib", fabric: "shell", ease: 18, length: 0.38, closure: "zip" },
-  shirt: { sleeve: "long", collar: "stand", cuffs: "band", hem: "band", fabric: "twill", ease: 14, length: 0.38, closure: "buttons" },
+  shirt: { sleeve: "long", collar: "shirtstand", cuffs: "band", hem: "band", fabric: "twill", ease: 14, length: 0.38, closure: "buttons" },
   // A short-sleeve button-up (a camp or resort shirt): roomy, its hem cut straight and left out.
-  shortshirt: { sleeve: "short", collar: "stand", cuffs: null, hem: null, fabric: "twill", ease: 18, length: 0.4, closure: "buttons" },
+  shortshirt: { sleeve: "short", collar: "shirtstand", cuffs: null, hem: null, fabric: "twill", ease: 18, length: 0.4, closure: "buttons" },
   coat: { sleeve: "long", collar: "stand", cuffs: null, hem: null, fabric: "wool", ease: 20, length: 0.55, closure: "buttons" },
   // A polo: a knit collar, a short buttoned placket, banded sleeves.
   polo: { sleeve: "short", collar: "polo", cuffs: null, hem: null, fabric: "jersey", ease: 10, length: 0.41, closure: "placket" },
@@ -46,6 +46,8 @@ const BANDS = {
   band: { height: 2, stretch: 0.88, fabric: "rib" },
   rib: { height: 5.5, stretch: 0.86, fabric: "rib" },
   stand: { height: 6, stretch: 1, fabric: "main" },
+  // A shirt's collar stand: low, the collar itself folded down over it (drawn over the drape, see stage.js).
+  shirtstand: { height: 3.2, stretch: 1, fabric: "main" },
   // A polo's knit collar, folded down over the shoulders: its outer edge is cut longer than its sewn edge
   // (by `fall`), so it lies flat round the neck instead of standing up.
   polo: { height: 6.5, stretch: 1, fabric: "rib", fall: 1.3 }
@@ -151,7 +153,7 @@ export function measures(style, size, body) {
     sleeve,
     hem: shaped ? Math.max(chest, shaped.hips) * 1.22 : Math.min(size.waist ?? chest, chest) * (hemBand ? 1 : 0.99),
     neckWidth: (body.neck ?? 40) / (2 * Math.PI) + (style.collar === "hood" ? 2.2 : 1.5),
-    frontNeck: { stand: 6, rib: 6, hood: 8 }[style.collar] ?? 9,
+    frontNeck: { stand: 6, shirtstand: 7, rib: 6, hood: 8 }[style.collar] ?? 9,
     backNeck: 2,
     shoulderDrop: 4.4,
     armhole: (body.armpit ?? 19) + 2 + roomy / 8,

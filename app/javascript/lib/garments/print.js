@@ -300,6 +300,48 @@ function dropStreaks(alpha, w, h) {
   for (const { piece, stripe } of streaks) if (!(stripes && stripe)) for (const k of piece) alpha[k] = 0
 }
 
+// A shoe's colours from its photo (a side view on a plain backdrop, as shops show them): its upper's (the
+// commonest colour above the sole) and its sole's (the bottom tenth of the shoe). Null when no shoe stands out.
+export async function readShoe(src) {
+  const image = new Image()
+  image.src = src
+  try { await loaded(image) } catch { return null }
+  const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
+  const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, w, h)
+  return shoeColors(context.getImageData(0, 0, w, h).data, w, h)
+}
+
+export function shoeColors(data, w, h) {
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const { mask } = cut.garment
+  let top = h, bottom = -1
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { top = Math.min(top, y); bottom = Math.max(bottom, y) }
+  if (bottom <= top) return null
+  const soleFrom = bottom - Math.max(2, Math.round((bottom - top) * 0.1))
+  const commonest = (y0, y1) => {
+    const bins = new Map()
+    for (let y = y0; y <= y1; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x
+        if (!mask[i]) continue
+        const key = (data[4 * i] >> 4) << 8 | (data[4 * i + 1] >> 4) << 4 | (data[4 * i + 2] >> 4)
+        const bin = bins.get(key) ?? [0, 0, 0, 0]
+        bin[0] += data[4 * i]; bin[1] += data[4 * i + 1]; bin[2] += data[4 * i + 2]; bin[3]++
+        bins.set(key, bin)
+      }
+    }
+    const best = [...bins.values()].sort((p, q) => q[3] - p[3])[0]
+    return best && "#" + best.slice(0, 3).map(v => Math.round(v / best[3]).toString(16).padStart(2, "0")).join("")
+  }
+  return { color: commonest(top, soleFrom - 1), sole: commonest(soleFrom, bottom) }
+}
+
 // The garment in a photo: each pixel's Lab colour, the background's colour (the median round the photo's
 // edge), and the garment as the largest piece of what isn't background joined to the edge (so a white print
 // in the middle of the garment stays garment). Null when no garment stands out.

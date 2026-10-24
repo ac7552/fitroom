@@ -10,6 +10,10 @@ import * as THREE from "three"
 //   aShade   how open to the room it is (1) or tucked into a fold or under the hood (less): ambient light
 //            reaching it, worked out from the drape
 //   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
+//   aHole    above 0 inside a cut-out (cm in from its edge): not drawn
+//   aCover   1 where a garment worn over this one covers it, though the drape left this one a hair outside
+//            it (it would show through): not drawn
+//   aSheer   1 where the cloth is sheer (drawn see-through, as much as uSheer says), 0 elsewhere
 //   aPhoto   where it is in the garment's shop photo, laid on pants and skirts ([u, v, which]: which 1 the
 //            photo, 2 its softened copy, 0 neither; see photo_map.js)
 
@@ -194,9 +198,12 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // A top's back, from the shop's photo of it (laid as the front's print is).
     uBack: { value: BLANK },
     uBackOn: { value: 0 },
-    uPhotoOn: { value: 0 }
+    uPhotoOn: { value: 0 },
+    // How much of a sheer part's colour shows (1: none of it is sheer).
+    uSheer: { value: details.sheer ?? 1 }
   }
   material.userData.uniforms = uniforms
+  if (details.sheer && details.sheer < 1 && !fitMap) material.transparent = true
   material.customProgramCacheKey = () => `cloth-${fitMap}`
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms)
@@ -208,6 +215,12 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aShade;
         attribute float aHide;
         attribute vec3 aPhoto;
+        attribute float aHole;
+        attribute float aCover;
+        varying float vCover;
+        attribute float aSheer;
+        varying float vHole;
+        varying float vSheer;
         varying float vHide;
         varying vec3 vPhoto;
         varying float vEdge;
@@ -216,7 +229,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
     shader.fragmentShader = shader.fragmentShader
@@ -241,6 +254,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform sampler2D uBack;
         uniform float uBackOn;
         uniform float uPhotoOn;
+        uniform float uSheer;
+        varying float vCover;
+        varying float vHole;
+        varying float vSheer;
         varying vec3 vPhoto;
         varying float vHide;
         varying float vEdge;
@@ -267,7 +284,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           return d;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
-        if ( vHide > 0.0 ) discard;
+        if ( vHide > 0.0 || vHole > 0.0 || vCover > 0.5 ) discard;
+        diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
         if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy ) ).rgb;
         vec3 thread = uThread;

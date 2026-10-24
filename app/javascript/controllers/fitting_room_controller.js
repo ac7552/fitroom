@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readBottomPhoto, readGarment, readTopShape, readBottomShape, loaded } from "lib/garments/print"
+import { readPhoto, readBottomPhoto, readGarment, readShoe, readTopShape, readBottomShape, loaded } from "lib/garments/print"
 import { describeOutfit, localStudioReady, studioLook } from "lib/local_studio"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
@@ -19,10 +19,12 @@ const EXAMPLES_CM = {
 const REQUIRED = ["chest", "waist", "shoulders", "arm", "height"]
 
 // What the page calls each kind of item (the API's names are top, jacket, coat and trousers).
-const KINDS = { top: "Top", jacket: "Jacket", coat: "Coat", trousers: "Pants" }
+const KINDS = { top: "Top", jacket: "Jacket", coat: "Coat", trousers: "Pants", shoes: "Shoes", socks: "Socks", belt: "Belt" }
+// Worn but not fitted (the API's fits are for clothes): drawn as they look, in the size picked.
+const ACCESSORIES = ["shoes", "socks", "belt"]
 const DEFAULT_STYLE = { top: "tee", jacket: "tailored" }
-const KIND_WORDS = { top: "top", jacket: "jacket", coat: "coat", trousers: "pants" }
-const ORDER = ["coat", "jacket", "top", "trousers"]
+const KIND_WORDS = { top: "top", jacket: "jacket", coat: "coat", trousers: "pants", shoes: "shoes", socks: "socks", belt: "belt" }
+const ORDER = ["coat", "jacket", "top", "trousers", "belt", "socks", "shoes"]
 const OWN_PARTS = {
   jacket: [["chest", "Chest"], ["waist", "Waist"], ["shoulders", "Shoulders"], ["sleeve", "Sleeve"], ["length", "Length"]],
   trousers: [["waist", "Waist"], ["seat", "Seat"], ["thigh", "Thigh"], ["inseam", "Inseam"], ["leg_opening", "Opening"]]
@@ -139,10 +141,41 @@ export default class extends Controller {
   // One item of each kind: a new jacket replaces the jacket, and so on. A shop photo, when the import
   // brought one, gives the truest colour.
   addItem(garment) {
+    // A romper or jumpsuit is worn as its two halves (a top tucked into shorts or pants), each fitted, in
+    // one colour, read once from its photo.
+    if (garment.garment === "onepiece") {
+      const halves = Object.entries(garment.parts).map(([kind, part]) => {
+        const item = { garment: { ...part, women: garment.women }, selected: null, fit: null }
+        this.outfit[kind] = item
+        return item
+      })
+      this.renderOutfit()
+      if (garment.photo) {
+        clothColor(garment.photo).then(color => {
+          if (!color || halves.some(item => !Object.values(this.outfit).includes(item))) return
+          for (const item of halves) item.garment.color = item.garment.photoColor = asNamed(color, garment.color_name, item.garment.color)
+          if (halves.every(item => item.fit)) this.render()
+        }).catch(() => {})
+      }
+      return
+    }
     const kind = KINDS[garment.garment] ? garment.garment : "jacket"
     const item = { garment, selected: null, fit: null }
     this.outfit[kind] = item
     this.renderOutfit()
+    if (ACCESSORIES.includes(kind)) {
+      // Shoes take their upper's and their sole's colours from the photo; socks and a belt, their colour.
+      if (garment.photo && !garment.photoColor) {
+        const reading = kind === "shoes" ? readShoe(garment.photo) : clothColor(garment.photo).then(color => color && { color })
+        reading.then(read => {
+          if (!read?.color || this.outfit[kind] !== item) return
+          garment.color = garment.photoColor = asNamed(read.color, garment.color_name, garment.color)
+          if (read.sole) garment.sole = read.sole
+          if (item.fit) this.render()
+        }).catch(() => {})
+      }
+      return
+    }
     if (garment.photo && !garment.photoColor) {
       // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth. Pants
       // and skirts take the whole photo: their wash and fading, pockets and seams, as photographed.
@@ -202,7 +235,10 @@ export default class extends Controller {
   }
 
   removeItem(event) {
-    delete this.outfit[event.currentTarget.dataset.kind]
+    const kind = event.currentTarget.dataset.kind
+    // Both halves of a romper or jumpsuit go together.
+    if (this.outfit[kind]?.garment.one_piece) for (const half of ["top", "trousers"]) { if (this.outfit[half]?.garment.one_piece) delete this.outfit[half] }
+    delete this.outfit[kind]
     this.renderOutfit()
     this.update()
   }
@@ -288,7 +324,7 @@ export default class extends Controller {
     this.pantsOnlyTargets.forEach(field => { field.hidden = !(this.outfit.trousers || (dress && field.dataset.alsoDress)) })
     this.outfitListTarget.innerHTML = items.length ? items.map(({ kind, garment }) => {
       const chart = garment.chart
-      const notes = [
+      const notes = ACCESSORIES.includes(kind) ? [chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`, "shown for the look, not fitted"] : [
         chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`,
         chart.kind === "body" ? "sizes guessed from the store's body chart" : null,
         chart.kind === "sizes" ? "sizes guessed from the size names" : null,
@@ -303,7 +339,7 @@ export default class extends Controller {
         <div class="garment-card">
           ${thumb}
           <div class="garment-text">
-            <p class="garment-kind mono">${KINDS[kind]}</p>
+            <p class="garment-kind mono">${garment.one_piece ? `One piece · ${kind === "top" ? "top half" : "bottom half"}` : KINDS[kind]}</p>
             <p class="garment-name">${escape(garment.name)}</p>
             <p class="garment-meta">${escape([garment.brand, garment.color_name, garment.fabric && garment.fabric !== "wool" ? garment.fabric : null].filter(Boolean).join(" · "))}</p>
             <p class="garment-meta">${escape(capitalize(notes.join(", ")))}.${source}</p>
@@ -546,7 +582,7 @@ export default class extends Controller {
     }
     this.requests = items.map(() => new AbortController())
     try {
-      const responses = await Promise.all(items.map(({ kind, garment }, i) => fetch(this.fitsUrlValue, {
+      const responses = await Promise.all(items.map(({ kind, garment }, i) => ACCESSORIES.includes(kind) ? Promise.resolve({ ok: true, data: accessoryFit(garment, this.outfit[kind]?.selected) }) : fetch(this.fitsUrlValue, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: garment.cut ?? (garment.women || garment.cropped || garment.snug || garment.dropped
@@ -747,9 +783,12 @@ export default class extends Controller {
       photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,
       style: garment.style,
-      cut: garment.cut ?? null
+      cut: garment.cut ?? null,
+      sole: garment.sole ?? null,
+      onePiece: Boolean(garment.one_piece),
+      buckle: garment.buckle ?? null
     })))
-    this.tuckTarget.hidden = !this.stage.canTuck()
+    this.tuckTarget.hidden = !this.stage.canTuck() || this.stage.onePiece
 
     this.renderStageNote()
 
@@ -775,6 +814,14 @@ export default class extends Controller {
 
     this.resultsTarget.innerHTML = items.map(({ kind, garment, fit, selected }) => {
       const result = fit.sizes.find(s => s.size === selected)
+      if (ACCESSORIES.includes(kind)) {
+        return `
+        <section class="result">
+          <p class="results-kicker">${KINDS[kind]} · ${escape(garment.name)}</p>
+          <div class="results-headline"><p class="results-size results-size--compact">${escape(result.size)}</p></div>
+          <p class="results-lede">Shown for the look. Fitroom doesn't check ${KIND_WORDS[kind]} sizes yet, so pick your usual size.</p>
+        </section>`
+      }
       const badge = fit.sizes.length === 1 ? '<span class="best-badge">Only size</span>'
         : result.size === fit.best ? '<span class="best-badge">Best size</span>'
         : `<button type="button" class="text-button" data-kind="${kind}" data-size="${escape(fit.best)}" data-action="fitting-room#pickSize">Size ${escape(fit.best)} fits better</button>`
@@ -959,6 +1006,13 @@ function asNamed(color, name, named) {
   const [r, g, b] = rgb(color), [nr, ng, nb] = rgb(named)
   const light = (r + g + b) / 3, namedLight = (nr + ng + nb) / 3
   return "#" + [nr, ng, nb].map(v => Math.round(Math.min(255, Math.max(0, v - namedLight + light))).toString(16).padStart(2, "0")).join("")
+}
+
+// What the page shows for shoes, socks or a belt: each of the shop's sizes, none checked against the body.
+function accessoryFit(garment, selected) {
+  const names = garment.chart.sizes.map(s => s.name)
+  const best = names.includes(selected) ? selected : names[Math.floor((names.length - 1) / 2)]
+  return { best, warnings: [], sizes: names.map(size => ({ size, verdict: "fits", penalty: 0, checks: [] })) }
 }
 
 // How far apart two "#rrggbb" colours are (0 to about 440).
