@@ -128,6 +128,9 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "jacket", GarmentImport.new.send(:kind_of, { name: "Kith Women Ina II Crochet Cable Zip Track - Incognito", category: "Sweaters" })
     assert_equal "top", GarmentImport.new.send(:kind_of, { name: "Merino Half-Zip Sweater", category: "Sweaters" })
     assert_equal "coat", GarmentImport.new.send(:kind_of, { name: "Susanna Chow Dorothy Suede Maxi Coat - Graphite", category: "Coats" })
+    # A coat with no chart gets a coat's usual length, not a tee's.
+    coat = GarmentImport.new.send(:usual_sizes, "coat", "tee", { name: "Rick Owens Poiret Coat", sizes: %w[S M L] })
+    assert_operator coat.sizes.find { it["name"] == "M" }["length"], :>, 90
     error = assert_raises(GarmentImport::Error) { GarmentImport.new.send(:kind_of, { name: "Kith Women Aire Plunge Cross Back Romper - Legacy", category: "Rompers" }) }
     assert_match(/rompers and jumpsuits/, error.message)
     assert_equal "cotton", GarmentImport.new.send(:fabric_of, { name: "Polo", description: "Body 1: 100% Lyocell / Body 2: 60% Viscose / 35% Nylon / 5% Cashmere" }, "top")

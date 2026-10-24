@@ -88,7 +88,7 @@ class GarmentImport
   COLORS = {
     "navy" => "#1f2a4a", "midnight" => "#1a2038", "charcoal" => "#35383e", "black" => "#151619",
     "grey" => "#73777f", "gray" => "#73777f", "blue" => "#2c4a8f", "brown" => "#5a3d2b",
-    "tan" => "#a9845b", "camel" => "#b38a5c", "beige" => "#c2ad8c", "khaki" => "#a99a72",
+    "tan" => "#a9845b", "camel" => "#b38a5c", "caramel" => "#a8743f", "beige" => "#c2ad8c", "khaki" => "#a99a72",
     "olive" => "#545b39", "green" => "#3e5240", "burgundy" => "#5c1e2a", "wine" => "#5c1e2a",
     "white" => "#e9e6df", "ivory" => "#e9e4d6", "cream" => "#e6dcc6",
     "indigo" => "#2b3f66", "neutrals" => "#b9ad98", "stone" => "#b8b0a0", "red" => "#7a2a2a"
@@ -118,7 +118,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 18
+  FORMAT = 19
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -187,7 +187,7 @@ class GarmentImport
       product[:women] = women?(product, source_url)
       if kind == "trousers"
         chart = bottom_style_of(product) == "skirt" ? usual_skirts(product) : usual_trousers(product)
-      elsif product[:sizes].size >= 2 && !dress?(kind, product)
+      elsif product[:sizes].any? && !dress?(kind, product)
         chart = usual_sizes(kind, top_style_of(product), product)
       end
     end
@@ -418,7 +418,9 @@ class GarmentImport
   def usual_sizes(kind, style, product = {})
     return if kind == "trousers"
 
-    key = USUAL.key?(style) ? style : usual_key(kind, style)
+    # A top's own style ("tee"), else its kind's: a coat, whose name gives no top style, is a coat (cut long),
+    # not the tee a top that names nothing is taken for.
+    key = kind == "top" && USUAL.key?(style) ? style : usual_key(kind, style)
     key = "#{key}_women" if product[:women] && USUAL.key?("#{key}_women")
     base, step = USUAL.fetch(key)
     letters = Array(product[:sizes]).map { letter_of(it) }.compact.uniq
