@@ -2,6 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
 import { readPhoto, readBottomPhoto, readGarment, readTopShape, readBottomShape, loaded } from "lib/garments/print"
+import { describeOutfit, localStudioReady, studioLook } from "lib/local_studio"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -50,7 +51,7 @@ export default class extends Controller {
     "input", "unit", "unitLabel", "cut", "results", "canvas", "sizes", "stageNote", "legend", "warnings",
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
-    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "exact",
+    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
   ]
   static values = { fitsUrl: String, importUrl: String, studioUrl: String, garment: Object, dress: Object }
@@ -586,6 +587,7 @@ export default class extends Controller {
       this.studioImages = { draped: URL.createObjectURL(blob) }
       this.showStudioImage("draped")
       this.studioStatusTarget.textContent = "Your photo. It was made on this device and isn't saved anywhere."
+      this.finishStudioLook(blob)
       return
     }
     this.closeStudio()
@@ -645,6 +647,30 @@ export default class extends Controller {
     }
   }
 
+  // When the studio program runs on this computer (see lib/local_studio.js), the photo is also finished
+  // there, to look like a studio shot. It never leaves the device.
+  async finishStudioLook(blob) {
+    if (!(await localStudioReady())) return
+    const token = this.studioToken = Symbol("look")
+    const controller = this.studioAbort = new AbortController()
+    try {
+      const outfit = describeOutfit(this.items().filter(i => i.fit))
+      const look = await studioLook(blob, outfit, {
+        signal: controller.signal,
+        onProgress: (_, words) => { if (token === this.studioToken && this.studioView !== "look") this.studioStatusTarget.textContent = words }
+      })
+      if (token !== this.studioToken) return
+      this.studioImages.look = URL.createObjectURL(look)
+      this.studioSwitchTarget.hidden = false
+      this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
+      this.studioLookOptionTarget.hidden = false
+      this.studioLookOptionTarget.querySelector("input").checked = true
+      this.showStudioImage("look")
+    } catch (error) {
+      if (token === this.studioToken && error.name !== "AbortError") this.studioStatusTarget.textContent = error.message
+    }
+  }
+
   async fetchStudioImage(url) {
     const blob = await fetch(url, { cache: "no-store" }).then(r => r.blob())
     return URL.createObjectURL(blob)
@@ -657,12 +683,15 @@ export default class extends Controller {
   showStudioImage(variant) {
     const url = this.studioImages?.[variant]
     if (!url) return
+    this.studioView = variant
     this.studioFrameTarget.innerHTML = `<img src="${url}" alt="Studio photo of the outfit on the mannequin">`
     this.studioDownloadTarget.href = url
     this.studioDownloadTarget.hidden = false
     this.studioStatusTarget.textContent = variant === "exact"
       ? "The stores' own clothes painted on by AI. The fit is still the one we measured."
-      : "Your photo, in the size you picked. Nothing was kept on the server."
+      : variant === "look"
+        ? "Finished by the studio program on this computer. The fit is the one we measured; nothing left your device."
+        : "Your photo, in the size you picked. Nothing was kept on the server."
   }
 
   showStudio(message) {
@@ -672,6 +701,9 @@ export default class extends Controller {
 
   closeStudio() {
     this.studioToken = null
+    this.studioAbort?.abort()
+    this.studioAbort = null
+    this.studioView = null
     for (const url of Object.values(this.studioImages ?? {})) URL.revokeObjectURL(url)
     this.studioImages = {}
     if (!this.hasStudioTarget) return
@@ -679,6 +711,8 @@ export default class extends Controller {
     this.studioFrameTarget.innerHTML = ""
     this.studioDownloadTarget.hidden = true
     this.studioSwitchTarget.hidden = true
+    this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = false
+    this.studioLookOptionTarget.hidden = true
   }
 
   // Rendering
