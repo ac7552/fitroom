@@ -44,7 +44,7 @@ export function draftBottoms(styleName, size, body, cut = null) {
   if (gathered) m.waistCut = Math.max(m.waist, m.seat * 0.82)
   const panels = {}, seams = []
   for (const part of ["front", "back"]) {
-    const plus = legPiece(m, part)
+    const plus = legPiece(m, part, { slant: ["trousers", "jeans"].includes(styleName) ? HEM_SLANT : 0 })
     // The left front and the right back are drawn as made; the other two are their mirror images.
     const [made, mirror] = part === "front" ? ["L", "R"] : ["R", "L"]
     panels[`${part}_${made}`] = { edges: plus, place: { at: "leg", side: made, part }, fabric: "main" }
@@ -165,7 +165,11 @@ function draftSkirt(size, body, cut) {
 // One leg piece, front or back, as the left front (or right back) is made: its edges anticlockwise seen from
 // outside, the hem, the side seam up to the waist, the waist across to the middle, the rise seam down round
 // the crotch, and the inseam back down to the hem.
-function legPiece(m, part) {
+// How much higher (cm) a full-length leg's hem is cut at the middle of the back than at its seams: a tailor
+// slants a trouser's hem so the back clears the heel instead of folding up on it.
+const HEM_SLANT = 1.5
+
+function legPiece(m, part, { slant = 0 } = {}) {
   const share = part === "front" ? FRONT : 1 - FRONT
   const waist = (m.waistCut ?? m.waist) * share / 2, seat = m.seat * share / 2
   // The crotch extensions, as a pattern maker drafts them: a sixteenth of the seat at the front, an eighth
@@ -194,7 +198,8 @@ function legPiece(m, part) {
   // The rise seam: straight down the middle, then curving out to the crotch point (deeper at the back).
   const crotch = bezier([0, backRaise], [0, seatY * 0.9], [-extension * (part === "back" ? 0.55 : 0.35), crotchY + 0.5], [-extension, crotchY], 18)
   return [
-    { name: "hem", points: line([centre - half(m.opening), hemY], [centre + half(m.opening), hemY]) },
+    { name: "hem", points: part === "back" && slant ? bezier([centre - half(m.opening), hemY], [centre - half(m.opening) / 3, hemY + slant * 1.3], [centre + half(m.opening) / 3, hemY + slant * 1.3], [centre + half(m.opening), hemY], 12)
+      : line([centre - half(m.opening), hemY], [centre + half(m.opening), hemY]) },
     { name: "side", points: smooth(outer, 40) },
     { name: "waist", points: line([waist, 0], [0, backRaise]) },
     { name: "crotch", points: crotch },

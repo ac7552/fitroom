@@ -297,9 +297,10 @@ export class FittingStage {
     // it through them), over the pants or tucked into them; and over the top, a casual jacket.
     const top = worn.top && !tailored && !modelCoat ? worn.top : null
     this.hiddenTop = Boolean(worn.top && !top)
-    // A romper's or jumpsuit's top is always in its shorts or pants: they're one piece.
+    // A romper's or jumpsuit's top hangs over its shorts or pants, in the same cloth, so they read as one
+    // piece (it isn't tucked: there's nothing to tuck).
     this.onePiece = Boolean(worn.top?.onePiece && worn.trousers?.onePiece)
-    const tuck = (this.tucked || this.onePiece) && this.canTuck()
+    const tuck = this.tucked && !this.onePiece && this.canTuck()
     this.order = tuck ? TUCKED_LAYERS : LAYERS
     const items = {
       bottom: worn.trousers ?? null,

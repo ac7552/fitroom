@@ -548,7 +548,14 @@ export default class extends Controller {
     let given = Object.fromEntries(Object.entries(measurements).filter(([, v]) => v > 0))
     this.guessed = REQUIRED.filter(key => !(given[key] > 0))
     if (this.guessed.length) given = this.withGuesses(given)
-    this.limited = this.stage.setBody(Object.fromEntries(Object.entries(given).map(([k, v]) => [k, toCm(v, this.unit)])))
+    // The mannequin takes the example body's hips and leg length, in proportion, until they're given (the
+    // fit itself still asks for them where they matter): without them its hips are the base model's, and a
+    // long dress cut for real hips slides off it.
+    const shape = Object.fromEntries(Object.entries(given).map(([k, v]) => [k, toCm(v, this.unit)]))
+    const example = this.example
+    shape.hips ??= example.hips * (shape.waist ?? example.waist) / example.waist
+    shape.inseam ??= example.inseam * (shape.height ?? example.height) / example.height
+    this.limited = this.stage.setBody(shape)
     this.timer = setTimeout(() => this.fetchFits(given), 150)
   }
 
