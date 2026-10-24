@@ -151,10 +151,17 @@ export default class extends Controller {
         const color = read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) return
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
-        if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout } : null
+        // The shop's photo of the back, read the same way, goes on the back.
+        const back = garment.back_photo && read ? await (bottoms ? readBottomPhoto(garment.back_photo) : readPhoto(garment.back_photo)).catch(() => null) : null
+        if (this.outfit[kind] !== item) return
+        if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
         // printed gets the photo's print.
-        else garment.print = garment.cut && !garment.cut.printed ? null : read?.print ?? null
+        else {
+          const printed = !(garment.cut && !garment.cut.printed)
+          garment.print = printed ? read?.print ?? null : null
+          garment.backPrint = printed && back?.print ? { image: back.print.image } : null
+        }
         this.renderOutfit()
         if (item.fit) this.render()
       })
@@ -725,6 +732,7 @@ export default class extends Controller {
       checks: fit.sizes.find(s => s.size === selected).checks,
       color: garment.color,
       print: garment.print ?? null,
+      backPrint: garment.backPrint ?? null,
       photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,
       style: garment.style,
@@ -967,8 +975,31 @@ async function readShop(link) {
   // cut when the shop gives no chart.
   const shape = photo ? await readTopShape(photo).catch(() => null) : null
   const bottomShape = photo ? await readBottomShape(photo).catch(() => null) : null
+  const backPhoto = photo ? await readBackPhoto(images, { shape, bottomShape }) : null
   return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
-    photo, shape, bottom_shape: bottomShape }
+    photo, back_photo: backPhoto, shape, bottom_shape: bottomShape }
+}
+
+// The shop's photo of the back, when it has one: the photo named for the back, or else the second photo
+// when it shows a garment the same shape as the first (shops often show the back next; a close-up of a
+// pocket or a photo on a model isn't that shape).
+async function readBackPhoto(images, { shape, bottomShape }) {
+  const rest = (images ?? []).slice(1, 6)
+  const named = rest.find(image => /back/i.test(String(image.src).split("/").pop().split("?")[0]))
+  const pick = named ?? rest[0]
+  if (!pick) return null
+  const photo = await readShopPhoto(pick.src)
+  if (!photo || named) return photo
+  const near = (a, b) => a && b && Math.abs(a / b - 1) < 0.15
+  if (bottomShape) {
+    const other = await readBottomShape(photo).catch(() => null)
+    return other && near(other.length, bottomShape.length) && near(other.hips, bottomShape.hips) ? photo : null
+  }
+  if (shape) {
+    const other = await readTopShape(photo).catch(() => null)
+    return other && near(other.length, shape.length) && near(other.waist, shape.waist) ? photo : null
+  }
+  return null
 }
 
 // The product's photo, small, as a data: URL (Shopify's image host lets pages read its photos).

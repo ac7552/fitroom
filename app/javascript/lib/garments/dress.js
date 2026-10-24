@@ -327,48 +327,42 @@ export class DrapedTop {
     }
   }
 
-  // A print from the shop's photo (print.js's readPhoto; null for none), laid on the front.
-  setPrint(print) {
-    if (this.bottoms) print = null   // a print is read off a top's front
-    if (print?.image === this.printImage) return
+  // A print from the shop's photo (print.js's readPhoto; null for none), laid on the front; and back: the
+  // shop's photo of the back, read the same way ({ image }; null for none), laid on the back. A plain tee
+  // can have a print on its back only.
+  setPrint(print, back = null) {
+    if (this.bottoms) print = back = null   // a print is read off a top's front and back
+    if (print?.image === this.printImage && back?.image === this.backImage) return
     this.printImage = print?.image ?? null
-    this.printTexture?.dispose()
-    this.tileTexture?.dispose()
-    this.printTexture = this.tileTexture = null
+    this.backImage = back?.image ?? null
+    for (const texture of [this.printTexture, this.tileTexture, this.backTexture]) texture?.dispose()
+    this.printTexture = this.tileTexture = this.backTexture = null
     const uniforms = this.materials.main.userData.uniforms
+    const m = this.pattern.measures
+    const band = this.pattern.panels.waistband ? Math.max(...this.pattern.panels.waistband.edges.flatMap(e => e.points).map(p => Math.abs(p[1]))) : 0
+    uniforms.uPrintHalf.value = m.chest / 4
+    uniforms.uPrintLength.value = m.length + band
+    const texture = (canvas, wrap = false) => {
+      const t = new THREE.CanvasTexture(canvas)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.anisotropy = 4
+      if (wrap) t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping
+      return t
+    }
     if (print) {
-      this.printTexture = new THREE.CanvasTexture(print.image)
-      this.printTexture.colorSpace = THREE.SRGBColorSpace
-      this.printTexture.anisotropy = 4
-      const m = this.pattern.measures
-      const band = this.pattern.panels.waistband ? Math.max(...this.pattern.panels.waistband.edges.flatMap(e => e.points).map(p => Math.abs(p[1]))) : 0
-      uniforms.uPrint.value = this.printTexture
-      uniforms.uPrintHalf.value = m.chest / 4
-      uniforms.uPrintLength.value = m.length + band
+      this.printTexture = uniforms.uPrint.value = texture(print.image)
       // An all-over print goes on the back, sleeves and collar too: its cloth, mirrored at its edges so the
       // repeats meet without a seam.
       if (print.tile) {
-        this.tileTexture = new THREE.CanvasTexture(print.tile.image)
-        this.tileTexture.colorSpace = THREE.SRGBColorSpace
-        this.tileTexture.wrapS = this.tileTexture.wrapT = THREE.MirroredRepeatWrapping
-        this.tileTexture.anisotropy = 4
+        this.tileTexture = uniforms.uPrintTile.value = texture(print.tile.image, true)
         const front = m.chest / 2   // the front's width (cm), which the photo's front spans
-        uniforms.uPrintTile.value = this.tileTexture
         uniforms.uTile.value.set(print.tile.across * front, print.tile.down * front, print.tile.from * front)
       }
     }
+    if (back) this.backTexture = uniforms.uBack.value = texture(back.image)
     uniforms.uPrintOn.value = print ? 1 : 0
     uniforms.uAllOver.value = print?.tile ? 1 : 0
-    // The back, from the shop's photo of it.
-    this.backTexture?.dispose()
-    this.backTexture = null
-    if (print?.back) {
-      this.backTexture = new THREE.CanvasTexture(print.back.image)
-      this.backTexture.colorSpace = THREE.SRGBColorSpace
-      this.backTexture.anisotropy = 4
-      uniforms.uBack.value = this.backTexture
-    }
-    uniforms.uBackOn.value = print?.back ? 1 : 0
+    uniforms.uBackOn.value = back ? 1 : 0
   }
 
   // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),

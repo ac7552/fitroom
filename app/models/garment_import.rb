@@ -99,7 +99,10 @@ class GarmentImport
     url = url.to_s.strip
     if shop_data.is_a?(Hash) && (garment = new.from_shopify(url, given: shop_data))
       photo = shop_data["photo"].to_s
-      return photo.match?(BROWSER_PHOTO) && photo.bytesize < 3_500_000 ? garment.except(:image_url).merge(photo:) : with_photo(garment)
+      garment = photo.match?(BROWSER_PHOTO) && photo.bytesize < 3_500_000 ? garment.except(:image_url).merge(photo:) : with_photo(garment)
+      # The shop's photo of the back, which the browser found and read.
+      back = shop_data["back_photo"].to_s
+      return garment[:photo] && back.match?(BROWSER_PHOTO) && back.bytesize < 3_500_000 ? garment.merge(back_photo: back) : garment
     end
     Rails.cache.fetch([ "garment_import", FORMAT, Digest::SHA256.hexdigest(url) ], expires_in: 1.hour) do
       import = new

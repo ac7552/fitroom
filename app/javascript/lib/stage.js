@@ -339,7 +339,7 @@ export class FittingStage {
     const d = this.slots[slot]
     if (!d) return
     d.top.setColor(item.color)
-    d.top.setPrint(item.print ?? null)
+    d.top.setPrint(item.print ?? null, item.backPrint ?? null)
     d.top.setPhotoMap(item.photoMap ?? null)
     d.top.mesh.visible = d.shown
     if (this.view === "fit") d.top.paintFit(item.checks ?? [], STATUS_COLORS)
