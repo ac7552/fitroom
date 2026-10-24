@@ -37,7 +37,7 @@ const FABRICS = {
 // pattern and draped like tops (lib/garments).
 export const STYLES = ["tailored", "zip", "bomber", "shirt"]
 // Tops, and casual jackets, cut from a sewing pattern and draped on the mannequin with cloth simulation.
-export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "shortshirt", "dress", "polo", "tank", "sweater", "cardigan"]
+export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "shortshirt", "dress", "polo", "tank", "sweater", "cardigan", "coat"]
 
 export const STATUS_COLORS = {
   good: "#3fa672", tight: "#de4f37", short: "#de4f37", loose: "#4f63f0", long: "#4f63f0", unknown: "#9a9ca3"
@@ -213,7 +213,7 @@ export class FittingStage {
   canTuck(items = this.outfit) {
     const worn = Object.fromEntries(items.map(item => [item.kind, item]))
     const tailored = worn.jacket && !DRAPED_STYLES.includes(worn.jacket.style)
-    return Boolean(worn.top && worn.trousers && TUCKABLE.includes(worn.top.style) && !tailored && !worn.coat)
+    return Boolean(worn.top && worn.trousers && TUCKABLE.includes(worn.top.style) && !tailored && !(worn.coat && worn.jacket))
   }
 
   // "mannequin", "ghost" (the clothes alone) or "fit" (the fit map, on the mannequin).
@@ -249,13 +249,16 @@ export class FittingStage {
     if (!this.meshes || !this.fitted) return
     const worn = Object.fromEntries(this.outfit.map(item => [item.kind, item]))
 
-    // A casual jacket is draped like a top; the suit's jacket and a coat are drawn from the model.
+    // A casual jacket is draped like a top, and so is a coat (cut long, its sleeves round the arms), over
+    // the top and the pants; the suit's jacket is drawn from the model, and so is a coat worn over a jacket.
     const drapedJacket = Boolean(worn.jacket && DRAPED_STYLES.includes(worn.jacket.style))
     const tailored = Boolean(worn.jacket && !drapedJacket)
+    const drapedCoat = Boolean(worn.coat && !worn.jacket)
+    const modelCoat = Boolean(worn.coat && !drapedCoat)
     const body = this.meshes.body
     body.visible = this.view !== "ghost"
     for (const part of [this.egg, this.eggNeck]) if (part) part.visible = body.visible
-    body.material.userData.hideJacket.value = tailored || worn.coat ? 1 : 0
+    body.material.userData.hideJacket.value = tailored || modelCoat ? 1 : 0
     body.material.userData.hideCasual.value = 0
     // Pants are draped, so the body under them stays (the cloth lies on it).
     body.material.userData.hideTrousers.value = 0
@@ -266,7 +269,7 @@ export class FittingStage {
       this.dressMesh("jacket", worn.jacket, ease, "jacket")
       under = drawnSize(this.calibration, this.fitted, ease, "jacket")
     }
-    if (worn.coat) {
+    if (modelCoat) {
       const ease = fitJacket(this.calibration, this.fitted, worn.coat.size, { over: under })
       // A coat drawn from a jacket can only stretch so far; the verdict gives its real length.
       ease["ease-length"] = Math.min(ease["ease-length"], 30)
@@ -280,19 +283,19 @@ export class FittingStage {
     // The model's trousers are only measured now, for a studio photo (which draws them); on screen they're draped.
     if (worn.trousers) this.lastEase.trousers = fitTrousers(this.calibration, this.fitted, worn.trousers.size)
     this.meshes.jacket.visible = tailored
-    this.meshes.coat.visible = Boolean(worn.coat)
+    this.meshes.coat.visible = modelCoat
     this.meshes.trousers.visible = false
 
     // The top, unless the suit's jacket or a coat is over it (those are drawn from the model, and would show
     // it through them), over the pants or tucked into them; and over the top, a casual jacket.
-    const top = worn.top && !tailored && !worn.coat ? worn.top : null
+    const top = worn.top && !tailored && !modelCoat ? worn.top : null
     this.hiddenTop = Boolean(worn.top && !top)
     const tuck = this.tucked && this.canTuck()
     this.order = tuck ? TUCKED_LAYERS : LAYERS
     const items = {
       bottom: worn.trousers ?? null,
       top: top && tuck ? { ...top, tuck: { style: worn.trousers.style ?? "trousers", size: worn.trousers.size, cut: worn.trousers.cut ?? null } } : top,
-      outer: drapedJacket ? worn.jacket : null
+      outer: drapedJacket ? worn.jacket : drapedCoat ? { ...worn.coat, style: "coat" } : null
     }
     for (const slot of this.order) this.dressDraped(slot, items[slot])
   }

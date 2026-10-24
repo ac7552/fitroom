@@ -24,8 +24,9 @@ const CLOTHS = {
   // the folds; nothing like a jacket's glossy shell.
   matte: { surface: "plain", tile: 0.006, roughness: 0.82, sheen: 0.16, sheenRoughness: 0.55, normal: 0.12 },
   wool: { surface: "felt", tile: 0.03, roughness: 0.95, sheen: 0.4, sheenRoughness: 0.6, normal: 0.35 },
-  // Leather: a fine grain, mostly matte with a soft sheen, not a plastic shine.
-  leather: { surface: "grain", tile: 0.04, roughness: 0.62, sheen: 0.2, sheenRoughness: 0.45, normal: 0.22, clearcoat: 0.12, clearcoatRoughness: 0.7 },
+  // Leather: a fine grain, a soft sheen, nothing like a plastic or vinyl shine (a glossy coat on draped
+  // cloth catches every small fold).
+  leather: { surface: "grain", tile: 0.04, roughness: 0.74, sheen: 0.12, sheenRoughness: 0.55, normal: 0.3, clearcoat: 0.03, clearcoatRoughness: 0.8 },
   // Silk, satin, chiffon: smooth, with a strong soft sheen along the folds.
   silk: { surface: "smooth", tile: 0.05, roughness: 0.4, sheen: 1, sheenRoughness: 0.3, normal: 0.06 },
   // Stretch (nylon and elastane): a very fine knit, a little sheen.

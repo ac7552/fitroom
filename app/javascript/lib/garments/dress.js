@@ -232,7 +232,9 @@ export class DrapedTop {
       length: this.pattern.measures.waist / 100
     } : null
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
-      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
+      // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
+      // hang caught on them, short).
+      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
       feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
       snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
       tuck,
@@ -248,7 +250,7 @@ export class DrapedTop {
     const skirt = this.bottoms && item.style === "skirt"
     this.steps = this.drape.phases(skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
       : this.bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: this.drape.snug ? 0 : 60 }
-      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4 } : { settleFrames: 140, calmFrames: 45 })
+      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 })
     this.phase = "sewing"
     this.done = false
     this.frame = frame
