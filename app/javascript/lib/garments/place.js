@@ -5,7 +5,8 @@
 import { add3, cross, normalize, scale, sub } from "lib/garments/body"
 
 const GAP = 0.022          // metres off the body to start
-const SLEEVE_START = 0.03  // how far down the arm from the shoulder joint the top of the sleeve starts
+const SLEEVE_START = 0.03
+const CROTCH_TURN = 10     // cm up the crotch curve over which pants' pieces turn from round the body to round the leg  // how far down the arm from the shoulder joint the top of the sleeve starts
 
 // cloth: from cloth.js. pattern: from pattern.js. frame: from body.js. Returns { positions (Float32Array, metres),
 // lift, attach (see the bands, below) }.
@@ -169,8 +170,21 @@ export function placeCloth(cloth, pattern, frame) {
       const reach = frame.torso.envelope(y, angle)
       const round = (Math.abs(outer) * 4) / 100
       const r = Math.max(reach + gapFor(y, round, "envelope"), round / (2 * Math.PI))
-      return [r * Math.sin(angle), y, frame.torso.centreAt(y) + r * Math.cos(angle)]
+      const around = [r * Math.sin(angle), y, frame.torso.centreAt(y) + r * Math.cos(angle)]
+      // The bottom of the crotch curve turns in under the body, towards the leg: laid round the torso, the
+      // front's and the back's crotch points would start the body's depth apart (30 cm on roomy pants), and
+      // sewing them together hauls the inseams up and crumples the legs.
+      const under = (py + m.rise) / CROTCH_TURN
+      if (under >= 1) return around
+      const below = tube(px, -m.rise, inner, outer, place, sign)
+      const k = smoothstep(0, 1, under)
+      return [below[0] + (around[0] - below[0]) * k, y, below[2] + (around[2] - below[2]) * k]
     }
+    return tube(px, py, inner, outer, place, sign)
+  }
+
+  // A leg piece below the crotch, round its half of the leg.
+  function tube(px, py, inner, outer, place, sign) {
     const legLine = frame.legs[place.side]
     const below = (-py - m.rise) / 100
     // Down to just above the ankle: a hem laid round the foot would start two or three times its size and
@@ -192,6 +206,7 @@ export function placeCloth(cloth, pattern, frame) {
     const facing = place.part === "back" ? -1 : 1
     return [point[0] + r * Math.sin(theta) * sign, y, point[2] + r * Math.cos(theta) * facing]
   }
+
 
   // A skirt: round the hips from its top, and below the crotch round both legs together (their convex
   // outline), a little off them.

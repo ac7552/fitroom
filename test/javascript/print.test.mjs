@@ -118,7 +118,9 @@ test("reads a pants photo to lay on the cloth: its outline, crotch and colour, t
   // isn't drawn light grey); the stripe is kept.
   const at = (pixels, x, y) => [...pixels.slice(4 * (y * w + x), 4 * (y * w + x) + 3)]
   assert.ok(at(read.filled, 68, 60).every(v => v < 90), `outside ${at(read.filled, 68, 60)}`)
-  assert.deepEqual(at(read.filled, 85, 200), [180, 160, 120])
+  // (Its photo's light is evened out a little, so it's near its colour, not exactly it.)
+  const stripe = at(read.filled, 85, 200)
+  assert.ok(stripe.every((v, c) => Math.abs(v - [180, 160, 120][c]) < 25), `stripe ${stripe}`)
 })
 
 test("lays a pants photo on its cloth: the front from the photo, the wearer's left on its right, the back softened", () => {

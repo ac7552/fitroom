@@ -21,6 +21,7 @@ const REQUIRED = ["chest", "waist", "shoulders", "arm", "height"]
 // What the page calls each kind of item (the API's names are top, jacket, coat and trousers).
 const KINDS = { top: "Top", jacket: "Jacket", coat: "Coat", trousers: "Pants" }
 const DEFAULT_STYLE = { top: "tee", jacket: "tailored" }
+const KIND_WORDS = { top: "top", jacket: "jacket", coat: "coat", trousers: "pants" }
 const ORDER = ["coat", "jacket", "top", "trousers"]
 const OWN_PARTS = {
   jacket: [["chest", "Chest"], ["waist", "Waist"], ["shoulders", "Shoulders"], ["sleeve", "Sleeve"], ["length", "Length"]],
@@ -733,6 +734,7 @@ export default class extends Controller {
       color: garment.color,
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
+      photoSize: photoSize(garment.chart),
       photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,
       style: garment.style,
@@ -794,7 +796,10 @@ export default class extends Controller {
     const notes = []
     if (this.guessed?.length) notes.push(this.guessed.length === REQUIRED.length ? "An example body." : "Some of your numbers are guesses.")
     if (this.draping) notes.push(this.draping)
-    if (this.outfit.coat) notes.push("The coat is drawn from a jacket, so long coats look shorter here.")
+    if (this.outfit.coat && this.outfit.jacket) notes.push("The coat over a jacket is drawn from a jacket, so it looks shorter here.")
+    // A chart of usual sizes, not the clothes' own measurements: the fit shown is an estimate.
+    const estimated = this.items().filter(({ garment }) => ["body", "sizes"].includes(garment.chart.kind)).map(({ kind }) => KIND_WORDS[kind] ?? kind)
+    if (estimated.length) notes.push(`Estimated fit: the store doesn't give the ${listed(estimated)}'s own measurements, so ${estimated.length === 1 ? "its" : "their"} usual ones are shown.`)
     if (this.stage.hiddenTop) notes.push("The top is under the jacket.")
     if (this.limited?.length) notes.push(`The mannequin can't go as far as your ${this.limited.join(" and ")}; it's drawn as near as it can.`)
     this.stageNoteTarget.textContent = notes.join(" ") || "Your shape. Drag to turn it."
@@ -945,6 +950,15 @@ function asNamed(color, name, named) {
   const [r, g, b] = rgb(color), [nr, ng, nb] = rgb(named)
   const light = (r + g + b) / 3, namedLight = (nr + ng + nb) / 3
   return "#" + [nr, ng, nb].map(v => Math.round(Math.min(255, Math.max(0, v - namedLight + light))).toString(16).padStart(2, "0")).join("")
+}
+
+// The size a shop photographs (its sample): the middle of its chart. Its chest and length (cm) say how big
+// the photo's print is on the cloth, so a print isn't stretched or shrunk with the size picked.
+function photoSize(chart) {
+  const sizes = (chart?.sizes ?? []).filter(s => s.chest > 0 && s.length > 0)
+  if (!sizes.length) return null
+  const middle = sizes[Math.floor((sizes.length - 1) / 2)]
+  return { chest: middle.chest, length: middle.length }
 }
 
 // Many shops run on Shopify, which answers a product's details as small public JSON. Some big ones (Kith)

@@ -232,7 +232,9 @@ export class DrapedTop {
       length: this.pattern.measures.waist / 100
     } : null
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
-      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
+      // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
+      // hang caught on them, short).
+      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
       feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
       snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
       tuck,
@@ -242,12 +244,13 @@ export class DrapedTop {
     })
     // A long garment (a dress, pants) has further to fall, so it settles for longer.
     const long = this.pattern.style === "dress" || this.pattern.measures.length > 85
-    // Pants are sewn without gravity (nothing holds them up until they're closed); a skirt, held at its
-    // waistband, is sewn hanging, so it falls straight.
+    // Pants are sewn without gravity (nothing holds them up until they're closed), then fall straight under
+    // a heavier pull for a moment (a stretch knit or a rib cuff would be stretched by it, and spring back
+    // crumpled); a skirt, held at its waistband, is sewn hanging, so it falls straight.
     const skirt = this.bottoms && item.style === "skirt"
     this.steps = this.drape.phases(skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
-      : this.bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0 }
-      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4 } : { settleFrames: 140, calmFrames: 45 })
+      : this.bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: this.drape.snug ? 0 : 60 }
+      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 })
     this.phase = "sewing"
     this.done = false
     this.frame = frame
@@ -340,8 +343,12 @@ export class DrapedTop {
     const uniforms = this.materials.main.userData.uniforms
     const m = this.pattern.measures
     const band = this.pattern.panels.waistband ? Math.max(...this.pattern.panels.waistband.edges.flatMap(e => e.points).map(p => Math.abs(p[1]))) : 0
-    uniforms.uPrintHalf.value = m.chest / 4
-    uniforms.uPrintLength.value = m.length + band
+    // The photo shows one size (the shop's sample, about the middle of its chart): a print is that size on
+    // every size, not stretched with the cloth, so it stays where it is on a bigger shirt, with more cloth
+    // round it. photoSize: { chest, length } of that size; the drafted one's when not known.
+    const shown = this.item.photoSize ?? { chest: m.chest, length: m.length }
+    uniforms.uPrintHalf.value = shown.chest / 4
+    uniforms.uPrintLength.value = shown.length + band
     const texture = (canvas, wrap = false) => {
       const t = new THREE.CanvasTexture(canvas)
       t.colorSpace = THREE.SRGBColorSpace
@@ -355,7 +362,7 @@ export class DrapedTop {
       // repeats meet without a seam.
       if (print.tile) {
         this.tileTexture = uniforms.uPrintTile.value = texture(print.tile.image, true)
-        const front = m.chest / 2   // the front's width (cm), which the photo's front spans
+        const front = shown.chest / 2   // the front's width (cm), which the photo's front spans
         uniforms.uTile.value.set(print.tile.across * front, print.tile.down * front, print.tile.from * front)
       }
     }

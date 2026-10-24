@@ -588,7 +588,9 @@ export function drapeGarment(cloth, start, body, options = {}, onFrame = null) {
 // it springs back hard enough to fling the hem up and crumple it.
 // sewGravity: a share of gravity while sewing, to hold a long garment's skirt down as its seams close (with
 // none, the cloth draws up as it's pulled together, and a skirt rides up the legs and crumples coming down).
-Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmFrames = 50, sewGravity = false, relaxFrames = 0 } = {}) {
+// heavyFrames: settled first under three times gravity, so pants' legs, crumpled as their seams are pulled
+// together, fall straight before they settle (under plain gravity, a wide leg stays crumpled).
+Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmFrames = 50, sewGravity = false, relaxFrames = 0, heavyFrames = 0 } = {}) {
   let f = 0
   for (let k = 0; k < relaxFrames; k++, f++) {
     this.step({ gravity: 0, sew: false, still: true })
@@ -614,6 +616,10 @@ Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmF
   this.sewFramesUsed = f
   this.closeSeams()
   const drag = this.params.drag
+  for (let k = 0; k < heavyFrames; k++) {
+    this.step({ gravity: 3, sew: false })
+    yield "settling"
+  }
   for (let k = 0; k < settleFrames; k++) {
     if (k === settleFrames - calmFrames) this.params.drag = Math.max(drag, 6)
     this.step({ gravity: true, sew: false })

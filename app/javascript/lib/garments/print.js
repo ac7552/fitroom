@@ -725,9 +725,39 @@ export function readBottom(data, w, h) {
   // pixels go too: half backdrop, they'd leave a light rim round it.
   const rim = Math.max(1, Math.round(w * 0.003))
   const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
-  const filled = fillAround(data, inner, w, h, Math.max(4, Math.round(w * 0.03)))
+  const filled = fillAround(evenLight(data, inner, w, h), inner, w, h, Math.max(4, Math.round(w * 0.03)))
   const soft = blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
   return { color, filled, soft, layout: { w, h, top, bottom, crotch, rows } }
+}
+
+// The photo's own creases and shadows, mostly taken out: on the 3D cloth they'd be painted on, as streaks
+// down the leg, on top of the folds the cloth makes itself. Each pixel is lightened or darkened towards the
+// cloth's average over a few centimetres round it, partly (a jean's broad fading, its wash, is its colour,
+// and stays; a stripe or a print, finer than that, stays whole).
+function evenLight(data, mask, w, h) {
+  const lum = new Float32Array(w * h), on = new Float32Array(w * h)
+  let sum = 0, count = 0
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue
+    lum[i] = 0.299 * data[4 * i] + 0.587 * data[4 * i + 1] + 0.114 * data[4 * i + 2]
+    on[i] = 1
+    sum += lum[i]; count++
+  }
+  if (!count) return data
+  const r = Math.max(3, Math.round(w * 0.025))
+  const near = boxBlur(lum, w, h, r), weight = boxBlur(on, w, h, r)
+  const out = Uint8ClampedArray.from(data)
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i] || weight[i] < 1e-3) continue
+    const around = near[i] / weight[i]
+    // Halfway towards even, and never by much: a deep shadow is lifted a little, not to full light. Far
+    // lighter or darker than the cloth round it isn't a shadow but a print or a patch, and is left alone.
+    const ratio = (sum / count + 1) / (around + 1)
+    if (ratio < 0.6 || ratio > 1.7) continue
+    const k = Math.min(Math.max(Math.pow(ratio, 0.6), 0.8), 1.25)
+    out[4 * i] = data[4 * i] * k; out[4 * i + 1] = data[4 * i + 1] * k; out[4 * i + 2] = data[4 * i + 2] * k
+  }
+  return out
 }
 
 // The photo with what's round the garment (mask 0) painted in the garment's colours nearby, out to `reach`
