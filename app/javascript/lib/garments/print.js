@@ -52,9 +52,29 @@ export async function readPhoto(src, { shape = null } = {}) {
     out.width = found.print.width
     out.height = found.print.height
     out.getContext("2d").putImageData(new ImageData(found.print.data, found.print.width, found.print.height), 0, 0)
-    print = { image: out, coverage: found.print.coverage }
+    print = { image: out, coverage: found.print.coverage, tile: found.print.allOver ? allOverTile(found.print) : null }
   }
   return { color: found.color, print }
+}
+
+// An all-over print's cloth: a piece of the front clear of the collar, the buttons down the middle, the
+// chest pocket and the hem (the photo's left side, the wearer's right), to repeat over the other pieces.
+// Its size (across, down) and where it starts below the shoulders (from) are in front widths.
+function allOverTile(print) {
+  const { width: pw, height: ph, data } = print
+  const x0 = Math.round(pw * 0.06), x1 = Math.round(pw * 0.44), y0 = Math.round(ph * 0.3), y1 = Math.round(ph * 0.92)
+  const tile = document.createElement("canvas")
+  tile.width = x1 - x0
+  tile.height = y1 - y0
+  const pixels = new ImageData(tile.width, tile.height)
+  for (let y = 0; y < tile.height; y++) {
+    for (let x = 0; x < tile.width; x++) {
+      const from = 4 * ((y0 + y) * pw + x0 + x), to = 4 * (y * tile.width + x)
+      pixels.data[to] = data[from]; pixels.data[to + 1] = data[from + 1]; pixels.data[to + 2] = data[from + 2]; pixels.data[to + 3] = 255
+    }
+  }
+  tile.getContext("2d").putImageData(pixels, 0, 0)
+  return { image: tile, across: (x1 - x0) / pw, down: (y1 - y0) / pw, from: y0 / pw }
 }
 
 // The same on raw RGBA pixels (so it can be tested without a browser). Returns { color, print: { data,
@@ -215,7 +235,7 @@ export function findPrint(data, w, h, shape = null) {
   if (coverage > 0.25) {
     for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   }
-  const print = coverage > 0.01 ? { data: out, width: pw, height: ph, coverage } : null
+  const print = coverage > 0.01 ? { data: out, width: pw, height: ph, coverage, allOver: coverage > 0.25 } : null
   return { color, print, rect: [x0, top, x1, bottom] }
 }
 
@@ -485,7 +505,50 @@ export function garmentMask(data, w, h) {
 // the hem (a skirt's whole hem) }. Null when it can't be read.
 export function measureBottom(data, w, h) {
   const cut = cutOut(data, w, h)
-  return cut && measureBottomMask(cut.garment.mask, w, h)
+  return cut && measureBottomMask(belowHanger(cut.garment.mask, w, h).mask, w, h)
+}
+
+// Pants hung up for their photo: the hanger's hook above them is a thin line, far narrower than the
+// waistband. Rows above where the garment gets a third as wide as it will are left out. hung: whether there
+// was a hook.
+function belowHanger(mask, w, h) {
+  const span = new Int32Array(h)
+  let widest = 0, first = -1
+  for (let y = 0; y < h; y++) {
+    let a = -1, b = -1
+    for (let x = 0; x < w; x++) if (mask[y * w + x]) { if (a < 0) a = x; b = x }
+    span[y] = a < 0 ? 0 : b - a + 1
+    if (a >= 0 && first < 0) first = y
+    widest = Math.max(widest, span[y])
+  }
+  let top = Math.max(first, 0)
+  while (top < h && span[top] < widest * 0.35) top++
+  const hung = top - first > h * 0.02
+  if (!hung) return { mask, hung }
+  const out = Uint8Array.from(mask)
+  out.fill(0, 0, top * w)
+  return { mask: out, hung }
+}
+
+// Below a hook, the hanger's bar lies across the top of the waistband, with its clips: the last rows near
+// the top that are hardly the cloth's colour at all (the clips' gap, or the bar's label) are where the
+// cloth begins.
+function belowHangerBar(mask, w, h, lab, cloth, top, bottom) {
+  let start = -1
+  for (let y = top; y < top + (bottom - top) * 0.1; y++) {
+    let on = 0, like = 0
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      if (!mask[i]) continue
+      on++
+      if (Math.hypot(lab[3 * i] - cloth[0], lab[3 * i + 1] - cloth[1], lab[3 * i + 2] - cloth[2]) < 30) like++
+    }
+    if (!on || like / on < 0.1) start = y + 1
+  }
+  if (start < 0) return mask
+  const out = Uint8Array.from(mask)
+  out.fill(0, 0, start * w)
+  return out
 }
 
 export function measureBottomMask(mask, w, h) {
@@ -572,7 +635,8 @@ export function readBottom(data, w, h) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
   const { lab, bg } = cut
-  let mask = cut.garment.mask
+  const hanger = belowHanger(cut.garment.mask, w, h)
+  let mask = hanger.mask
   // Each row's stretches of garment, small gaps (a seam's shadow) closed.
   const gap = Math.max(2, Math.round(w * 0.01))
   const runs = y => {
@@ -628,6 +692,10 @@ export function readBottom(data, w, h) {
   if (apart > 20) {
     const strict = Uint8Array.from(mask, (on, i) => (on && Math.hypot(lab[3 * i] - bg[0], lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) > apart * 0.35 ? 1 : 0))
     mask = largestPiece(strict, w, h).mask
+    ;[top, bottom] = extent()
+  }
+  if (hanger.hung) {
+    mask = belowHangerBar(mask, w, h, lab, clothLab, top, bottom)
     ;[top, bottom] = extent()
   }
   const shape = measureBottomMask(mask, w, h)

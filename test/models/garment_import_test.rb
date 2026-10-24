@@ -72,6 +72,13 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "hoodie", top("Pullover Hoodie")[:style]
   end
 
+  test "a short-sleeve shirt is a button-up with short sleeves, and a short-sleeve tee is still a tee" do
+    assert_equal "shortshirt", top("by Parra Abstract Mountain Short Sleeve Shirt - Red")[:style]
+    assert_equal "shortshirt", top("Camp Collar Shirt")[:style]
+    assert_equal "tee", top("Short Sleeve T-Shirt")[:style]
+    assert_equal "polo", top("Short Sleeve Polo")[:style]
+  end
+
   test "polos, tank tops, sweaters and cardigans are drawn as themselves" do
     assert_equal "polo", top("Kith Tilden Polo")[:style]
     assert_equal "tank", top("Kith Crest Ribbed Tank")[:style]

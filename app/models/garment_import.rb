@@ -44,6 +44,7 @@ class GarmentImport
     [ "tee", /\bt[- ]?shirts?\b|\btees?\b/i ],
     [ "sweater", /sweater|jumper|knit\b|knitted|cashmere crew|merino/i ],
     [ "sweatshirt", /sweatshirt|pullover|crew ?neck|fleece/i ],
+    [ "shortshirt", /short[- ]?sleeve.*shirt|\bs\/s\b.*shirt|camp[- ]?(collar|shirt)|bowling shirt|aloha|hawaiian|resort shirt/i ],
     [ "shirt", /oxford|flannel|button[- ]?(down|up|front)|poplin|dress shirt|chambray/i ],
     [ "longsleeve", /long[- ]?sleeve|\bl\/s\b|henley/i ],
     [ "shirt", /shirts?\b/i ]
@@ -71,6 +72,8 @@ class GarmentImport
 
   # What the cloth looks like, from the product's name and description, so the 3D view can draw its surface.
   FABRICS = [
+    # Linen first: a silk-linen blend hangs and looks like linen, not satin.
+    [ "linen", /linen|ramie|hemp/i ],
     [ "silk", /silk|satin|taffeta|chiffon|charmeuse/i ],
     [ "denim", /denim|jean|trucker|chambray/i ],
     [ "leather", /leather|suede|biker|moto\b/i ],
@@ -130,7 +133,7 @@ class GarmentImport
   # Clothes from a person's own photo, which the page reads for what they are (kind and style) and which
   # stays on their device: every usual size of that kind of thing, marked as guessed.
   PHOTO_NAMES = {
-    "top" => { "tee" => "T-shirt", "longsleeve" => "Long-sleeve T-shirt", "sweatshirt" => "Sweatshirt", "hoodie" => "Hoodie", "shirt" => "Shirt",
+    "top" => { "tee" => "T-shirt", "longsleeve" => "Long-sleeve T-shirt", "sweatshirt" => "Sweatshirt", "hoodie" => "Hoodie", "shirt" => "Shirt", "shortshirt" => "Short-sleeve shirt",
                "polo" => "Polo", "tank" => "Tank top", "sweater" => "Sweater", "cardigan" => "Cardigan",
                "dress" => "Dress", "dress_long" => "Long-sleeve dress" },
     "jacket" => { "zip" => "Zip-up jacket", "bomber" => "Bomber jacket", "shirt" => "Shirt jacket", "tailored" => "Blazer" },
@@ -583,7 +586,7 @@ class GarmentImport
   # another top's.
   def usual_key(kind, style, product = nil)
     return kind unless kind == "top"
-    return "tee" if %w[tee polo tank].include?(style)
+    return "tee" if %w[tee polo tank shortshirt].include?(style)
     return product.to_h.values_at(:name, :description).join(" ").match?(/long[- ]?sleeve|\bl\/s\b/i) ? "dress_long" : "dress" if style == "dress"
 
     "top"
@@ -679,7 +682,7 @@ class GarmentImport
 
   def garment(product, chart, kind:, source_url:)
     style = kind == "top" ? top_style_of(product) : kind == "trousers" ? bottom_style_of(product) : nil
-    chart = tee_sleeves(chart) if %w[tee polo].include?(style)
+    chart = tee_sleeves(chart) if %w[tee polo shortshirt].include?(style)
     # A tank top has no sleeves, and its straps sit in from the shoulders: neither is measured.
     if style == "tank"
       chart = chart.with(sizes: chart.sizes.map { it.merge("sleeve" => nil, "shoulders" => nil) }, missing: chart.missing - %w[sleeve shoulders])

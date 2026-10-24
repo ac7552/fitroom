@@ -181,6 +181,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uPrintOn: { value: 0 },
     uPrintHalf: { value: 26 },
     uPrintLength: { value: 70 },
+    // An all-over print: the printed cloth itself (a piece of the photo's front), repeated over every other
+    // piece at its size on the garment (uTile: across and down, cm, and how far below the shoulders it starts).
+    uPrintTile: { value: BLANK },
+    uAllOver: { value: 0 },
+    uTile: { value: new THREE.Vector3(20, 20, 0) },
     // Pants' and skirts' shop photo, laid on the cloth where aPhoto says (see DrapedTop#setPhotoMap).
     uPhoto: { value: BLANK },
     uPhotoSoft: { value: BLANK },
@@ -222,6 +227,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPrintOn;
         uniform float uPrintHalf;
         uniform float uPrintLength;
+        uniform sampler2D uPrintTile;
+        uniform float uAllOver;
+        uniform vec3 uTile;
         uniform sampler2D uPhoto;
         uniform sampler2D uPhotoSoft;
         uniform float uPhotoOn;
@@ -292,6 +300,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         }
         diffuseColor.rgb *= 1.0 - 0.22 * groove - 0.5 * shadow;
         diffuseColor.rgb = mix( diffuseColor.rgb, thread, stitch * 0.85 );
+        if ( uPrintOn > 0.5 && uAllOver > 0.5 && !( vPiece > 0.5 && vPiece < 1.5 ) && gl_FrontFacing ) {
+          // Started half a repeat off the middle, so the back isn't mirrored about its centre seam.
+          vec2 st = vec2( vPattern.x / uTile.x + 0.5, ( -vPattern.y - uTile.z ) / uTile.y );
+          diffuseColor.rgb = texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
+        }
         if ( uPrintOn > 0.5 && vPiece > 0.5 && vPiece < 1.5 && gl_FrontFacing ) {
           vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
           if ( st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0 ) {

@@ -37,7 +37,7 @@ const FABRICS = {
 // pattern and draped like tops (lib/garments).
 export const STYLES = ["tailored", "zip", "bomber", "shirt"]
 // Tops, and casual jackets, cut from a sewing pattern and draped on the mannequin with cloth simulation.
-export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "dress", "polo", "tank", "sweater", "cardigan"]
+export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "shortshirt", "dress", "polo", "tank", "sweater", "cardigan"]
 
 export const STATUS_COLORS = {
   good: "#3fa672", tight: "#de4f37", short: "#de4f37", loose: "#4f63f0", long: "#4f63f0", unknown: "#9a9ca3"

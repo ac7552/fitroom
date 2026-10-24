@@ -140,3 +140,21 @@ test("lays a pants photo on its cloth: the front from the photo, the wearer's le
   const off = by("front_L").filter(i => !on(i))
   assert.ok(off.length < by("front_L").length * 0.02, `${off.length} front points off the garment`)
 })
+
+test("pants on a hanger: the hook and the hanger's bar aren't taken for the waistband", () => {
+  const { data, w, h } = bottoms({ hem: 40 })
+  // Move the pants down to leave room above, then draw the hook and the bar over their top.
+  const shifted = new Uint8ClampedArray(data.length).fill(236)
+  for (let i = 3; i < shifted.length; i += 4) shifted[i] = 255
+  const down = 20
+  shifted.set(data.subarray(0, 4 * w * (h - down)), 4 * w * down)
+  const paint = (x0, x1, y0, y1, c) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) shifted.set([...c, 255], 4 * (y * w + x)) }
+  paint(118, 122, 4, 38, [30, 30, 30])        // the hook
+  paint(64, 176, 38, 46, [20, 20, 20])        // the bar, wider than the waist
+  paint(64, 176, 46, 50, [236, 236, 236])     // the gap between the bar and the cloth, the clips aside
+  paint(80, 86, 46, 50, [165, 165, 165]); paint(154, 160, 46, 50, [165, 165, 165])   // its metal clips
+  const read = readBottom(shifted, w, h)
+  assert.ok(read, "read")
+  assert.ok(read.layout.top >= 48 && read.layout.top <= 44 + down, `top ${read.layout.top}`)
+  assert.equal(read.color, "#28282c")
+})

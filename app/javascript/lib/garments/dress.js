@@ -134,6 +134,7 @@ function surfaceFor(style, fabric) {
   if (STYLES[style]?.surface && !["silk", "leather", "nylon"].includes(fabric)) return STYLES[style].surface
   const own = STYLES[style]?.fabric ?? "jersey"
   if (fabric === "denim") return "twill"
+  if (fabric === "linen") return "matte"
   if (fabric === "nylon" || fabric === "leather") return "shell"
   if (fabric === "wool" && own !== "shell") return own === "jersey" ? "jersey" : "wool"
   return own
@@ -145,7 +146,7 @@ function bottomSurface(style, fabric) {
   if (style === "leggings") return "stretch"
   if (style === "joggers") return fabric === "nylon" ? "matte" : "fleece"
   if (style === "jeans" || fabric === "denim") return "twill"
-  if (fabric === "nylon") return "matte"
+  if (fabric === "nylon" || fabric === "linen") return "matte"
   if (fabric === "wool") return "wool"
   if (fabric === "leather") return "leather"
   if (fabric === "silk") return "silk"
@@ -180,7 +181,7 @@ function rimAt(rim, angle) {
   return y0 + (y1 - y0) * Math.min(Math.max(at / span, 0), 1)
 }
 // The tops that tuck in.
-export const TUCKABLE = ["tee", "longsleeve", "polo", "tank", "shirt"]
+export const TUCKABLE = ["tee", "longsleeve", "polo", "tank", "shirt", "shortshirt"]
 
 // The wearer as pants are drafted for them: their measurements, the body's, and from the crotch up to the
 // natural waist (about at the navel).
@@ -332,7 +333,8 @@ export class DrapedTop {
     if (print?.image === this.printImage) return
     this.printImage = print?.image ?? null
     this.printTexture?.dispose()
-    this.printTexture = null
+    this.tileTexture?.dispose()
+    this.printTexture = this.tileTexture = null
     const uniforms = this.materials.main.userData.uniforms
     if (print) {
       this.printTexture = new THREE.CanvasTexture(print.image)
@@ -343,8 +345,20 @@ export class DrapedTop {
       uniforms.uPrint.value = this.printTexture
       uniforms.uPrintHalf.value = m.chest / 4
       uniforms.uPrintLength.value = m.length + band
+      // An all-over print goes on the back, sleeves and collar too: its cloth, mirrored at its edges so the
+      // repeats meet without a seam.
+      if (print.tile) {
+        this.tileTexture = new THREE.CanvasTexture(print.tile.image)
+        this.tileTexture.colorSpace = THREE.SRGBColorSpace
+        this.tileTexture.wrapS = this.tileTexture.wrapT = THREE.MirroredRepeatWrapping
+        this.tileTexture.anisotropy = 4
+        const front = m.chest / 2   // the front's width (cm), which the photo's front spans
+        uniforms.uPrintTile.value = this.tileTexture
+        uniforms.uTile.value.set(print.tile.across * front, print.tile.down * front, print.tile.from * front)
+      }
     }
     uniforms.uPrintOn.value = print ? 1 : 0
+    uniforms.uAllOver.value = print?.tile ? 1 : 0
   }
 
   // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),
