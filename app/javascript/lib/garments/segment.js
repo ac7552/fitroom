@@ -19,8 +19,9 @@ function load() {
   loading ??= (async () => {
     const t = await import(/* webpackIgnore: true */ LIBRARY)
     t.env.allowLocalModels = false
-    const device = typeof navigator !== "undefined" && navigator.gpu ? "webgpu" : "wasm"
-    const model = await t.SamModel.from_pretrained(MODEL, { dtype: "q8", device }).catch(() => t.SamModel.from_pretrained(MODEL, { dtype: "q8" }))
+    // On the CPU (WebAssembly): this model's masks come back wrong on WebGPU in this library's version (all
+    // of the picture, or none of it). A photo takes about five seconds.
+    const model = await t.SamModel.from_pretrained(MODEL, { dtype: "q8", device: "wasm" })
     const processor = await t.AutoProcessor.from_pretrained(MODEL)
     return { t, model, processor }
   })().catch(error => { loading = null; throw error })
