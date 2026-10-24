@@ -72,6 +72,14 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "hoodie", top("Pullover Hoodie")[:style]
   end
 
+  test "pull-on pants with an elastic or drawcord waist are marked so, and fit as elastic" do
+    pants = ->(name) { GarmentImport.new.from_page(page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", name).gsub("Suit jackets", "Pants"), source_url: "x") }
+    assert_equal({ elastic: true }, pants.call("Drawcord Linen Pant")[:cut])
+    assert_equal({ elastic: true }, pants.call("Elastic Waist Trouser")[:cut])
+    assert_nil pants.call("Pleated Wool Trouser")[:cut]
+    assert_nil pants.call("Fleece Jogger Drawstring")[:cut]
+  end
+
   test "a short-sleeve shirt is a button-up with short sleeves, and a short-sleeve tee is still a tee" do
     assert_equal "shortshirt", top("by Parra Abstract Mountain Short Sleeve Shirt - Red")[:style]
     assert_equal "shortshirt", top("Camp Collar Shirt")[:style]

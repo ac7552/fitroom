@@ -194,7 +194,7 @@ function bottomWearer(measures, frame) {
 export function waistband(item, frame, measures) {
   const wearer = bottomWearer(measures, frame)
   const skirt = item.style === "skirt"
-  const m = skirt ? draftBottoms("skirt", item.size, wearer, item.cut ?? null).measures : bottomMeasures(item.style, item.size, wearer)
+  const m = skirt ? draftBottoms("skirt", item.size, wearer, item.cut ?? null).measures : bottomMeasures(item.style, item.size, wearer, item.cut ?? null)
   const seam = frame.crotch - 0.015 + m.rise / 100
   return { seam, top: seam + m.band / 100, raise: skirt ? 0 : BACK_RAISE / 100 }
 }
@@ -232,7 +232,7 @@ export class DrapedTop {
       length: this.pattern.measures.waist / 100
     } : null
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
-      fabric: this.bottoms && item.fabric === "linen" ? "linen" : this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
+      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
       feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
       snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
       tuck,

@@ -36,7 +36,12 @@ export const BACK_RAISE = 4
 export function draftBottoms(styleName, size, body, cut = null) {
   if (styleName === "skirt") return draftSkirt(size, body, cut)
   const style = BOTTOM_STYLES[styleName] ?? BOTTOM_STYLES.trousers
-  const m = bottomMeasures(styleName, size, body)
+  const m = bottomMeasures(styleName, size, body, cut)
+  // Pull-on pants (an elastic or drawcord waist): the pieces are cut nearly as wide at the top as the seat,
+  // and the waistband, at the chart's relaxed waist, gathers them in. Cut at that waist instead, the pieces
+  // flare out from it to the seat like a balloon.
+  const gathered = cut?.elastic && styleName !== "joggers" && styleName !== "leggings"
+  if (gathered) m.waistCut = Math.max(m.waist, m.seat * 0.82)
   const panels = {}, seams = []
   for (const part of ["front", "back"]) {
     const plus = legPiece(m, part)
@@ -56,7 +61,8 @@ export function draftBottoms(styleName, size, body, cut = null) {
   // half, the back's left half (see pattern.js's band, whose sewn edge runs the other way to the edges).
   const waists = [["back_R", "waist"], ["front_R", "waist"], ["front_L", "waist"], ["back_L", "waist"]]
   const waistLengths = waists.map(([p, e]) => lengthOf(edgeOf(panels[p].edges, e)))
-  panels.waistband = { edges: band(waistLengths, style.band.stretch, style.band.height, "up"), place: { at: "band", toward: "up" }, fabric: styleName === "joggers" ? "rib" : "main" }
+  const bandStretch = gathered ? Math.max(0.6, m.waist / m.waistCut) : style.band.stretch
+  panels.waistband = { edges: band(waistLengths, bandStretch, style.band.height, "up"), place: { at: "band", toward: "up" }, fabric: styleName === "joggers" ? "rib" : "main" }
   waists.forEach(([p, e], i) => seams.push([p, e, "waistband", `sewn_${i}`]))
   seams.push(["waistband", "end_a", "waistband", "end_b"])
 
@@ -73,7 +79,7 @@ export function draftBottoms(styleName, size, body, cut = null) {
 }
 
 // The finished measurements to cut to: the chart's, and from the body what it doesn't give.
-export function bottomMeasures(styleName, size, body) {
+export function bottomMeasures(styleName, size, body, cut = null) {
   const style = BOTTOM_STYLES[styleName] ?? BOTTOM_STYLES.trousers
   const hips = body.hips ?? body.waist + 14
   const waist = size.waist ?? body.waist + 2
@@ -87,7 +93,7 @@ export function bottomMeasures(styleName, size, body) {
   let sitAt = waist <= body.waist ? 1 : waist >= hips ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hips - body.waist)
   // An elastic waist (joggers) is cut smaller than the body and stretches on: it sits below the navel, not
   // wherever the body is as small as its relaxed size.
-  if (style.band.stretch < 0.9 && styleName !== "leggings") sitAt = Math.min(sitAt, 0.75)
+  if ((style.band.stretch < 0.9 || cut?.elastic) && styleName !== "leggings") sitAt = Math.min(sitAt, 0.75)
   // The waistband's middle sits on that line (the pattern's top, y = 0, is the band's seam, below it). A
   // chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that.
   const rise = Math.max(14, size.rise ? size.rise * 0.9 : naturalRise * sitAt - style.band.height / 2)
@@ -161,7 +167,7 @@ function draftSkirt(size, body, cut) {
 // the crotch, and the inseam back down to the hem.
 function legPiece(m, part) {
   const share = part === "front" ? FRONT : 1 - FRONT
-  const waist = m.waist * share / 2, seat = m.seat * share / 2
+  const waist = (m.waistCut ?? m.waist) * share / 2, seat = m.seat * share / 2
   // The crotch extensions, as a pattern maker drafts them: a sixteenth of the seat at the front, an eighth
   // at the back (the seam runs under the body and up over the seat, so the back's is far longer). The
   // inseam then slants in from the crotch point to the thigh.

@@ -92,8 +92,9 @@ function onPhoto(layout, m, behind = false) {
   const { w, h, top, bottom, crotch, rows } = layout
   const total = m.band + m.length + (m.cuff ?? 0)
   const scale = (bottom - top) / total   // photo pixels per cm
-  // Rows and columns a few pixels inside the garment's outline, which is half backdrop and its shadow.
-  const edge = Math.max(3, Math.round(w * 0.006))
+  // Rows and columns a little inside the garment's outline: at its edge, cloth laid flat turns away from the
+  // light and catches it (a pale rim down each side and along the hems), or is half backdrop.
+  const edge = Math.max(4, Math.round(w * 0.012))
   const clampY = y => Math.min(Math.max(y, top + edge), bottom - edge)
   const rowAt = y => {
     const r = Math.round(clampY(y))
@@ -103,7 +104,7 @@ function onPhoto(layout, m, behind = false) {
   // From a (u = 0) to b (u = 1) across the photo, kept inside the garment's edges a little, so its outline
   // isn't stretched along a seam.
   const between = (a, b, u) => {
-    const e = Math.min(Math.max(edge, Math.abs(b - a) * 0.03), Math.abs(b - a) / 3) * Math.sign(b - a)
+    const e = Math.min(Math.max(edge, Math.abs(b - a) * 0.07), Math.abs(b - a) / 3) * Math.sign(b - a)
     return a + e + Math.min(Math.max(u, 0), 1) * (b - a - 2 * e)
   }
   // A point on the photo's row at height y (pixels): `u` of the way from the middle (0) out to the wearer's

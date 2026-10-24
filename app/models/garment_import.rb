@@ -113,6 +113,7 @@ class GarmentImport
   end
 
   KINDS = %w[top jacket coat trousers].freeze
+  ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
   FORMAT = 12
@@ -693,6 +694,8 @@ class GarmentImport
     # A skirt's cut, read as a dress's is (its length, how it flares, its cloth).
     skirt_cut = style == "skirt" ? DressCut.read(product).slice(:length, :fit, :stretch, :fabric, :printed, :details) : nil
     skirt_cut[:fit] = "pleated" if skirt_cut && product.values_at(:name, :description).join(" ").match?(/pleat/i)
+    # Pull-on pants: an elastic or drawcord waist, gathered in, which stretches to fit.
+    skirt_cut = { elastic: true } if kind == "trousers" && !%w[skirt joggers leggings].include?(style) && product.values_at(:name, :description).join(" ").match?(ELASTIC_WAIST)
     if style == "dress"
       cut = DressCut.read(product)
       chart = chart.with(missing: chart.missing - DressCut.not_needed(cut))
