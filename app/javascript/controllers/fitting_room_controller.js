@@ -153,7 +153,10 @@ export default class extends Controller {
         if (!color || this.outfit[kind] !== item) return
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
         // The shop's photo of the back, read the same way, goes on the back.
-        const back = garment.back_photo && read ? await (bottoms ? readBottomPhoto(garment.back_photo) : readPhoto(garment.back_photo)).catch(() => null) : null
+        let back = garment.back_photo && read ? await (bottoms ? readBottomPhoto(garment.back_photo) : readPhoto(garment.back_photo)).catch(() => null) : null
+        // Not the same garment's back after all (a close-up, or a photo on a model): a different colour, or a
+        // top that's plain in front showing a print all over its back.
+        if (back && (colorGap(back.color, read.color) > 40 || (!bottoms && !read.print && back.print?.coverage > 0.35))) back = null
         if (this.outfit[kind] !== item) return
         if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
@@ -588,7 +591,7 @@ export default class extends Controller {
       return
     }
     // Tops, casual jackets and pants are draped here on the page, so their photo is taken here too.
-    if (this.stage.hasDraped || snapshot.items.some(item => item.kind === "top" || item.kind === "trousers" || ["zip", "bomber", "shirt"].includes(item.style))) {
+    if (this.stage.hasDraped || snapshot.items.some(item => item.kind === "top" || item.kind === "trousers" || ["zip", "bomber", "shirt", "cardigan"].includes(item.style))) {
       this.closeStudio()
       this.showStudio("Taking the photo…")
       if (!this.stage.settled) {
@@ -956,6 +959,13 @@ function asNamed(color, name, named) {
   const [r, g, b] = rgb(color), [nr, ng, nb] = rgb(named)
   const light = (r + g + b) / 3, namedLight = (nr + ng + nb) / 3
   return "#" + [nr, ng, nb].map(v => Math.round(Math.min(255, Math.max(0, v - namedLight + light))).toString(16).padStart(2, "0")).join("")
+}
+
+// How far apart two "#rrggbb" colours are (0 to about 440).
+function colorGap(a, b) {
+  const rgb = hex => [1, 3, 5].map(i => parseInt(String(hex).slice(i, i + 2), 16) || 0)
+  const [p, q] = [rgb(a), rgb(b)]
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
 }
 
 // The size a shop photographs (its sample): the middle of its chart. Its chest and length (cm) say how big

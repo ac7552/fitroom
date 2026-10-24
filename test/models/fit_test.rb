@@ -120,4 +120,12 @@ class FitTest < ActiveSupport::TestCase
     assert_equal "good", waist.status
     assert_match(/elastic/i, waist.note)
   end
+
+  test "a skirt and shorts say where they end" do
+    body = BODY.merge("hips" => 100, "inseam" => 81)
+    skirt = Fit.check_trousers(body, { "name" => "M", "waist" => 72, "seat" => 98, "length" => 96 }, style: "skirt").checks.find { it.part == "length" }
+    assert_equal "Ends near the ankle", skirt.note
+    shorts = Fit.check_trousers(body, { "name" => "M", "waist" => 86, "seat" => 108, "inseam" => 18 }, style: "shorts").checks.find { it.part == "inseam" }
+    assert_match(/above the knee/, shorts.note)
+  end
 end

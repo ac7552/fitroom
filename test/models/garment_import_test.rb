@@ -72,6 +72,27 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "hoodie", top("Pullover Hoodie")[:style]
   end
 
+  test "a chart's impossible numbers are left out, to be estimated" do
+    chart = GarmentImport::ChartReader::Chart.new(sizes: [ { "name" => "0", "waist" => 73.7, "seat" => 101.6, "leg_opening" => 3.18 } ], unit: "cm", kind: "garment", missing: [])
+    size = GarmentImport.new.send(:plausible, chart, "trousers").sizes.first
+    assert_nil size["leg_opening"]
+    assert_equal 73.7, size["waist"]
+  end
+
+  test "pants named for their cloth are pants" do
+    pants = GarmentImport.new.from_page(page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", "Tallis Waist Strap Suiting Trouser - Black").gsub("Suit jackets", "Trousers"), source_url: "x")
+    assert_equal "trousers", pants[:garment]
+  end
+
+  test "a blend is its main fibre" do
+    import = GarmentImport.new
+    assert_equal "wool", import.send(:fabric_of, { name: "Mulberry IV Wool Jersey Tee", fabric: "80% Wool / 20% Nylon" }, "top")
+    assert_equal "cotton", import.send(:fabric_of, { name: "Shirt", fabric: "60% Cotton / 40% Rayon" }, "top")
+    assert_equal "nylon", import.send(:fabric_of, { name: "Track Pant", fabric: "100% Nylon" }, "trousers")
+    assert_equal "cotton", import.send(:fabric_of, { name: "Camilla Plunge Shirt", fabric: "76% Lyocell / 22% Nylon / 2% Polyurethane" }, "top")
+    assert_equal "nylon", import.send(:fabric_of, { name: "Tee", fabric: "80% Polyamide / 20% Elastane" }, "top")
+  end
+
   test "pull-on pants with an elastic or drawcord waist are marked so, and fit as elastic" do
     pants = ->(name) { GarmentImport.new.from_page(page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", name).gsub("Suit jackets", "Pants"), source_url: "x") }
     assert_equal({ elastic: true }, pants.call("Drawcord Linen Pant")[:cut])
@@ -80,11 +101,19 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_nil pants.call("Fleece Jogger Drawstring")[:cut]
   end
 
+  test "shorts whose chart gives their whole length as the inseam are measured from the crotch" do
+    chart = GarmentImport::ChartReader::Chart.new(sizes: [ { "name" => "48", "waist" => 87, "inseam" => 58.0 }, { "name" => "50", "waist" => 91, "inseam" => 20.0 } ], unit: "cm", kind: "garment", missing: [])
+    shorts = GarmentImport.new.send(:garment, { name: "Cupro Cargo Short", category: "Shorts" }, chart, kind: "trousers", source_url: "x")
+    assert_equal [ 28.0, 20.0 ], shorts[:chart][:sizes].map { it["inseam"] }
+  end
+
   test "a short-sleeve shirt is a button-up with short sleeves, and a short-sleeve tee is still a tee" do
     assert_equal "shortshirt", top("by Parra Abstract Mountain Short Sleeve Shirt - Red")[:style]
     assert_equal "shortshirt", top("Camp Collar Shirt")[:style]
     assert_equal "tee", top("Short Sleeve T-Shirt")[:style]
     assert_equal "polo", top("Short Sleeve Polo")[:style]
+    # Craig Green files its tees as "Jerseys".
+    assert_equal [ "top", "tee" ], top("Craig Green Flatlock Short Sleeve Jersey - White", "Jerseys").values_at(:garment, :style)
   end
 
   test "polos, tank tops, sweaters and cardigans are drawn as themselves" do
@@ -92,7 +121,10 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "tank", top("Kith Crest Ribbed Tank")[:style]
     assert_equal "sweater", top("Wyona Sweater")[:style]
     assert_equal "sweater", top("Merino Crewneck Sweater")[:style]
-    assert_equal "cardigan", top("Color-Blocked Cardigan")[:style]
+    assert_equal "shortknit", top("Mock Neck Short Sleeve Sweater")[:style]
+    assert_equal "shirt", GarmentImport.new.send(:style_of, { name: "Ell Denim Ford Jacket - Black", category: "Jackets" }, "x")
+    # A cardigan is worn open over a top, as a jacket is, so a tee can go under it.
+    assert_equal [ "jacket", "cardigan" ], top("Color-Blocked Cardigan").values_at(:garment, :style)
     assert_equal "sweatshirt", top("Undercover Cindy Sherman Sweatshirt")[:style]
   end
 

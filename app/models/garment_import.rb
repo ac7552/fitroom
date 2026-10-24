@@ -31,7 +31,7 @@ class GarmentImport
   DRESSES = /\b(?:dress(?:es)?(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?)\b)|gowns?|maxi|midi|sundress|frock|kaftan|caftan)\b/i
   JACKETS = /jacket|blazer|suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket/i
   # T-shirts, shirts, polos, sweatshirts, hoodies and knitwear: worn on the body, under a jacket.
-  TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\btop\b/i
+  TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b/i
   # How a top looks, for drawing it: the first match in its name wins, then in its category, else a tee.
   # "T-shirt" is checked before "shirt", so a T-shirt is never drawn as a button-up.
   TOP_STYLES = [
@@ -61,10 +61,11 @@ class GarmentImport
   # How a jacket looks, so the 3D view draws the right one: tailored (blazers, suit and sport jackets),
   # shirt (button-front denim, trucker and work jackets), bomber, or zip (most other outerwear). First match wins.
   STYLES = [
+    [ "cardigan", /cardigan/i ],
     [ "tailored", /blazer|suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
     [ "bomber", /bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington/i ],
     [ "zip", /two-way zip|zip(?:per)? closure|full[- ]zip|zip[- ]up|front zip/i ],
-    [ "shirt", /denim jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
+    [ "shirt", /denim(?: \w+)? jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
     [ "zip", /zip|moto\b|biker|leather jacket|shearling|puffer|down jacket|windbreaker|anorak|track jacket|blouson|fleece/i ]
   ].freeze
   # Shops' outerwear sections, where a jacket that says nothing else is more likely casual than tailored.
@@ -116,7 +117,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 12
+  FORMAT = 13
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -138,9 +139,9 @@ class GarmentImport
   # stays on their device: every usual size of that kind of thing, marked as guessed.
   PHOTO_NAMES = {
     "top" => { "tee" => "T-shirt", "longsleeve" => "Long-sleeve T-shirt", "sweatshirt" => "Sweatshirt", "hoodie" => "Hoodie", "shirt" => "Shirt", "shortshirt" => "Short-sleeve shirt",
-               "polo" => "Polo", "tank" => "Tank top", "sweater" => "Sweater", "cardigan" => "Cardigan",
+               "polo" => "Polo", "tank" => "Tank top", "sweater" => "Sweater", "cardigan" => "Cardigan", "shortknit" => "Short-sleeve sweater",
                "dress" => "Dress", "dress_long" => "Long-sleeve dress" },
-    "jacket" => { "zip" => "Zip-up jacket", "bomber" => "Bomber jacket", "shirt" => "Shirt jacket", "tailored" => "Blazer" },
+    "jacket" => { "zip" => "Zip-up jacket", "bomber" => "Bomber jacket", "shirt" => "Shirt jacket", "tailored" => "Blazer", "cardigan" => "Cardigan" },
     "coat" => {}, "trousers" => {}
   }.freeze
 
@@ -647,6 +648,10 @@ class GarmentImport
     # A "maxi skirt" is a skirt, not a dress.
     return "top" if words.match?(DRESSES) && !words.match?(/skirts?\b|skort/i)
     return "coat" if words.match?(COATS) && !words.match?(NOT_COATS)
+    # A cardigan is worn open over a top, as a jacket is.
+    return "jacket" if words.match?(/cardigan/i)
+    # Pants named for their cloth ("Suiting Trouser") are pants, not a suit's jacket.
+    return "trousers" if product[:name].to_s.match?(/\b(?:trousers?|pants?|jeans?|shorts?(?![- ]?sleeve)|skirts?)\s*(?:[-–].*)?\z/i) || product[:category].to_s.match?(TROUSERS)
     return "jacket" if words.match?(JACKETS)
     return "jacket" if words.match?(/hoodie|hooded/i) && product[:description].to_s.match?(HOODED_OUTERWEAR)
     return "trousers" if words.match?(TROUSERS)
@@ -685,8 +690,16 @@ class GarmentImport
   end
 
   def garment(product, chart, kind:, source_url:)
+    chart = plausible(chart, kind)
     style = kind == "top" ? top_style_of(product) : kind == "trousers" ? bottom_style_of(product) : nil
-    chart = tee_sleeves(chart) if %w[tee polo shortshirt].include?(style)
+    # Shorts' "inseam" past 40 cm is their whole length from the waist (Armani's charts): less the rise.
+    if style == "shorts"
+      sizes = chart.sizes.map { it["inseam"].to_f > 40 ? it.merge("inseam" => (it["inseam"] - (it["rise"] || (product[:women] ? 26 : 30))).round(1)) : it }
+      chart = chart.with(sizes:)
+    end
+    # A sweater with short sleeves (a knit tee, a mock neck) is drawn with short sleeves.
+    style = "shortknit" if style == "sweater" && short_sleeved?(product, chart)
+    chart = tee_sleeves(chart) if %w[tee polo shortshirt shortknit].include?(style)
     # A tank top has no sleeves, and its straps sit in from the shoulders: neither is measured.
     if style == "tank"
       chart = chart.with(sizes: chart.sizes.map { it.merge("sleeve" => nil, "shoulders" => nil) }, missing: chart.missing - %w[sleeve shoulders])
@@ -735,12 +748,47 @@ class GarmentImport
     # What it's made of says it best ("EB Denim" makes cotton tees); else its name and description.
     name = product[:name].to_s.delete_prefix(product[:brand].to_s)
     words = [ name, *product.values_at(:category, :description) ].join(" ")
+    # A blend ("80% Wool / 20% Nylon") is its main fibre.
+    shell = main_fibre(shell) || shell
     found = [ shell, words ].find { |text| FABRICS.any? { |_, pattern| text.to_s.match?(pattern) } }
     fabric = FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
     # Denim is a cotton cloth: a "Denim Jacket" made of "100% Cotton" is denim.
     return "denim" if fabric == "cotton" && [ name, product[:category] ].join(" ").match?(FABRICS.to_h.fetch("denim"))
 
     fabric
+  end
+
+  # The largest share of a blend that's a cloth Fitroom knows: "Wool" in "80% Wool / 20% Nylon". Nil for a
+  # material with no shares given.
+  def main_fibre(material)
+    parts = material.to_s.scan(/(\d+(?:\.\d+)?)\s*%\s*([A-Za-z][A-Za-z -]*)/)
+    return if parts.empty?
+
+    main = parts.max_by { it[0].to_f }.last
+    return main if FABRICS.any? { |_, pattern| main.match?(pattern) }
+    # Polyamide is nylon; viscose, lyocell, modal, cupro and the matte synthetics hang and look like cotton
+    # here (none is a shiny shell, as the nylon in "76% Lyocell / 22% Nylon" would make it).
+    return "nylon" if main.match?(/polyamide/i)
+    "cotton" if main.match?(/lyocell|tencel|modal|viscose|rayon|cupro|polyester|acrylic|elastane|spandex|flax/i)
+  end
+
+  # What a chart can't mean, left out (and then estimated, as when a chart doesn't give it): a shop's typo
+  # ("LEG OPENING 1.25" for every size) would otherwise be drawn as a leg three centimetres round.
+  PLAUSIBLE = { "leg_opening" => 12..120, "thigh" => 30..150, "seat" => 50..200, "waist" => 40..200, "inseam" => 5..120,
+                "rise" => 12..60, "chest" => 50..220, "shoulders" => 25..80, "sleeve" => 5..100, "length" => 25..160 }.freeze
+  def plausible(chart, kind)
+    sizes = chart.sizes.map do |size|
+      size.to_h { |key, value| [ key, value.is_a?(Numeric) && PLAUSIBLE[key] && !PLAUSIBLE[key].cover?(value) ? nil : value ] }
+    end
+    sizes == chart.sizes ? chart : chart.with(sizes:)
+  end
+
+  # Whether a sweater has short sleeves: its name says so, or every sleeve on its chart is short.
+  def short_sleeved?(product, chart)
+    return true if product.values_at(:name, :description).join(" ").match?(/short[- ]?sleeve|\bs\/s\b/i)
+
+    sleeves = chart.sizes.filter_map { it["sleeve"] }
+    sleeves.any? && sleeves.all? { it < Fit::SHORT_SLEEVE }
   end
 
   # A T-shirt's sleeve is short, so a long one on its chart was measured from the centre of the back (as

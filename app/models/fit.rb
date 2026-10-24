@@ -148,6 +148,8 @@ module Fit
   end
 
   module_function
+  # Defined above, next to their numbers.
+  module_function :skirt_length, :shorts_length
 
   def check_size(body, size, cut = "regular", garment = "jacket")
     ranges = CUTS.fetch(cut)

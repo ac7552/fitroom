@@ -33,6 +33,8 @@ export const STYLES = {
   tank: { sleeve: null, collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 6, length: 0.41 },
   // Knitwear: a sweater (ribbed neck, cuffs and hem) and a cardigan (the same, buttoned down a V front).
   sweater: { sleeve: "long", collar: "rib", cuffs: "rib", hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4 },
+  // A short-sleeve knit (a knit tee or a mock neck): ribbed at the neck and hem, short sleeves.
+  shortknit: { sleeve: "short", collar: "rib", cuffs: null, hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4 },
   cardigan: { sleeve: "long", collar: "band", cuffs: "rib", hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4, closure: "buttons", neck: 20 },
   // Short sleeves, a round neck, close at the waist and flaring out to about the knee.
   dress: { sleeve: "short", collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 8, length: 0.53, shaped: true }
