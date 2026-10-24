@@ -25,6 +25,7 @@ class GarmentImport
     [ "socks", /\bsocks?\b|underwear|boxers?|briefs\b/i ],
     [ "scarves and ties", /scarf|scarves|\bties?\b|gloves?/i ],
     [ "swimwear", /swim|bikini/i ],
+    [ "rompers and jumpsuits", /romper|jumpsuit|playsuit|overalls?\b|dungarees|unitard|catsuit/i ],
     [ "accessories", /accessor/i ]
   ].freeze
   # Dresses (a "dress shirt" or "dress pants" isn't one), drawn as a top cut long.
@@ -117,7 +118,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 17
+  FORMAT = 18
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
