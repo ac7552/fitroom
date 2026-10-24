@@ -394,6 +394,7 @@ export class DrapedTop {
     geometry.setAttribute("aHole", new THREE.BufferAttribute(hole, 1))
     geometry.setAttribute("aSheer", new THREE.BufferAttribute(sheer, 1))
     geometry.setAttribute("aCover", new THREE.BufferAttribute(new Float32Array(n), 1))
+    geometry.setAttribute("aStrain", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -534,6 +535,34 @@ export class DrapedTop {
     geometry.attributes.normal.needsUpdate = true
     geometry.computeBoundingSphere()
     if (drape.tuck) this.hideTucked()
+    if (this.done) this.markStrain()
+  }
+
+  // How squeezed the cloth is at each point (0 to 1): its edges shorter than cut, as at the inside of an
+  // elbow, a waist gathered in, the back of a knee. The fabric's surface texture shows deeper there, as
+  // fine creases (see fabric.js), where the drape alone is too coarse to fold.
+  markStrain() {
+    const { drape, cloth, triangles } = this
+    const map = drape.map, x = drape.x, pts = cloth.points
+    const n = pts.length, squeeze = new Float32Array(n)
+    const edge = (a, b) => {
+      const rest = Math.hypot(pts[a][0] - pts[b][0], pts[a][1] - pts[b][1]) / 100
+      if (rest < 1e-4) return
+      const ja = map ? map[a] : a, jb = map ? map[b] : b
+      const now = Math.hypot(x[3 * ja] - x[3 * jb], x[3 * ja + 1] - x[3 * jb + 1], x[3 * ja + 2] - x[3 * jb + 2])
+      const c = 1 - now / rest
+      if (c > squeeze[a]) squeeze[a] = c
+      if (c > squeeze[b]) squeeze[b] = c
+    }
+    for (let t = 0; t < triangles.length; t += 3) {
+      edge(triangles[t], triangles[t + 1]); edge(triangles[t + 1], triangles[t + 2]); edge(triangles[t + 2], triangles[t])
+    }
+    const strain = this.geometry.attributes.aStrain
+    for (let i = 0; i < n; i++) {
+      const t = Math.min(1, Math.max(0, (squeeze[i] - 0.03) / 0.17))
+      strain.array[i] = t * t * (3 - 2 * t)
+    }
+    strain.needsUpdate = true
   }
 
   // A tucked top isn't drawn from a little below the waistband's top down: it's inside the pants there,

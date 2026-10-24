@@ -11,6 +11,7 @@ import * as THREE from "three"
 //            reaching it, worked out from the drape
 //   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
 //   aHole    above 0 inside a cut-out (cm in from its edge): not drawn
+//   aStrain  how squeezed the cloth is (0 to 1; see DrapedTop#markStrain): its surface shows deeper there
 //   aCover   1 where a garment worn over this one covers it, though the drape left this one a hair outside
 //            it (it would show through): not drawn
 //   aSheer   1 where the cloth is sheer (drawn see-through, as much as uSheer says), 0 elsewhere
@@ -217,7 +218,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute vec3 aPhoto;
         attribute float aHole;
         attribute float aCover;
+        attribute float aStrain;
         varying float vCover;
+        varying float vStrain;
         attribute float aSheer;
         varying float vHole;
         varying float vSheer;
@@ -229,10 +232,12 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
     shader.fragmentShader = shader.fragmentShader
+      // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
+      .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );"))
       .replace("#include <common>", `#include <common>
         uniform int uStitch;
         uniform int uClosure;
@@ -256,6 +261,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPhotoOn;
         uniform float uSheer;
         varying float vCover;
+        varying float vStrain;
         varying float vHole;
         varying float vSheer;
         varying vec3 vPhoto;
@@ -286,6 +292,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
       .replace("#include <color_fragment>", `#include <color_fragment>
         if ( vHide > 0.0 || vHole > 0.0 || vCover > 0.5 ) discard;
         diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
+        // Gathered cloth sits in its own shade a little (its creases catch less light).
+        diffuseColor.rgb *= 1.0 - 0.1 * vStrain;
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
         if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy ) ).rgb;
         vec3 thread = uThread;

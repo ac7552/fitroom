@@ -236,9 +236,9 @@ export class FittingStage {
     const white = color.toLowerCase() === MANNEQUIN_WHITE
     for (const material of [this.meshes.body.material, this.meshes.body.material.userData.plain]) {
       material.color.set(color)
-      // Fibreglass is glossy; skin is soft, with a little sheen.
-      material.clearcoat = white ? 0.3 : 0.05
-      material.roughness = white ? 0.5 : 0.62
+      // The white form is matte ceramic; skin is soft, with a little sheen.
+      material.clearcoat = white ? 0 : 0.05
+      material.roughness = white ? 0.86 : 0.62
       material.sheen = white ? 0 : 0.25
       material.sheenColor.set(color).offsetHSL(0, 0, 0.15)
     }
@@ -814,6 +814,16 @@ export class FittingStage {
     this.scene.add(floor)
     this.pool = pool
     this.floor = floor
+    // Right under the feet, where the floor sees least of the room: a small, soft dark patch, so the figure
+    // stands on the floor rather than over it.
+    const contact = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.46), new THREE.MeshBasicMaterial({
+      color: 0x000000, alphaMap: contactShadow(), transparent: true, opacity: 0.55, depthWrite: false
+    }))
+    contact.rotation.x = -Math.PI / 2
+    contact.position.set(0, 0.0005, 0.02)
+    contact.renderOrder = 1
+    this.scene.add(contact)
+    this.contact = contact
   }
 
   // "dark" (the graphite stage) or "daylight": a pale seamless studio like a shop's lookbook. The floor is
@@ -825,6 +835,7 @@ export class FittingStage {
     this.scene.background = day ? daylightBackdrop() : backdrop()
     this.pool.visible = !day
     this.floor.material.opacity = day ? 0.3 : 0.45
+    this.contact.material.opacity = day ? 0.38 : 0.55
     this.fill.visible = this.rim.visible = day
     this.key.intensity = day ? 1.7 : 1.6
     this.key.shadow.radius = day ? 14 : 8
@@ -974,7 +985,7 @@ export class FittingStage {
     this.camera.updateProjectionMatrix()
     renderer.render(this.scene, this.camera)
     this.camera.fov = fov
-    const blob = await new Promise(resolve => renderer.domElement.toBlob(resolve, "image/png"))
+    const blob = await withGrain(renderer.domElement)
     if (key) {
       key.shadow.mapSize.copy(mapSize)
       key.shadow.map?.dispose()
@@ -1237,7 +1248,8 @@ function mannequinMaterial() {
   const hideCasual = { value: 0 }
   const hideTrousers = { value: 0 }
   // Both sides drawn, so where the neck is cut and meets the egg's neck, any sliver of the inside is white too.
-  const finish = { color: 0xf4f2ee, roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.35, side: THREE.DoubleSide }
+  // Matte, like a ceramic display form: nothing shiny to pull the eye from the clothes.
+  const finish = { color: 0xf4f2ee, roughness: 0.86, metalness: 0, clearcoat: 0, side: THREE.DoubleSide }
   const material = new THREE.MeshPhysicalMaterial(finish)
   material.userData = { hideJacket, hideCasual, hideTrousers, plain: new THREE.MeshPhysicalMaterial(finish) }
   material.onBeforeCompile = shader => {
@@ -1366,6 +1378,43 @@ function paintFitMap(mesh, checks, regions) {
 }
 
 // The backdrop: lightest just above the middle, darkening to the edges.
+// A still photo, with a faint film grain in its pixels (a render's perfectly smooth tones read as
+// computer-made): a PNG Blob of the canvas.
+function withGrain(source, amount = 3.2) {
+  const canvas = document.createElement("canvas")
+  canvas.width = source.width
+  canvas.height = source.height
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(source, 0, 0)
+  const image = context.getImageData(0, 0, canvas.width, canvas.height), d = image.data
+  // The same grain each time (a fixed seed), as on one roll of film; brightness only, so colours stay true.
+  let seed = 7
+  const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296)
+  for (let i = 0; i < d.length; i += 4) {
+    const g = (random() + random() + random() - 1.5) * amount
+    d[i] = Math.min(255, Math.max(0, d[i] + g)); d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + g)); d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + g))
+  }
+  context.putImageData(image, 0, 0)
+  return new Promise(resolve => canvas.toBlob(resolve, "image/png"))
+}
+
+// The contact shadow's shape: dark in an oval round the feet, fading out.
+function contactShadow() {
+  const size = 128, data = new Uint8Array(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = (x / (size - 1)) * 2 - 1, v = (y / (size - 1)) * 2 - 1
+      const r = Math.hypot(u, v * 1.05)
+      const a = Math.max(0, 1 - r) ** 2.2
+      const i = 4 * (y * size + x)
+      data[i] = data[i + 1] = data[i + 2] = Math.round(a * 255); data[i + 3] = 255
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat)
+  texture.needsUpdate = true
+  return texture
+}
+
 function backdrop() {
   const canvas = document.createElement("canvas")
   canvas.width = canvas.height = 512
