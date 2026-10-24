@@ -545,6 +545,15 @@ export class FittingStage {
     key.shadow.bias = -0.0003
     key.shadow.normalBias = 0.01
     this.scene.add(key)
+    this.key = key
+    // In the daylight studio, a cool fill from the other side and a light from behind, which lifts the white
+    // mannequin off the pale backdrop.
+    this.fill = new THREE.DirectionalLight(0xf2f4ff, 0.55)
+    this.fill.position.set(-2.5, 1.8, 2.0)
+    this.rim = new THREE.DirectionalLight(0xffffff, 0.55)
+    this.rim.position.set(0, 2.5, -3)
+    this.fill.visible = this.rim.visible = false
+    this.scene.add(this.fill, this.rim)
 
     // A faint pool of light on the floor, so the figure stands on something, and its shadow in it.
     const pool = new THREE.Mesh(new THREE.CircleGeometry(1.1, 64), new THREE.MeshBasicMaterial({
@@ -557,6 +566,25 @@ export class FittingStage {
     floor.rotation.x = -Math.PI / 2
     floor.receiveShadow = true
     this.scene.add(floor)
+    this.pool = pool
+    this.floor = floor
+  }
+
+  // "dark" (the graphite stage) or "daylight": a pale seamless studio like a shop's lookbook. The floor is
+  // only its shadows on the backdrop's colour, so there's no line where floor meets wall.
+  setScene(name) {
+    const day = name === "daylight"
+    this.sceneLook = day ? "daylight" : "dark"
+    this.scene.background?.dispose?.()
+    this.scene.background = day ? daylightBackdrop() : backdrop()
+    this.pool.visible = !day
+    this.floor.material.opacity = day ? 0.3 : 0.45
+    this.fill.visible = this.rim.visible = day
+    this.key.intensity = day ? 1.7 : 1.6
+    this.key.shadow.radius = day ? 14 : 8
+    this.scene.environmentIntensity = day ? 0.75 : 0.85
+    this.renderer.toneMappingExposure = day ? 1.05 : 1
+    this.start()
   }
 
   async dress(textures) {
@@ -1021,6 +1049,21 @@ function backdrop() {
   gradient.addColorStop(0, BACKDROP[0])
   gradient.addColorStop(0.55, BACKDROP[1])
   gradient.addColorStop(1, BACKDROP[2])
+  context.fillStyle = gradient
+  context.fillRect(0, 0, 512, 512)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+// The daylight studio's backdrop: warm pale grey, a touch lighter high up, as a sweep is lit.
+function daylightBackdrop() {
+  const canvas = document.createElement("canvas")
+  canvas.width = canvas.height = 512
+  const context = canvas.getContext("2d")
+  const gradient = context.createLinearGradient(0, 0, 0, 512)
+  gradient.addColorStop(0, "#e6e3de")
+  gradient.addColorStop(1, "#d5d1ca")
   context.fillStyle = gradient
   context.fillRect(0, 0, 512, 512)
   const texture = new THREE.CanvasTexture(canvas)

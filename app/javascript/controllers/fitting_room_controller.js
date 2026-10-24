@@ -415,6 +415,12 @@ export default class extends Controller {
 
   // The stage
 
+  // The studio: the dark stage, or a pale daylight one like a shop's photos.
+  changeScene(event) {
+    this.stage.setScene(event.target.value)
+    this.canvasTarget.closest(".stage")?.classList.toggle("stage--daylight", event.target.value === "daylight")
+  }
+
   changeView(event) {
     this.legendTarget.hidden = event.target.value !== "fit"
     this.stage.setView(event.target.value)
