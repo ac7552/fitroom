@@ -328,7 +328,7 @@ export class FittingStage {
     if (this.slots[slot]?.key !== key && this.waiting[slot]?.key !== key) {
       // The garment shown stays until the new one is sewn and in the pose shown, so nothing jumps about.
       this.removeDraped(slot, { keepShown: true })
-      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null, tuck: item.tuck ?? null } }
+      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null, tuck: item.tuck ?? null, photoSize: item.photoSize ?? null } }
       // It waits for the layers under it to be sewn, then is sewn over them.
       if (this.under(slot).some(d => !d.top.done)) this.waiting[slot] = spec
       else {

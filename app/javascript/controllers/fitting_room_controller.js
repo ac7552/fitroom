@@ -733,6 +733,7 @@ export default class extends Controller {
       color: garment.color,
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
+      photoSize: photoSize(garment.chart),
       photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,
       style: garment.style,
@@ -945,6 +946,15 @@ function asNamed(color, name, named) {
   const [r, g, b] = rgb(color), [nr, ng, nb] = rgb(named)
   const light = (r + g + b) / 3, namedLight = (nr + ng + nb) / 3
   return "#" + [nr, ng, nb].map(v => Math.round(Math.min(255, Math.max(0, v - namedLight + light))).toString(16).padStart(2, "0")).join("")
+}
+
+// The size a shop photographs (its sample): the middle of its chart. Its chest and length (cm) say how big
+// the photo's print is on the cloth, so a print isn't stretched or shrunk with the size picked.
+function photoSize(chart) {
+  const sizes = (chart?.sizes ?? []).filter(s => s.chest > 0 && s.length > 0)
+  if (!sizes.length) return null
+  const middle = sizes[Math.floor((sizes.length - 1) / 2)]
+  return { chest: middle.chest, length: middle.length }
 }
 
 // Many shops run on Shopify, which answers a product's details as small public JSON. Some big ones (Kith)

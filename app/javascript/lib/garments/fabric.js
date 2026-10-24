@@ -308,7 +308,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         diffuseColor.rgb *= 1.0 - 0.22 * groove - 0.5 * shadow;
         diffuseColor.rgb = mix( diffuseColor.rgb, thread, stitch * 0.85 );
         bool backPhoto = uBackOn > 0.5 && vPiece > 1.5;
-        if ( uPrintOn > 0.5 && uAllOver > 0.5 && !( vPiece > 0.5 && vPiece < 1.5 ) && !backPhoto && gl_FrontFacing ) {
+        // (On the front too, where a bigger size reaches past the photo's print, and the print shows through.)
+        if ( uPrintOn > 0.5 && uAllOver > 0.5 && !backPhoto && gl_FrontFacing ) {
           // Started half a repeat off the middle, so the back isn't mirrored about its centre seam.
           vec2 st = vec2( vPattern.x / uTile.x + 0.5, ( -vPattern.y - uTile.z ) / uTile.y );
           diffuseColor.rgb = texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
