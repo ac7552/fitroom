@@ -117,7 +117,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 13
+  FORMAT = 15
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -636,7 +636,8 @@ class GarmentImport
 
   # Top, jacket, coat or trousers, from the product's name and category.
   def kind_of(product)
-    words = product.values_at(:name, :category).join(" ")
+    # Not the colour after the name: Willy Chavarria's "Track Jacket - Peacoat" is a jacket, not a pea coat.
+    words = [ product[:name].to_s.sub(/\s+[-–]\s+[^-–]+\z/, ""), product[:category] ].join(" ")
     # The shop's own category and tags say first what something is: a sneaker is shoes, whatever its name says.
     sorted = [ product[:category], *Array(product[:tags]).grep(/\A(?!mens\z|wmns\z|womens\z)/i) ].compact.join(" ")
     # The category alone first: Teatora's "Wallet Short", filed under Shorts, is shorts, not a wallet.
@@ -749,7 +750,8 @@ class GarmentImport
     name = product[:name].to_s.delete_prefix(product[:brand].to_s)
     words = [ name, *product.values_at(:category, :description) ].join(" ")
     # A blend ("80% Wool / 20% Nylon") is its main fibre.
-    shell = main_fibre(shell) || shell
+    # (Shops that give no material field often list it in the description: "80% Polyester / 13% Wool".)
+    shell = main_fibre(shell) || (shell.blank? && main_fibre(product[:description])) || shell
     found = [ shell, words ].find { |text| FABRICS.any? { |_, pattern| text.to_s.match?(pattern) } }
     fabric = FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
     # Denim is a cotton cloth: a "Denim Jacket" made of "100% Cotton" is denim.
@@ -813,6 +815,10 @@ class GarmentImport
   end
 
   def style_of(product, source_url)
+    # The name first: a "Trucker Jacket" whose description mentions a zip pocket is still a trucker.
+    named = product.values_at(:name, :category).join(" ")
+    found = STYLES.find { |_, pattern| named.match?(pattern) }&.first
+    return found if found
     words = product.values_at(:name, :category, :description).join(" ")
     found = STYLES.find { |_, pattern| words.match?(pattern) }&.first
     return found if found
