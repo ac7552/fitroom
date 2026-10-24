@@ -1,7 +1,12 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, measureTop, measureBottom } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, measureTop, measureBottom, readBottom } from "../../app/javascript/lib/garments/print.js"
+import "./support/lib.mjs"
+
+const { bottomsPhotoUV } = await import("lib/garments/photo_map")
+const { draftBottoms } = await import("lib/garments/pants")
+const { buildCloth } = await import("lib/garments/cloth")
 
 // A made-up product photo: a navy tee on a light grey background, with a white square printed on its chest.
 function photo({ print = true } = {}) {
@@ -97,4 +102,59 @@ test("a hem's fold of light and a shadow down the side aren't taken for a print"
   const [x0, top] = found.rect
   assert.equal(found.print.data[at(60 - x0, 149 - top) + 3], 0, "the hem's line is gone")
   assert.equal(found.print.data[at(49, 50) + 3], 255, "the print stays")
+})
+
+test("reads a pants photo to lay on the cloth: its outline, crotch and colour, the backdrop filled in", () => {
+  const { data, w, h } = bottoms({ hem: 40 })
+  // A pale stripe down the photo's left leg (the wearer's right).
+  for (let y = 120; y < 270; y++) for (let x = 80; x < 90; x++) data.set([180, 160, 120, 255], 4 * (y * w + x))
+  const read = readBottom(data, w, h)
+  assert.ok(read, "read")
+  assert.equal(read.color, "#28282c")
+  const { top, bottom, crotch } = read.layout
+  assert.ok(Math.abs(top - 21) <= 3 && Math.abs(bottom - 279) <= 3, `top ${top} bottom ${bottom}`)
+  assert.ok(crotch > 85 && crotch < 115, `crotch ${crotch}`)
+  // Just outside the garment, the backdrop takes the cloth's colour (so a point a little off its outline
+  // isn't drawn light grey); the stripe is kept.
+  const at = (pixels, x, y) => [...pixels.slice(4 * (y * w + x), 4 * (y * w + x) + 3)]
+  assert.ok(at(read.filled, 68, 60).every(v => v < 90), `outside ${at(read.filled, 68, 60)}`)
+  assert.deepEqual(at(read.filled, 85, 200), [180, 160, 120])
+})
+
+test("lays a pants photo on its cloth: the front from the photo, the wearer's left on its right, the back softened", () => {
+  const { data, w, h } = bottoms({ hem: 40 })
+  const { layout } = readBottom(data, w, h)
+  const pattern = draftBottoms("trousers", { waist: 86, seat: 104, thigh: 62, inseam: 76, leg_opening: 40 }, { waist: 86.4, hips: 101, inseam: 81, height: 178, rise: 24 })
+  const cloth = buildCloth(pattern, 2)
+  const uv = bottomsPhotoUV(cloth, pattern, layout)
+  const by = name => cloth.points.map((_, i) => i).filter(i => cloth.panels[cloth.panel[i]] === name)
+  for (let i = 0; i < cloth.points.length; i++) {
+    assert.ok(uv[3 * i] >= 0 && uv[3 * i] <= 1 && uv[3 * i + 1] >= 0 && uv[3 * i + 1] <= 1, `point ${i} off the photo`)
+  }
+  const mean = list => list.reduce((s, i) => s + uv[3 * i], 0) / list.length
+  assert.ok(mean(by("front_L")) > 0.5 && mean(by("front_R")) < 0.5, "the wearer's left is on the photo's right")
+  assert.ok(by("front_L").every(i => uv[3 * i + 2] === 1), "the front takes the photo")
+  assert.ok(by("back_L").every(i => uv[3 * i + 2] === 2), "the back takes the softened copy")
+  // Every point lands on the garment, not the backdrop.
+  const on = i => { const x = Math.round(uv[3 * i] * w), y = Math.round((1 - uv[3 * i + 1]) * h); return data[4 * (y * w + x)] < 100 }
+  const off = by("front_L").filter(i => !on(i))
+  assert.ok(off.length < by("front_L").length * 0.02, `${off.length} front points off the garment`)
+})
+
+test("pants on a hanger: the hook and the hanger's bar aren't taken for the waistband", () => {
+  const { data, w, h } = bottoms({ hem: 40 })
+  // Move the pants down to leave room above, then draw the hook and the bar over their top.
+  const shifted = new Uint8ClampedArray(data.length).fill(236)
+  for (let i = 3; i < shifted.length; i += 4) shifted[i] = 255
+  const down = 20
+  shifted.set(data.subarray(0, 4 * w * (h - down)), 4 * w * down)
+  const paint = (x0, x1, y0, y1, c) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) shifted.set([...c, 255], 4 * (y * w + x)) }
+  paint(118, 122, 4, 38, [30, 30, 30])        // the hook
+  paint(64, 176, 38, 46, [20, 20, 20])        // the bar, wider than the waist
+  paint(64, 176, 46, 50, [236, 236, 236])     // the gap between the bar and the cloth, the clips aside
+  paint(80, 86, 46, 50, [165, 165, 165]); paint(154, 160, 46, 50, [165, 165, 165])   // its metal clips
+  const read = readBottom(shifted, w, h)
+  assert.ok(read, "read")
+  assert.ok(read.layout.top >= 48 && read.layout.top <= 44 + down, `top ${read.layout.top}`)
+  assert.equal(read.color, "#28282c")
 })

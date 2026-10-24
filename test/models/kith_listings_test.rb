@@ -48,4 +48,14 @@ class KithListingsTest < ActiveSupport::TestCase
       end
     end
   end
+
+  test "the shop's photo of the back comes along when the browser found one" do
+    listing = LISTINGS.find { it["expect"] && it["expect"]["garment"] == "top" } || LISTINGS.first
+    url = "https://kith.com/products/#{listing["h"]}"
+    pixel = "data:image/png;base64,#{Base64.strict_encode64("png")}"
+    garment = GarmentImport.from_url(url, shop_data: given(listing).merge("photo" => pixel, "back_photo" => pixel))
+    assert_equal pixel, garment[:back_photo]
+    not_a_photo = GarmentImport.from_url(url, shop_data: given(listing).merge("photo" => pixel, "back_photo" => "javascript:alert(1)"))
+    assert_nil not_a_photo[:back_photo]
+  end
 end

@@ -113,4 +113,11 @@ class FitTest < ActiveSupport::TestCase
     # Trousers with no elastic are let out by a tailor.
     assert_equal "let_out_waist", Fit.check_trousers(body, sizes[0]).checks.find { it.part == "waist" }.fix.action
   end
+
+  test "pull-on trousers (a drawcord or elastic waist) stretch onto the body as joggers do" do
+    size = { "name" => "M", "waist" => 81.3, "seat" => 122.6, "inseam" => 73.7, "leg_opening" => 45.7 }
+    waist = Fit.check_trousers(BODY.merge("waist" => 86.4), size, details: { "elastic" => true }).checks.find { it.part == "waist" }
+    assert_equal "good", waist.status
+    assert_match(/elastic/i, waist.note)
+  end
 end

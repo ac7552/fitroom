@@ -44,6 +44,7 @@ class GarmentImport
     [ "tee", /\bt[- ]?shirts?\b|\btees?\b/i ],
     [ "sweater", /sweater|jumper|knit\b|knitted|cashmere crew|merino/i ],
     [ "sweatshirt", /sweatshirt|pullover|crew ?neck|fleece/i ],
+    [ "shortshirt", /short[- ]?sleeve.*shirt|\bs\/s\b.*shirt|camp[- ]?(collar|shirt)|bowling shirt|aloha|hawaiian|resort shirt/i ],
     [ "shirt", /oxford|flannel|button[- ]?(down|up|front)|poplin|dress shirt|chambray/i ],
     [ "longsleeve", /long[- ]?sleeve|\bl\/s\b|henley/i ],
     [ "shirt", /shirts?\b/i ]
@@ -71,6 +72,8 @@ class GarmentImport
 
   # What the cloth looks like, from the product's name and description, so the 3D view can draw its surface.
   FABRICS = [
+    # Linen first: a silk-linen blend hangs and looks like linen, not satin.
+    [ "linen", /linen|ramie|hemp/i ],
     [ "silk", /silk|satin|taffeta|chiffon|charmeuse/i ],
     [ "denim", /denim|jean|trucker|chambray/i ],
     [ "leather", /leather|suede|biker|moto\b/i ],
@@ -96,7 +99,10 @@ class GarmentImport
     url = url.to_s.strip
     if shop_data.is_a?(Hash) && (garment = new.from_shopify(url, given: shop_data))
       photo = shop_data["photo"].to_s
-      return photo.match?(BROWSER_PHOTO) && photo.bytesize < 3_500_000 ? garment.except(:image_url).merge(photo:) : with_photo(garment)
+      garment = photo.match?(BROWSER_PHOTO) && photo.bytesize < 3_500_000 ? garment.except(:image_url).merge(photo:) : with_photo(garment)
+      # The shop's photo of the back, which the browser found and read.
+      back = shop_data["back_photo"].to_s
+      return garment[:photo] && back.match?(BROWSER_PHOTO) && back.bytesize < 3_500_000 ? garment.merge(back_photo: back) : garment
     end
     Rails.cache.fetch([ "garment_import", FORMAT, Digest::SHA256.hexdigest(url) ], expires_in: 1.hour) do
       import = new
@@ -107,6 +113,7 @@ class GarmentImport
   end
 
   KINDS = %w[top jacket coat trousers].freeze
+  ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
   FORMAT = 12
@@ -130,7 +137,7 @@ class GarmentImport
   # Clothes from a person's own photo, which the page reads for what they are (kind and style) and which
   # stays on their device: every usual size of that kind of thing, marked as guessed.
   PHOTO_NAMES = {
-    "top" => { "tee" => "T-shirt", "longsleeve" => "Long-sleeve T-shirt", "sweatshirt" => "Sweatshirt", "hoodie" => "Hoodie", "shirt" => "Shirt",
+    "top" => { "tee" => "T-shirt", "longsleeve" => "Long-sleeve T-shirt", "sweatshirt" => "Sweatshirt", "hoodie" => "Hoodie", "shirt" => "Shirt", "shortshirt" => "Short-sleeve shirt",
                "polo" => "Polo", "tank" => "Tank top", "sweater" => "Sweater", "cardigan" => "Cardigan",
                "dress" => "Dress", "dress_long" => "Long-sleeve dress" },
     "jacket" => { "zip" => "Zip-up jacket", "bomber" => "Bomber jacket", "shirt" => "Shirt jacket", "tailored" => "Blazer" },
@@ -583,7 +590,7 @@ class GarmentImport
   # another top's.
   def usual_key(kind, style, product = nil)
     return kind unless kind == "top"
-    return "tee" if %w[tee polo tank].include?(style)
+    return "tee" if %w[tee polo tank shortshirt].include?(style)
     return product.to_h.values_at(:name, :description).join(" ").match?(/long[- ]?sleeve|\bl\/s\b/i) ? "dress_long" : "dress" if style == "dress"
 
     "top"
@@ -679,7 +686,7 @@ class GarmentImport
 
   def garment(product, chart, kind:, source_url:)
     style = kind == "top" ? top_style_of(product) : kind == "trousers" ? bottom_style_of(product) : nil
-    chart = tee_sleeves(chart) if %w[tee polo].include?(style)
+    chart = tee_sleeves(chart) if %w[tee polo shortshirt].include?(style)
     # A tank top has no sleeves, and its straps sit in from the shoulders: neither is measured.
     if style == "tank"
       chart = chart.with(sizes: chart.sizes.map { it.merge("sleeve" => nil, "shoulders" => nil) }, missing: chart.missing - %w[sleeve shoulders])
@@ -687,6 +694,8 @@ class GarmentImport
     # A skirt's cut, read as a dress's is (its length, how it flares, its cloth).
     skirt_cut = style == "skirt" ? DressCut.read(product).slice(:length, :fit, :stretch, :fabric, :printed, :details) : nil
     skirt_cut[:fit] = "pleated" if skirt_cut && product.values_at(:name, :description).join(" ").match?(/pleat/i)
+    # Pull-on pants: an elastic or drawcord waist, gathered in, which stretches to fit.
+    skirt_cut = { elastic: true } if kind == "trousers" && !%w[skirt joggers leggings].include?(style) && product.values_at(:name, :description).join(" ").match?(ELASTIC_WAIST)
     if style == "dress"
       cut = DressCut.read(product)
       chart = chart.with(missing: chart.missing - DressCut.not_needed(cut))

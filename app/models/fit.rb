@@ -167,9 +167,10 @@ module Fit
 
   # style: "shorts" (their length is where they end, not right or wrong), "leggings" (stretch, made smaller
   # than the body), or another (trousers, jeans, joggers).
-  def check_trousers(body, size, cut = "regular", style: nil)
+  def check_trousers(body, size, cut = "regular", style: nil, details: {})
     stretch = style == "leggings"
-    elastic = style == "joggers"
+    # Joggers, and pull-on pants with an elastic or drawcord waist.
+    elastic = style == "joggers" || [ true, "true" ].include?(details["elastic"])
     checks = [
       given(size, "waist", "Waist") do |waist|
         next range_check(:trouser_waist, "Waist", waist - body["waist"], stretch ? LEGGINGS_WAIST_EASE : TROUSER_WAIST_EASE, shown_as: "waist") unless elastic
@@ -322,7 +323,7 @@ module Fit
     cuts = nil
     results = sizes.map do |size|
       case garment
-      when "trousers" then check_trousers(body, size, cut, style:)
+      when "trousers" then check_trousers(body, size, cut, style:, details: details.to_h)
       when "top" then style == "dress" ? check_dress(body, size, cut, details.to_h) : check_top(body, size, cut, cuts ||= design(sizes, details.to_h), style:, details: details.to_h)
       else check_size(body, size, cut, garment)
       end

@@ -24,6 +24,8 @@ export const STYLES = {
   zip: { sleeve: "long", collar: "stand", cuffs: "band", hem: "band", fabric: "shell", ease: 14, length: 0.4, closure: "zip" },
   bomber: { sleeve: "long", collar: "rib", cuffs: "rib", hem: "rib", fabric: "shell", ease: 18, length: 0.38, closure: "zip" },
   shirt: { sleeve: "long", collar: "stand", cuffs: "band", hem: "band", fabric: "twill", ease: 14, length: 0.38, closure: "buttons" },
+  // A short-sleeve button-up (a camp or resort shirt): roomy, its hem cut straight and left out.
+  shortshirt: { sleeve: "short", collar: "stand", cuffs: null, hem: null, fabric: "twill", ease: 18, length: 0.4, closure: "buttons" },
   coat: { sleeve: "long", collar: "stand", cuffs: null, hem: null, fabric: "wool", ease: 20, length: 0.55, closure: "buttons" },
   // A polo: a knit collar, a short buttoned placket, banded sleeves.
   polo: { sleeve: "short", collar: "polo", cuffs: null, hem: null, fabric: "jersey", ease: 10, length: 0.41, closure: "placket" },

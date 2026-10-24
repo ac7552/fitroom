@@ -4,6 +4,7 @@ import { STYLES, draftTop } from "lib/garments/pattern"
 import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
+import { bottomsPhotoUV } from "lib/garments/photo_map"
 import { Drape } from "lib/garments/drape"
 import { clothMaterial } from "lib/garments/fabric"
 
@@ -133,6 +134,7 @@ function surfaceFor(style, fabric) {
   if (STYLES[style]?.surface && !["silk", "leather", "nylon"].includes(fabric)) return STYLES[style].surface
   const own = STYLES[style]?.fabric ?? "jersey"
   if (fabric === "denim") return "twill"
+  if (fabric === "linen") return "matte"
   if (fabric === "nylon" || fabric === "leather") return "shell"
   if (fabric === "wool" && own !== "shell") return own === "jersey" ? "jersey" : "wool"
   return own
@@ -144,7 +146,7 @@ function bottomSurface(style, fabric) {
   if (style === "leggings") return "stretch"
   if (style === "joggers") return fabric === "nylon" ? "matte" : "fleece"
   if (style === "jeans" || fabric === "denim") return "twill"
-  if (fabric === "nylon") return "matte"
+  if (fabric === "nylon" || fabric === "linen") return "matte"
   if (fabric === "wool") return "wool"
   if (fabric === "leather") return "leather"
   if (fabric === "silk") return "silk"
@@ -179,7 +181,7 @@ function rimAt(rim, angle) {
   return y0 + (y1 - y0) * Math.min(Math.max(at / span, 0), 1)
 }
 // The tops that tuck in.
-export const TUCKABLE = ["tee", "longsleeve", "polo", "tank", "shirt"]
+export const TUCKABLE = ["tee", "longsleeve", "polo", "tank", "shirt", "shortshirt"]
 
 // The wearer as pants are drafted for them: their measurements, the body's, and from the crotch up to the
 // natural waist (about at the navel).
@@ -192,7 +194,7 @@ function bottomWearer(measures, frame) {
 export function waistband(item, frame, measures) {
   const wearer = bottomWearer(measures, frame)
   const skirt = item.style === "skirt"
-  const m = skirt ? draftBottoms("skirt", item.size, wearer, item.cut ?? null).measures : bottomMeasures(item.style, item.size, wearer)
+  const m = skirt ? draftBottoms("skirt", item.size, wearer, item.cut ?? null).measures : bottomMeasures(item.style, item.size, wearer, item.cut ?? null)
   const seam = frame.crotch - 0.015 + m.rise / 100
   return { seam, top: seam + m.band / 100, raise: skirt ? 0 : BACK_RAISE / 100 }
 }
@@ -285,10 +287,11 @@ export class DrapedTop {
     geometry.setAttribute("uv", new THREE.BufferAttribute(Float32Array.from(cloth.points.flatMap(([x, y]) => [x / 100, y / 100])), 2))
     geometry.setAttribute("aEdge", new THREE.BufferAttribute(Float32Array.from(cloth.toEdge), 1))
     geometry.setAttribute("aHem", new THREE.BufferAttribute(Float32Array.from(cloth.toFree, d => Math.min(d, 99)), 1))
-    const front = cloth.panels.indexOf("front")
-    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : 0)), 1))
+    const front = cloth.panels.indexOf("front"), back = cloth.panels.indexOf("back")
+    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : p === back ? 2 : 0)), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
+    geometry.setAttribute("aPhoto", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -324,25 +327,70 @@ export class DrapedTop {
     }
   }
 
-  // A print from the shop's photo (print.js's readPhoto; null for none), laid on the front.
-  setPrint(print) {
-    if (this.bottoms) print = null   // a print is read off a top's front
-    if (print?.image === this.printImage) return
+  // A print from the shop's photo (print.js's readPhoto; null for none), laid on the front; and back: the
+  // shop's photo of the back, read the same way ({ image }; null for none), laid on the back. A plain tee
+  // can have a print on its back only.
+  setPrint(print, back = null) {
+    if (this.bottoms) print = back = null   // a print is read off a top's front and back
+    if (print?.image === this.printImage && back?.image === this.backImage) return
     this.printImage = print?.image ?? null
-    this.printTexture?.dispose()
-    this.printTexture = null
+    this.backImage = back?.image ?? null
+    for (const texture of [this.printTexture, this.tileTexture, this.backTexture]) texture?.dispose()
+    this.printTexture = this.tileTexture = this.backTexture = null
     const uniforms = this.materials.main.userData.uniforms
-    if (print) {
-      this.printTexture = new THREE.CanvasTexture(print.image)
-      this.printTexture.colorSpace = THREE.SRGBColorSpace
-      this.printTexture.anisotropy = 4
-      const m = this.pattern.measures
-      const band = this.pattern.panels.waistband ? Math.max(...this.pattern.panels.waistband.edges.flatMap(e => e.points).map(p => Math.abs(p[1]))) : 0
-      uniforms.uPrint.value = this.printTexture
-      uniforms.uPrintHalf.value = m.chest / 4
-      uniforms.uPrintLength.value = m.length + band
+    const m = this.pattern.measures
+    const band = this.pattern.panels.waistband ? Math.max(...this.pattern.panels.waistband.edges.flatMap(e => e.points).map(p => Math.abs(p[1]))) : 0
+    uniforms.uPrintHalf.value = m.chest / 4
+    uniforms.uPrintLength.value = m.length + band
+    const texture = (canvas, wrap = false) => {
+      const t = new THREE.CanvasTexture(canvas)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.anisotropy = 4
+      if (wrap) t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping
+      return t
     }
+    if (print) {
+      this.printTexture = uniforms.uPrint.value = texture(print.image)
+      // An all-over print goes on the back, sleeves and collar too: its cloth, mirrored at its edges so the
+      // repeats meet without a seam.
+      if (print.tile) {
+        this.tileTexture = uniforms.uPrintTile.value = texture(print.tile.image, true)
+        const front = m.chest / 2   // the front's width (cm), which the photo's front spans
+        uniforms.uTile.value.set(print.tile.across * front, print.tile.down * front, print.tile.from * front)
+      }
+    }
+    if (back) this.backTexture = uniforms.uBack.value = texture(back.image)
     uniforms.uPrintOn.value = print ? 1 : 0
+    uniforms.uAllOver.value = print?.tile ? 1 : 0
+    uniforms.uBackOn.value = back ? 1 : 0
+  }
+
+  // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),
+  // laid on the cloth: the photo on the front, its softened copy on the back.
+  setPhotoMap(map) {
+    if (!this.bottoms) map = null
+    if (map?.image === this.photoImage) return
+    this.photoImage = map?.image ?? null
+    for (const texture of this.photoTextures ?? []) texture.dispose()
+    this.photoTextures = []
+    if (map) {
+      const uv = bottomsPhotoUV(this.cloth, this.pattern, map.layout, map.back?.layout ?? null)
+      this.geometry.attributes.aPhoto.array.set(uv)
+      this.geometry.attributes.aPhoto.needsUpdate = true
+      this.photoTextures = [map.image, map.soft, map.back?.image ?? map.soft].map(canvas => {
+        const texture = new THREE.CanvasTexture(canvas)
+        texture.colorSpace = THREE.SRGBColorSpace
+        texture.anisotropy = 8
+        return texture
+      })
+    }
+    for (const key of ["main", "rib"]) {
+      const uniforms = this.materials[key].userData.uniforms
+      uniforms.uPhoto.value = this.photoTextures[0] ?? uniforms.uPhoto.value
+      uniforms.uPhotoSoft.value = this.photoTextures[1] ?? uniforms.uPhotoSoft.value
+      uniforms.uPhotoBack.value = this.photoTextures[2] ?? uniforms.uPhotoBack.value
+      uniforms.uPhotoOn.value = map ? 1 : 0
+    }
   }
 
   setFitMap(on) {
@@ -518,6 +566,9 @@ export class DrapedTop {
 
   dispose() {
     this.printTexture?.dispose()
+    this.tileTexture?.dispose()
+    this.backTexture?.dispose()
+    for (const texture of this.photoTextures ?? []) texture.dispose()
     this.geometry.dispose()
     for (const material of Object.values(this.materials)) {
       material.normalMap?.dispose()

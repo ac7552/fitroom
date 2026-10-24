@@ -1,7 +1,8 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readGarment, readTopShape, readBottomShape, loaded } from "lib/garments/print"
+import { readPhoto, readBottomPhoto, readGarment, readTopShape, readBottomShape, loaded } from "lib/garments/print"
+import { describeOutfit, localStudioReady, studioLook } from "lib/local_studio"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -50,7 +51,7 @@ export default class extends Controller {
     "input", "unit", "unitLabel", "cut", "results", "canvas", "sizes", "stageNote", "legend", "warnings",
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
-    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "exact",
+    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
   ]
   static values = { fitsUrl: String, importUrl: String, studioUrl: String, garment: Object, dress: Object }
@@ -142,14 +143,25 @@ export default class extends Controller {
     this.outfit[kind] = item
     this.renderOutfit()
     if (garment.photo && !garment.photoColor) {
-      // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth.
-      readPhoto(garment.photo, { shape: frontShape(garment.chart) }).then(async read => {
+      // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth. Pants
+      // and skirts take the whole photo: their wash and fading, pockets and seams, as photographed.
+      const bottoms = kind === "trousers"
+      const reading = bottoms ? readBottomPhoto(garment.photo) : readPhoto(garment.photo, { shape: frontShape(garment.chart) })
+      reading.then(async read => {
         const color = read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) return
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
+        // The shop's photo of the back, read the same way, goes on the back.
+        const back = garment.back_photo && read ? await (bottoms ? readBottomPhoto(garment.back_photo) : readPhoto(garment.back_photo)).catch(() => null) : null
+        if (this.outfit[kind] !== item) return
+        if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
         // printed gets the photo's print.
-        garment.print = garment.cut && !garment.cut.printed ? null : read?.print ?? null
+        else {
+          const printed = !(garment.cut && !garment.cut.printed)
+          garment.print = printed ? read?.print ?? null : null
+          garment.backPrint = printed && back?.print ? { image: back.print.image } : null
+        }
         this.renderOutfit()
         if (item.fit) this.render()
       })
@@ -582,6 +594,7 @@ export default class extends Controller {
       this.studioImages = { draped: URL.createObjectURL(blob) }
       this.showStudioImage("draped")
       this.studioStatusTarget.textContent = "Your photo. It was made on this device and isn't saved anywhere."
+      this.finishStudioLook(blob)
       return
     }
     this.closeStudio()
@@ -641,6 +654,30 @@ export default class extends Controller {
     }
   }
 
+  // When the studio program runs on this computer (see lib/local_studio.js), the photo is also finished
+  // there, to look like a studio shot. It never leaves the device.
+  async finishStudioLook(blob) {
+    if (!(await localStudioReady())) return
+    const token = this.studioToken = Symbol("look")
+    const controller = this.studioAbort = new AbortController()
+    try {
+      const outfit = describeOutfit(this.items().filter(i => i.fit))
+      const look = await studioLook(blob, outfit, {
+        signal: controller.signal,
+        onProgress: (_, words) => { if (token === this.studioToken && this.studioView !== "look") this.studioStatusTarget.textContent = words }
+      })
+      if (token !== this.studioToken) return
+      this.studioImages.look = URL.createObjectURL(look)
+      this.studioSwitchTarget.hidden = false
+      this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
+      this.studioLookOptionTarget.hidden = false
+      this.studioLookOptionTarget.querySelector("input").checked = true
+      this.showStudioImage("look")
+    } catch (error) {
+      if (token === this.studioToken && error.name !== "AbortError") this.studioStatusTarget.textContent = error.message
+    }
+  }
+
   async fetchStudioImage(url) {
     const blob = await fetch(url, { cache: "no-store" }).then(r => r.blob())
     return URL.createObjectURL(blob)
@@ -653,12 +690,15 @@ export default class extends Controller {
   showStudioImage(variant) {
     const url = this.studioImages?.[variant]
     if (!url) return
+    this.studioView = variant
     this.studioFrameTarget.innerHTML = `<img src="${url}" alt="Studio photo of the outfit on the mannequin">`
     this.studioDownloadTarget.href = url
     this.studioDownloadTarget.hidden = false
     this.studioStatusTarget.textContent = variant === "exact"
       ? "The stores' own clothes painted on by AI. The fit is still the one we measured."
-      : "Your photo, in the size you picked. Nothing was kept on the server."
+      : variant === "look"
+        ? "Finished by the studio program on this computer. The fit is the one we measured; nothing left your device."
+        : "Your photo, in the size you picked. Nothing was kept on the server."
   }
 
   showStudio(message) {
@@ -668,6 +708,9 @@ export default class extends Controller {
 
   closeStudio() {
     this.studioToken = null
+    this.studioAbort?.abort()
+    this.studioAbort = null
+    this.studioView = null
     for (const url of Object.values(this.studioImages ?? {})) URL.revokeObjectURL(url)
     this.studioImages = {}
     if (!this.hasStudioTarget) return
@@ -675,6 +718,8 @@ export default class extends Controller {
     this.studioFrameTarget.innerHTML = ""
     this.studioDownloadTarget.hidden = true
     this.studioSwitchTarget.hidden = true
+    this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = false
+    this.studioLookOptionTarget.hidden = true
   }
 
   // Rendering
@@ -687,6 +732,8 @@ export default class extends Controller {
       checks: fit.sizes.find(s => s.size === selected).checks,
       color: garment.color,
       print: garment.print ?? null,
+      backPrint: garment.backPrint ?? null,
+      photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,
       style: garment.style,
       cut: garment.cut ?? null
@@ -928,8 +975,31 @@ async function readShop(link) {
   // cut when the shop gives no chart.
   const shape = photo ? await readTopShape(photo).catch(() => null) : null
   const bottomShape = photo ? await readBottomShape(photo).catch(() => null) : null
+  const backPhoto = photo ? await readBackPhoto(images, { shape, bottomShape }) : null
   return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
-    photo, shape, bottom_shape: bottomShape }
+    photo, back_photo: backPhoto, shape, bottom_shape: bottomShape }
+}
+
+// The shop's photo of the back, when it has one: the photo named for the back, or else the second photo
+// when it shows a garment the same shape as the first (shops often show the back next; a close-up of a
+// pocket or a photo on a model isn't that shape).
+async function readBackPhoto(images, { shape, bottomShape }) {
+  const rest = (images ?? []).slice(1, 6)
+  const named = rest.find(image => /back/i.test(String(image.src).split("/").pop().split("?")[0]))
+  const pick = named ?? rest[0]
+  if (!pick) return null
+  const photo = await readShopPhoto(pick.src)
+  if (!photo || named) return photo
+  const near = (a, b) => a && b && Math.abs(a / b - 1) < 0.15
+  if (bottomShape) {
+    const other = await readBottomShape(photo).catch(() => null)
+    return other && near(other.length, bottomShape.length) && near(other.hips, bottomShape.hips) ? photo : null
+  }
+  if (shape) {
+    const other = await readTopShape(photo).catch(() => null)
+    return other && near(other.length, shape.length) && near(other.waist, shape.waist) ? photo : null
+  }
+  return null
 }
 
 // The product's photo, small, as a data: URL (Shopify's image host lets pages read its photos).

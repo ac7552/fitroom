@@ -10,6 +10,8 @@ import * as THREE from "three"
 //   aShade   how open to the room it is (1) or tucked into a fold or under the hood (less): ambient light
 //            reaching it, worked out from the drape
 //   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
+//   aPhoto   where it is in the garment's shop photo, laid on pants and skirts ([u, v, which]: which 1 the
+//            photo, 2 its softened copy, 0 neither; see photo_map.js)
 
 // Each cloth: the texture, its tile (metres of cloth one repeat covers), and its finish.
 const CLOTHS = {
@@ -178,7 +180,20 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uPrint: { value: BLANK },
     uPrintOn: { value: 0 },
     uPrintHalf: { value: 26 },
-    uPrintLength: { value: 70 }
+    uPrintLength: { value: 70 },
+    // An all-over print: the printed cloth itself (a piece of the photo's front), repeated over every other
+    // piece at its size on the garment (uTile: across and down, cm, and how far below the shoulders it starts).
+    uPrintTile: { value: BLANK },
+    uAllOver: { value: 0 },
+    uTile: { value: new THREE.Vector3(20, 20, 0) },
+    // Pants' and skirts' shop photo, laid on the cloth where aPhoto says (see DrapedTop#setPhotoMap).
+    uPhoto: { value: BLANK },
+    uPhotoSoft: { value: BLANK },
+    uPhotoBack: { value: BLANK },
+    // A top's back, from the shop's photo of it (laid as the front's print is).
+    uBack: { value: BLANK },
+    uBackOn: { value: 0 },
+    uPhotoOn: { value: 0 }
   }
   material.userData.uniforms = uniforms
   material.customProgramCacheKey = () => `cloth-${fitMap}`
@@ -191,14 +206,16 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aPiece;
         attribute float aShade;
         attribute float aHide;
+        attribute vec3 aPhoto;
         varying float vHide;
+        varying vec3 vPhoto;
         varying float vEdge;
         varying float vHem;
         varying float vPiece;
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPattern = uv * 100.0;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
     shader.fragmentShader = shader.fragmentShader
@@ -214,6 +231,16 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPrintOn;
         uniform float uPrintHalf;
         uniform float uPrintLength;
+        uniform sampler2D uPrintTile;
+        uniform float uAllOver;
+        uniform vec3 uTile;
+        uniform sampler2D uPhoto;
+        uniform sampler2D uPhotoSoft;
+        uniform sampler2D uPhotoBack;
+        uniform sampler2D uBack;
+        uniform float uBackOn;
+        uniform float uPhotoOn;
+        varying vec3 vPhoto;
         varying float vHide;
         varying float vEdge;
         varying float vHem;
@@ -240,6 +267,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
         if ( vHide > 0.0 ) discard;
+        // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
+        if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy ) ).rgb;
         vec3 thread = uThread;
         float groove = 1.0 - smoothstep( 0.0, 0.45, vEdge );
         float stitch = 0.0, metal = 0.0, shadow = 0.0;
@@ -278,6 +307,19 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         }
         diffuseColor.rgb *= 1.0 - 0.22 * groove - 0.5 * shadow;
         diffuseColor.rgb = mix( diffuseColor.rgb, thread, stitch * 0.85 );
+        bool backPhoto = uBackOn > 0.5 && vPiece > 1.5;
+        if ( uPrintOn > 0.5 && uAllOver > 0.5 && !( vPiece > 0.5 && vPiece < 1.5 ) && !backPhoto && gl_FrontFacing ) {
+          // Started half a repeat off the middle, so the back isn't mirrored about its centre seam.
+          vec2 st = vec2( vPattern.x / uTile.x + 0.5, ( -vPattern.y - uTile.z ) / uTile.y );
+          diffuseColor.rgb = texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
+        }
+        if ( backPhoto && gl_FrontFacing ) {
+          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
+          if ( st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0 ) {
+            vec4 printed = texture2D( uBack, vec2( st.x, 1.0 - st.y ) );
+            diffuseColor.rgb = mix( diffuseColor.rgb, printed.rgb, printed.a );
+          }
+        }
         if ( uPrintOn > 0.5 && vPiece > 0.5 && vPiece < 1.5 && gl_FrontFacing ) {
           vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
           if ( st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0 ) {
