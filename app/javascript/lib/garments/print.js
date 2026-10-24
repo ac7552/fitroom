@@ -300,6 +300,77 @@ function dropStreaks(alpha, w, h) {
   for (const { piece, stripe } of streaks) if (!(stripes && stripe)) for (const k of piece) alpha[k] = 0
 }
 
+// Where to point a segmentation model at the garment in a photo (see segment.js): a few points well inside
+// the garment as the backdrop cut finds it, in pixels. A top: down its middle, across the chest and the
+// waist. Bottoms: the waistband's middle and each leg's middle, a third and two thirds down. Also the cut's
+// mask and backdrop colour, for painting out what the model says isn't the garment. Null when no garment
+// stands out from the backdrop.
+export function promptPoints(data, w, h, kind = "top") {
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const { mask } = cut.garment
+  let top = h, bottom = -1
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { top = Math.min(top, y); bottom = Math.max(bottom, y) }
+  const tall = bottom - top
+  // The middle of the garment's run of pixels nearest the given x along row y (or the row's widest run).
+  const runAt = (y, near) => {
+    const runs = []
+    let start = -1
+    for (let x = 0; x <= w; x++) {
+      const on = x < w && mask[y * w + x]
+      if (on && start < 0) start = x
+      if (!on && start >= 0) { runs.push([start, x - 1]); start = -1 }
+    }
+    if (!runs.length) return null
+    const pick = near === undefined ? runs.sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0]
+      : runs.sort((a, b) => Math.abs((a[0] + a[1]) / 2 - near) - Math.abs((b[0] + b[1]) / 2 - near))[0]
+    return [(pick[0] + pick[1]) / 2, pick[1] - pick[0]]
+  }
+  const points = []
+  if (kind === "trousers") {
+    const waist = runAt(Math.round(top + tall * 0.06))
+    if (waist) points.push([waist[0], top + tall * 0.06])
+    for (const t of [0.4, 0.75]) {
+      const y = Math.round(top + tall * t)
+      for (const side of [-1, 1]) {
+        const run = runAt(y, (waist?.[0] ?? w / 2) + side * w * 0.12)
+        if (run && run[1] > 4) points.push([run[0], y])
+      }
+    }
+  } else {
+    const middle = runAt(Math.round(top + tall * 0.45))
+    const cx = middle?.[0] ?? w / 2
+    for (const t of [0.25, 0.45, 0.7]) {
+      const y = Math.round(top + tall * t)
+      const run = runAt(y, cx)
+      if (run && run[1] > 4) points.push([run[0], y])
+    }
+  }
+  const bg = [0, 1, 2].map(c => {
+    const edge = []
+    for (let x = 0; x < w; x++) edge.push(data[4 * x + c], data[4 * ((h - 1) * w + x) + c])
+    edge.sort((a, b) => a - b)
+    return edge[edge.length >> 1]
+  })
+  return points.length ? { points, mask, bg } : null
+}
+
+// What the segmentation model kept (keep: 1 per pixel) and the backdrop cut didn't: everything of the
+// garment's piece it left out (a hand, an arm, a bag, a hanger) painted the backdrop's colour, so reading
+// the photo goes on as if they weren't there. Returns how much of the garment's piece was painted out
+// (0 to 1), and changes data in place unless that's too much to trust (over `most`).
+export function paintOut(data, w, h, mask, keep, bg, { most = 0.35 } = {}) {
+  let inside = 0, out = 0
+  for (let i = 0; i < w * h; i++) if (mask[i]) { inside++; if (!keep[i]) out++ }
+  const share = inside ? out / inside : 1
+  if (share > most) return share
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i] || keep[i]) continue
+    data[4 * i] = bg[0]; data[4 * i + 1] = bg[1]; data[4 * i + 2] = bg[2]
+  }
+  return share
+}
+
 // A shoe's colours from its photo (a side view on a plain backdrop, as shops show them): its upper's (the
 // commonest colour above the sole) and its sole's (the bottom tenth of the shoe). Null when no shoe stands out.
 export async function readShoe(src) {

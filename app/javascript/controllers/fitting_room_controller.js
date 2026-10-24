@@ -3,6 +3,7 @@ import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
 import { readPhoto, readBottomPhoto, readGarment, readShoe, readTopShape, readBottomShape, loaded } from "lib/garments/print"
 import { describeOutfit, localStudioReady, studioLook } from "lib/local_studio"
+import { cleanPhoto } from "lib/garments/segment"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -180,13 +181,20 @@ export default class extends Controller {
       // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth. Pants
       // and skirts take the whole photo: their wash and fading, pockets and seams, as photographed.
       const bottoms = kind === "trousers"
-      const reading = bottoms ? readBottomPhoto(garment.photo) : readPhoto(garment.photo, { shape: frontShape(garment.chart) })
+      // First with anything that isn't the garment (a hand, a bag, a hanger) painted out (see segment.js).
+      const part = bottoms ? "trousers" : "top"
+      const reading = cleanPhoto(garment.photo, part).then(front => {
+        garment.cleaned = front !== garment.photo
+        return bottoms ? readBottomPhoto(front) : readPhoto(front, { shape: frontShape(garment.chart) })
+      })
       reading.then(async read => {
         const color = read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) return
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
         // The shop's photo of the back, read the same way, goes on the back.
-        let back = garment.back_photo && read ? await (bottoms ? readBottomPhoto(garment.back_photo) : readPhoto(garment.back_photo)).catch(() => null) : null
+        const backPhoto = garment.back_photo && read ? await cleanPhoto(garment.back_photo, part) : null
+        if (backPhoto) garment.backCleaned = backPhoto !== garment.back_photo
+        let back = backPhoto ? await (bottoms ? readBottomPhoto(backPhoto) : readPhoto(backPhoto)).catch(() => null) : null
         // Not the same garment's back after all (a close-up, or a photo on a model): a different colour, or a
         // top that's plain in front showing a print all over its back.
         if (back && (colorGap(back.color, read.color) > 40 || (!bottoms && !read.print && back.print?.coverage > 0.35))) back = null
