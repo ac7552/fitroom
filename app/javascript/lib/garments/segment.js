@@ -7,7 +7,7 @@
 // by the browser after that). The photo itself never leaves the page. Anything that goes wrong (no
 // network, an old browser, a mask that doesn't look like the garment) leaves the photo as it was.
 
-import { paintOut, promptPoints } from "lib/garments/print"
+import { paintOut, pickMask, promptPoints } from "lib/garments/print"
 
 const LIBRARY = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1"
 const MODEL = "Xenova/slimsam-77-uniform"
@@ -62,18 +62,7 @@ async function clean(src, kind) {
   const all = masks[0]   // [1, 3, h, w]
   const count = all.dims[1], plane = w * h, bits = all.data
 
-  // Of the model's three guesses, the most confident that covers most of the garment as cut from the
-  // backdrop (not just its print, or one sleeve).
-  let best = -1, bestScore = -Infinity
-  let inside = 0
-  for (let i = 0; i < plane; i++) if (prompt.mask[i]) inside++
-  for (let k = 0; k < count; k++) {
-    let kept = 0
-    for (let i = 0; i < plane; i++) if (prompt.mask[i] && bits[k * plane + i]) kept++
-    const share = kept / Math.max(1, inside)
-    if (share < 0.65) continue
-    if (scores[k] > bestScore) { bestScore = scores[k]; best = k }
-  }
+  const best = pickMask(bits, count, plane, prompt.mask, scores)
   if (best < 0) return src
   // Grown by a couple of pixels, so the garment's own edge isn't shaved off.
   const keep = new Uint8Array(plane)

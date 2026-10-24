@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { paintOut, promptPoints } from "../../app/javascript/lib/garments/print.js"
+import { paintOut, pickMask, promptPoints } from "../../app/javascript/lib/garments/print.js"
 
 // A navy tee on a light backdrop with a skin-coloured hand held against its side.
 function photo() {
@@ -35,4 +35,20 @@ test("paints out what the model left out of the garment, unless that's too much 
   const copy = photo().data
   assert.ok(paintOut(copy, w, h, prompt.mask, new Uint8Array(w * h), prompt.bg) > 0.35)
   assert.deepEqual([...copy.slice(4 * (100 * w + 100), 4 * (100 * w + 100) + 3)], [31, 44, 77])
+})
+
+test("picks the tightest confident mask that still covers the garment, not the one with the arm on", () => {
+  const { data, w, h } = photo()
+  const prompt = promptPoints(data, w, h, "top")
+  const plane = w * h, bits = new Uint8Array(3 * plane)
+  for (let i = 0; i < plane; i++) {
+    const x = i % w, y = Math.floor(i / w), hand = x >= 150 && x < 170 && y > 110 && y < 150
+    if (prompt.mask[i]) bits[i] = 1                          // 0: the tee and the hand
+    if (prompt.mask[i] && !hand) bits[plane + i] = 1         // 1: the tee alone
+    if (prompt.mask[i] && x < 100) bits[2 * plane + i] = 1   // 2: half the tee
+  }
+  assert.equal(pickMask(bits, 3, plane, prompt.mask, [0.99, 0.97, 0.99]), 1)
+  // Not confident in the tight one: the most confident that covers enough.
+  assert.equal(pickMask(bits, 3, plane, prompt.mask, [0.99, 0.6, 0.99]), 0)
+  assert.equal(pickMask(new Uint8Array(3 * plane), 3, plane, prompt.mask, [1, 1, 1]), -1)
 })

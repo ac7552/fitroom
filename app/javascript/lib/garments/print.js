@@ -981,3 +981,26 @@ function boxBlur(values, w, h, r) {
   }
   return out
 }
+
+// Which of the model's guesses (count masks of `plane` pixels each, in bits) is the garment. The most
+// confident guess is often the garment with the model's arm or legs still on it (a hand in a pocket), so:
+// the tightest confident guess that still covers most of the garment as cut from the backdrop (not just
+// its print, or one leg). Failing that, the most confident that covers enough of it. -1 when none does.
+export function pickMask(bits, count, plane, cut, scores) {
+  let inside = 0
+  for (let i = 0; i < plane; i++) if (cut[i]) inside++
+  const guesses = []
+  for (let k = 0; k < count; k++) {
+    let kept = 0, area = 0
+    for (let i = 0; i < plane; i++) {
+      if (!bits[k * plane + i]) continue
+      area++
+      if (cut[i]) kept++
+    }
+    guesses.push({ k, area, share: kept / Math.max(1, inside), score: scores[k] })
+  }
+  const tight = guesses.filter(g => g.share >= 0.8 && g.score >= 0.85).sort((a, b) => a.area - b.area)[0]
+  if (tight) return tight.k
+  const loose = guesses.filter(g => g.share >= 0.65).sort((a, b) => b.score - a.score)[0]
+  return loose ? loose.k : -1
+}

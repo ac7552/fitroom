@@ -870,7 +870,7 @@ export default class extends Controller {
     if (this.outfit.coat && this.outfit.jacket) notes.push("The coat over a jacket is drawn from a jacket, so it looks shorter here.")
     // A chart of usual sizes, not the clothes' own measurements: the fit shown is an estimate.
     const estimated = this.items().filter(({ garment }) => ["body", "sizes"].includes(garment.chart.kind)).map(({ kind }) => KIND_WORDS[kind] ?? kind)
-    if (estimated.length) notes.push(`Estimated fit: the store doesn't give the ${listed(estimated)}'s own measurements, so ${estimated.length === 1 ? "its" : "their"} usual ones are shown.`)
+    if (estimated.length) notes.push(`Estimated fit: the store doesn't list measurements for the ${listed(estimated)}, so usual sizes are shown.`)
     if (this.stage.hiddenTop) notes.push("The top is under the jacket.")
     if (this.limited?.length) notes.push(`The mannequin can't go as far as your ${this.limited.join(" and ")}; it's drawn as near as it can.`)
     this.stageNoteTarget.textContent = notes.join(" ") || "Your shape. Drag to turn it."
