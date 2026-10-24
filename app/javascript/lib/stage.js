@@ -340,6 +340,7 @@ export class FittingStage {
     if (!d) return
     d.top.setColor(item.color)
     d.top.setPrint(item.print ?? null)
+    d.top.setPhotoMap(item.photoMap ?? null)
     d.top.mesh.visible = d.shown
     if (this.view === "fit") d.top.paintFit(item.checks ?? [], STATUS_COLORS)
     d.top.setFitMap(this.view === "fit")
@@ -350,7 +351,7 @@ export class FittingStage {
   // in that pose.
   startDrape({ slot, key, item }) {
     const rest = this.restSnapshot()
-    const over = [...rest.over, ...this.under(slot).filter(d => d.top.done).map(d => clothSnapshot(d.restX ?? d.top.drape.x, d.top))]
+    const over = [...rest.over, ...this.under(slot).filter(d => d.top.done).map(d => clothSnapshot(d.restX ?? d.top.drape.x, d.top, rest.body))]
     const { frame, field } = prepareBody(rest.body, rest.egg, over, { arms: slot !== "bottom" })
     // A jacket over a top starts clear of the top's cloth (a tucked top lies close round the waist, so the
     // usual gap clears it; more would stretch the jacket's hem round the hips, to spring back and ride up).
@@ -402,7 +403,7 @@ export class FittingStage {
   snapshotNow(slot = null) {
     const body = bodySnapshot(this.meshes.body)
     const over = this.meshes.trousers.visible ? [bodySnapshot(this.meshes.trousers)] : []
-    if (slot) for (const d of this.under(slot)) if (d.top.done) over.push(clothSnapshot(d.top.drape.x, d.top))
+    if (slot) for (const d of this.under(slot)) if (d.top.done) over.push(clothSnapshot(d.top.drape.x, d.top, body))
     return { body, over, egg: this.eggShape() }
   }
 
@@ -819,14 +820,48 @@ export class FittingStage {
 // triangle mesh with normals. A tucked top is left out from a little above the pants' waistband down: the
 // pants cover it, and where it comes out of them, its edge and theirs together would snag the cloth over
 // them.
-function clothSnapshot(x, garment) {
+function clothSnapshot(x, garment, body = null) {
   const map = garment.drape.map
   const away = garment.tuckedAway?.(x, -0.025)
   let triangles = garment.triangles
   if (away) triangles = Uint32Array.from(triangles).filter((_, k, all) => { const t = k - (k % 3); return !(away[all[t]] > 0 && away[all[t + 1]] > 0 && away[all[t + 2]] > 0) })
   const index = Uint32Array.from(triangles, i => (map ? map[i] : i))
   const positions = Float32Array.from(x)
-  return { positions, normals: vertexNormals(positions, index), index }
+  const normals = vertexNormals(positions, index)
+  if (body) faceAway(positions, normals, body)
+  return { positions, normals, index }
+}
+
+// Cloth folded over on itself (loose pants bunched at the hip) faces both ways at once, and a layer sewn over
+// it would be pulled into the fold and held there, its seams then dragging the rest of it down after. Its
+// normals all face away from the body instead (the way the nearest skin faces), so the fold is pushed out of like any other cloth.
+function faceAway(positions, normals, body) {
+  const cell = 0.03, grid = new Map(), B = body.positions
+  const key = (x, y, z) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`
+  for (let i = 0; i < B.length / 3; i++) {
+    const k = key(B[3 * i], B[3 * i + 1], B[3 * i + 2])
+    if (!grid.has(k)) grid.set(k, [])
+    grid.get(k).push(i)
+  }
+  for (let j = 0; j < positions.length / 3; j++) {
+    const x = positions[3 * j], y = positions[3 * j + 1], z = positions[3 * j + 2]
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell)
+    let best = -1, bestD = Infinity
+    for (let r = 0; r <= 3 && best < 0; r++) {
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== r) continue
+        for (const i of grid.get(`${cx + dx},${cy + dy},${cz + dz}`) ?? []) {
+          const d = (B[3 * i] - x) ** 2 + (B[3 * i + 1] - y) ** 2 + (B[3 * i + 2] - z) ** 2
+          if (d < bestD) { bestD = d; best = i }
+        }
+      }
+    }
+    if (best < 0) continue
+    const M = body.normals
+    if (M[3 * best] * normals[3 * j] + M[3 * best + 1] * normals[3 * j + 1] + M[3 * best + 2] * normals[3 * j + 2] < 0) {
+      normals[3 * j] *= -1; normals[3 * j + 1] *= -1; normals[3 * j + 2] *= -1
+    }
+  }
 }
 
 function applyInfluences(mesh, influences) {

@@ -196,10 +196,15 @@ export function findPrint(data, w, h, shape = null) {
   if (kept.reduce((sum, a) => sum + a, 0) > before * 0.4) alpha.set(kept)
   dropStreaks(alpha, pw, ph)
   const solid = boxBlur(alpha, pw, ph, 2)
+  for (let k = 0; k < pw * ph; k++) alpha[k] *= smooth(solid[k], 0.3, 0.55)
+  // A print is laid whole: its marks, and what's between them (a photo print's shadows, the gaps in its
+  // lettering), with a soft edge. Cut out mark by mark, a photo print fading into a dark cloth falls apart
+  // into specks.
+  const whole = printAreas(alpha, gap, pw, ph)
   let covered = 0
   const out = new Uint8ClampedArray(4 * pw * ph)
   for (let k = 0; k < pw * ph; k++) {
-    const a = alpha[k] * smooth(solid[k], 0.3, 0.55)
+    const a = Math.max(alpha[k], whole[k])
     const i = (top + Math.floor(k / pw)) * w + x0 + (k % pw)
     out[4 * k] = data[4 * i]; out[4 * k + 1] = data[4 * i + 1]; out[4 * k + 2] = data[4 * i + 2]
     out[4 * k + 3] = Math.round(a * 255)
@@ -212,6 +217,34 @@ export function findPrint(data, w, h, shape = null) {
   }
   const print = coverage > 0.01 ? { data: out, width: pw, height: ph, coverage } : null
   return { color, print, rect: [x0, top, x1, bottom] }
+}
+
+// The areas a print covers (0 to 1, soft at the edge): its marks joined up across small gaps (a closing:
+// grown by a few per cent of the front's width, then shrunk back), leaving out what's background (gap).
+// Specks far from any other mark stay specks, and are dropped.
+function printAreas(alpha, gap, w, h) {
+  const r = Math.max(2, Math.round(Math.max(w, h) * 0.035))
+  const marks = Float32Array.from(alpha, a => (a > 0.3 ? 1 : 0))
+  const grown = boxBlur(marks, w, h, r).map(v => (v > 0.001 ? 1 : 0))
+  const closed = boxBlur(grown, w, h, r).map(v => (v > 0.999 ? 1 : 0))
+  // Pieces of it too small to be a print on their own (a fleck, a stray highlight).
+  const seen = new Uint8Array(w * h), stack = []
+  for (let start = 0; start < w * h; start++) {
+    if (seen[start] || !closed[start]) continue
+    const piece = [start]
+    seen[start] = 1; stack.push(start)
+    while (stack.length) {
+      const k = stack.pop(), x = k % w
+      for (const j of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) {
+        if (j < 0 || j >= w * h || seen[j] || !closed[j]) continue
+        seen[j] = 1; stack.push(j); piece.push(j)
+      }
+    }
+    if (piece.length < w * h * 0.002) for (const k of piece) closed[k] = 0
+  }
+  for (let k = 0; k < w * h; k++) if (gap[k]) closed[k] = 0
+  const soft = boxBlur(closed, w, h, Math.max(1, Math.round(r / 3)))
+  return soft.map((v, k) => (gap[k] ? 0 : smooth(v, 0.1, 0.9)))
 }
 
 // Long, thin marks aren't a print: a hem's fold catching the light runs across the front in a line, and the
@@ -499,6 +532,159 @@ export function measureBottomMask(mask, w, h) {
     thigh: at(crotch + Math.round(legLength * 0.05)), knee: at(crotch + Math.round(legLength * 0.5)),
     hem: at(bottom - Math.max(3, Math.round(legLength * 0.04)), 3), skirt: false
   }
+}
+
+// Pants, shorts or a skirt photographed flat from the front, read to be laid on the draped cloth (see
+// photo_map.js): the cloth's colour, and the photo itself, with the backdrop round the garment painted over
+// in its nearby colours (so cloth sampled at its very edge doesn't pick up the backdrop), and a softened
+// copy (its colours and fading without the front's details, for the back, which isn't photographed).
+// src: an image URL. Returns { color, image (canvas), soft (canvas), layout } or null.
+export async function readBottomPhoto(src) {
+  const image = new Image()
+  image.src = src
+  try { await loaded(image) } catch { return null }
+  const scale = Math.min(1, PHOTO_SIZE / Math.max(image.naturalWidth, image.naturalHeight))
+  const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, w, h)
+  const read = readBottom(context.getImageData(0, 0, w, h).data, w, h)
+  if (!read) return null
+  const toCanvas = pixels => {
+    const out = document.createElement("canvas")
+    out.width = w
+    out.height = h
+    out.getContext("2d").putImageData(new ImageData(pixels, w, h), 0, 0)
+    return out
+  }
+  return { color: read.color, image: toCanvas(read.filled), soft: toCanvas(read.soft), layout: read.layout }
+}
+
+const PHOTO_SIZE = 768   // a bottoms photo is laid on the cloth at about this many pixels across
+
+// The same on raw RGBA pixels. layout: { w, h, top, bottom, crotch (the row the legs part at, or null for a
+// skirt), rows: for each row from top to bottom, [left, right, inner left, inner right] (the garment's
+// outer edges, and where the two legs' inner edges are, or -1 above the crotch) }. Null when the photo
+// doesn't show a bottoms garment laid flat from the front.
+export function readBottom(data, w, h) {
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const { lab, bg } = cut
+  let mask = cut.garment.mask
+  // Each row's stretches of garment, small gaps (a seam's shadow) closed.
+  const gap = Math.max(2, Math.round(w * 0.01))
+  const runs = y => {
+    const out = []
+    let start = -1, last = -1
+    for (let x = 0; x < w; x++) {
+      if (!mask[y * w + x]) continue
+      if (start < 0) start = x
+      else if (x - last > gap) { out.push([start, last]); start = x }
+      last = x
+    }
+    if (start >= 0) out.push([start, last])
+    return out.filter(([a, b]) => b - a > w * 0.01)
+  }
+  const extent = () => {
+    let top = -1, bottom = -1
+    for (let y = 0; y < h; y++) if (runs(y).length) { if (top < 0) top = y; bottom = y }
+    return [top, bottom]
+  }
+  let [top, bottom] = extent()
+  if (top < 0) return null
+
+  // The cloth's colour: the commonest colour (with its near neighbours: a washed or mottled cloth spreads
+  // over several) down the middle of each stretch, from a third of the way down to near the hem.
+  const bins = new Map()
+  for (let y = Math.round(top + (bottom - top) * 0.35); y <= top + (bottom - top) * 0.9; y++) {
+    for (const [a, b] of runs(y)) {
+      const inset = Math.round((b - a) * 0.2)
+      for (let x = a + inset; x <= b - inset; x++) {
+        const i = y * w + x
+        if (!mask[i]) continue
+        const key = (data[4 * i] >> 4) << 8 | (data[4 * i + 1] >> 4) << 4 | (data[4 * i + 2] >> 4)
+        const bin = bins.get(key) ?? [0, 0, 0, 0]
+        bin[0] += data[4 * i]; bin[1] += data[4 * i + 1]; bin[2] += data[4 * i + 2]; bin[3]++
+        bins.set(key, bin)
+      }
+    }
+  }
+  if (!bins.size) return null
+  const [best] = [...bins.entries()].sort((p, q) => q[1][3] - p[1][3])
+  const near = (a, b) => Math.abs((a >> 8) - (b >> 8)) <= 1 && Math.abs(((a >> 4) & 15) - ((b >> 4) & 15)) <= 1 && Math.abs((a & 15) - (b & 15)) <= 1
+  const sum = [0, 0, 0, 0]
+  for (const [key, bin] of bins) if (near(key, best[0])) for (let c = 0; c < 4; c++) sum[c] += bin[c]
+  const rgb = [0, 1, 2].map(c => sum[c] / sum[3])
+  const color = "#" + rgb.map(v => Math.round(v).toString(16).padStart(2, "0")).join("")
+
+  // The garment's outline again, more strictly where the cloth is unlike the backdrop: the shadowed sliver
+  // between two legs laid touching isn't far enough from the backdrop to be cut away with it, but it's much
+  // nearer the backdrop than the cloth.
+  const clothLab = new Float32Array(3)
+  toLab(rgb[0], rgb[1], rgb[2], clothLab, 0)
+  const apart = Math.hypot(clothLab[0] - bg[0], clothLab[1] - bg[1], clothLab[2] - bg[2])
+  if (apart > 20) {
+    const strict = Uint8Array.from(mask, (on, i) => (on && Math.hypot(lab[3 * i] - bg[0], lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) > apart * 0.35 ? 1 : 0))
+    mask = largestPiece(strict, w, h).mask
+    ;[top, bottom] = extent()
+  }
+  const shape = measureBottomMask(mask, w, h)
+  if (!shape || shape.length < 0.4) return null
+  const tall = bottom - top + 1
+  // Where the legs part in the photo (laid flat, wide legs often touch well below the crotch; above it,
+  // each leg is taken to run from the middle out).
+  const crotch = shape.skirt ? null : Math.round(top + shape.rise * tall)
+  const rows = new Int16Array(4 * tall)
+  for (let y = top; y <= bottom; y++) {
+    const r = runs(y), k = 4 * (y - top)
+    if (!r.length) { rows.set(rows.slice(k - 4, k), k); continue }
+    rows[k] = r[0][0]; rows[k + 1] = r[r.length - 1][1]; rows[k + 2] = -1; rows[k + 3] = -1
+    if (crotch !== null && y >= crotch) {
+      if (r.length >= 2) {
+        // The two legs: the gap between the first stretch and the last.
+        rows[k + 2] = r[0][1]; rows[k + 3] = r[r.length - 1][0]
+      } else {
+        // Wide legs touching: they part at the middle.
+        const mid = Math.round((r[0][0] + r[0][1]) / 2)
+        rows[k + 2] = mid; rows[k + 3] = mid
+      }
+    }
+  }
+
+  // The backdrop painted over in the garment's nearby colours, and a softened copy. The garment's outermost
+  // pixels go too: half backdrop, they'd leave a light rim round it.
+  const rim = Math.max(1, Math.round(w * 0.003))
+  const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
+  const filled = fillAround(data, inner, w, h, Math.max(4, Math.round(w * 0.03)))
+  const soft = blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
+  return { color, filled, soft, layout: { w, h, top, bottom, crotch, rows } }
+}
+
+// The photo with what's round the garment (mask 0) painted in the garment's colours nearby, out to `reach`
+// pixels; further out it's left as it was.
+function fillAround(data, mask, w, h, reach) {
+  const out = new Uint8ClampedArray(data)
+  const sums = [0, 1, 2].map(c => boxBlur(Float32Array.from({ length: w * h }, (_, i) => (mask[i] ? data[4 * i + c] : 0)), w, h, reach))
+  const weight = boxBlur(Float32Array.from(mask), w, h, reach)
+  for (let i = 0; i < w * h; i++) {
+    if (mask[i] || weight[i] < 1e-4) continue
+    for (let c = 0; c < 3; c++) out[4 * i + c] = sums[c][i] / weight[i]
+  }
+  return out
+}
+
+// The garment's pixels blurred among themselves (a radius r box, twice), the rest filled as fillAround does.
+function blurPixels(data, mask, w, h, r) {
+  const weight = boxBlur(boxBlur(Float32Array.from(mask), w, h, r), w, h, r)
+  const out = new Uint8ClampedArray(data)
+  const channels = [0, 1, 2].map(c => boxBlur(boxBlur(Float32Array.from({ length: w * h }, (_, i) => (mask[i] ? data[4 * i + c] : 0)), w, h, r), w, h, r))
+  for (let i = 0; i < w * h; i++) {
+    if (weight[i] < 1e-4) continue
+    for (let c = 0; c < 3; c++) out[4 * i + c] = channels[c][i] / weight[i]
+  }
+  return out
 }
 
 async function loadPixels(src) {

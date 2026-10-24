@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readGarment, readTopShape, readBottomShape, loaded } from "lib/garments/print"
+import { readPhoto, readBottomPhoto, readGarment, readTopShape, readBottomShape, loaded } from "lib/garments/print"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -142,14 +142,18 @@ export default class extends Controller {
     this.outfit[kind] = item
     this.renderOutfit()
     if (garment.photo && !garment.photoColor) {
-      // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth.
-      readPhoto(garment.photo, { shape: frontShape(garment.chart) }).then(async read => {
+      // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth. Pants
+      // and skirts take the whole photo: their wash and fading, pockets and seams, as photographed.
+      const bottoms = kind === "trousers"
+      const reading = bottoms ? readBottomPhoto(garment.photo) : readPhoto(garment.photo, { shape: frontShape(garment.chart) })
+      reading.then(async read => {
         const color = read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) return
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
+        if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout } : null
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
         // printed gets the photo's print.
-        garment.print = garment.cut && !garment.cut.printed ? null : read?.print ?? null
+        else garment.print = garment.cut && !garment.cut.printed ? null : read?.print ?? null
         this.renderOutfit()
         if (item.fit) this.render()
       })
@@ -687,6 +691,7 @@ export default class extends Controller {
       checks: fit.sizes.find(s => s.size === selected).checks,
       color: garment.color,
       print: garment.print ?? null,
+      photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,
       style: garment.style,
       cut: garment.cut ?? null

@@ -4,6 +4,7 @@ import { STYLES, draftTop } from "lib/garments/pattern"
 import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
+import { bottomsPhotoUV } from "lib/garments/photo_map"
 import { Drape } from "lib/garments/drape"
 import { clothMaterial } from "lib/garments/fabric"
 
@@ -289,6 +290,7 @@ export class DrapedTop {
     geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : 0)), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
+    geometry.setAttribute("aPhoto", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -343,6 +345,33 @@ export class DrapedTop {
       uniforms.uPrintLength.value = m.length + band
     }
     uniforms.uPrintOn.value = print ? 1 : 0
+  }
+
+  // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),
+  // laid on the cloth: the photo on the front, its softened copy on the back.
+  setPhotoMap(map) {
+    if (!this.bottoms) map = null
+    if (map?.image === this.photoImage) return
+    this.photoImage = map?.image ?? null
+    for (const texture of this.photoTextures ?? []) texture.dispose()
+    this.photoTextures = []
+    if (map) {
+      const uv = bottomsPhotoUV(this.cloth, this.pattern, map.layout)
+      this.geometry.attributes.aPhoto.array.set(uv)
+      this.geometry.attributes.aPhoto.needsUpdate = true
+      this.photoTextures = [map.image, map.soft].map(canvas => {
+        const texture = new THREE.CanvasTexture(canvas)
+        texture.colorSpace = THREE.SRGBColorSpace
+        texture.anisotropy = 8
+        return texture
+      })
+    }
+    for (const key of ["main", "rib"]) {
+      const uniforms = this.materials[key].userData.uniforms
+      uniforms.uPhoto.value = this.photoTextures[0] ?? uniforms.uPhoto.value
+      uniforms.uPhotoSoft.value = this.photoTextures[1] ?? uniforms.uPhotoSoft.value
+      uniforms.uPhotoOn.value = map ? 1 : 0
+    }
   }
 
   setFitMap(on) {
@@ -518,6 +547,7 @@ export class DrapedTop {
 
   dispose() {
     this.printTexture?.dispose()
+    for (const texture of this.photoTextures ?? []) texture.dispose()
     this.geometry.dispose()
     for (const material of Object.values(this.materials)) {
       material.normalMap?.dispose()
