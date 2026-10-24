@@ -125,6 +125,9 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "shirt", GarmentImport.new.send(:style_of, { name: "Ell Denim Ford Jacket - Black", category: "Jackets" }, "x")
     assert_equal "shirt", GarmentImport.new.send(:style_of, { name: "Japanese Denim Trucker Jacket", category: "Jackets", description: "Zip pocket at the chest." }, "x")
     assert_equal "jacket", GarmentImport.new.send(:kind_of, { name: "Willy Chavarria Bad Boy Track Jacket - Peacoat", category: "Jackets" })
+    assert_equal "jacket", GarmentImport.new.send(:kind_of, { name: "Kith Women Ina II Crochet Cable Zip Track - Incognito", category: "Sweaters" })
+    assert_equal "top", GarmentImport.new.send(:kind_of, { name: "Merino Half-Zip Sweater", category: "Sweaters" })
+    assert_equal "coat", GarmentImport.new.send(:kind_of, { name: "Susanna Chow Dorothy Suede Maxi Coat - Graphite", category: "Coats" })
     assert_equal "cotton", GarmentImport.new.send(:fabric_of, { name: "Polo", description: "Body 1: 100% Lyocell / Body 2: 60% Viscose / 35% Nylon / 5% Cashmere" }, "top")
     # A cardigan is worn open over a top, as a jacket is, so a tee can go under it.
     assert_equal [ "jacket", "cardigan" ], top("Color-Blocked Cardigan").values_at(:garment, :style)

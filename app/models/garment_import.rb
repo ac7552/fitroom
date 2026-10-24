@@ -117,7 +117,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 15
+  FORMAT = 17
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -646,11 +646,15 @@ class GarmentImport
     if not_fitted
       raise Error.new("not_supported", "Fitroom can't try on #{not_fitted.first} yet. It works with tops, dresses, jackets, coats and pants.")
     end
+    # A "Maxi Coat" is a coat, not a dress (a "Trench Dress" is still a dress).
+    return "coat" if words.match?(COATS) && !words.match?(NOT_COATS) && !words.match?(/\bdress\b/i)
     # A "maxi skirt" is a skirt, not a dress.
     return "top" if words.match?(DRESSES) && !words.match?(/skirts?\b|skort/i)
     return "coat" if words.match?(COATS) && !words.match?(NOT_COATS)
     # A cardigan is worn open over a top, as a jacket is.
     return "jacket" if words.match?(/cardigan/i)
+    # So is a knit that zips all the way down ("Crochet Cable Zip Track"), but not a half-zip pullover.
+    return "jacket" if words.match?(/\bzip\b|zip[- ]up|full[- ]zip/i) && words.match?(/sweater|knit|crochet|cable|track/i) && !words.match?(/half[- ]zip|quarter[- ]zip|1\/4|hood/i)
     # Pants named for their cloth ("Suiting Trouser") are pants, not a suit's jacket.
     return "trousers" if product[:name].to_s.match?(/\b(?:trousers?|pants?|jeans?|shorts?(?![- ]?sleeve)|skirts?)\s*(?:[-–].*)?\z/i) || product[:category].to_s.match?(TROUSERS)
     return "jacket" if words.match?(JACKETS)
