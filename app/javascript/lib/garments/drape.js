@@ -16,6 +16,8 @@ export const CLOTHS = {
   wool: { stretch: 3e-8, bend: 2.5e-5, drag: 1.6, thickness: 0.005 },
   // Jeans: stiff, heavy cotton that keeps its shape down the leg.
   denim: { stretch: 1.5e-8, bend: 1.6e-5, drag: 1.6, thickness: 0.005 },
+  // Linen: crisp, a little stiffer than cotton twill, so a leg falls straight instead of crumpling.
+  linen: { stretch: 2e-8, bend: 2e-5, drag: 1.5, thickness: 0.0045 },
   // Dresses: stretch cloth gives a lot (so a dress cut smaller than the body clings), leather is stiff and
   // heavy-looking, silk and chiffon light and soft.
   stretch: { stretch: 9e-7, bend: 1.5e-4, drag: 1.2, thickness: 0.003 },

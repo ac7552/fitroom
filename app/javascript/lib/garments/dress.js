@@ -232,7 +232,7 @@ export class DrapedTop {
       length: this.pattern.measures.waist / 100
     } : null
     this.drape = new Drape(this.cloth, positions, { ...body, field }, {
-      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
+      fabric: this.bottoms && item.fabric === "linen" ? "linen" : this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : 0.7, floor: this.bottoms ? frame.floor + 0.004 : null, ring,
       feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
       snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
       tuck,
@@ -287,8 +287,8 @@ export class DrapedTop {
     geometry.setAttribute("uv", new THREE.BufferAttribute(Float32Array.from(cloth.points.flatMap(([x, y]) => [x / 100, y / 100])), 2))
     geometry.setAttribute("aEdge", new THREE.BufferAttribute(Float32Array.from(cloth.toEdge), 1))
     geometry.setAttribute("aHem", new THREE.BufferAttribute(Float32Array.from(cloth.toFree, d => Math.min(d, 99)), 1))
-    const front = cloth.panels.indexOf("front")
-    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : 0)), 1))
+    const front = cloth.panels.indexOf("front"), back = cloth.panels.indexOf("back")
+    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : p === back ? 2 : 0)), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
     geometry.setAttribute("aPhoto", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
@@ -359,6 +359,16 @@ export class DrapedTop {
     }
     uniforms.uPrintOn.value = print ? 1 : 0
     uniforms.uAllOver.value = print?.tile ? 1 : 0
+    // The back, from the shop's photo of it.
+    this.backTexture?.dispose()
+    this.backTexture = null
+    if (print?.back) {
+      this.backTexture = new THREE.CanvasTexture(print.back.image)
+      this.backTexture.colorSpace = THREE.SRGBColorSpace
+      this.backTexture.anisotropy = 4
+      uniforms.uBack.value = this.backTexture
+    }
+    uniforms.uBackOn.value = print?.back ? 1 : 0
   }
 
   // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),
@@ -370,10 +380,10 @@ export class DrapedTop {
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.photoTextures = []
     if (map) {
-      const uv = bottomsPhotoUV(this.cloth, this.pattern, map.layout)
+      const uv = bottomsPhotoUV(this.cloth, this.pattern, map.layout, map.back?.layout ?? null)
       this.geometry.attributes.aPhoto.array.set(uv)
       this.geometry.attributes.aPhoto.needsUpdate = true
-      this.photoTextures = [map.image, map.soft].map(canvas => {
+      this.photoTextures = [map.image, map.soft, map.back?.image ?? map.soft].map(canvas => {
         const texture = new THREE.CanvasTexture(canvas)
         texture.colorSpace = THREE.SRGBColorSpace
         texture.anisotropy = 8
@@ -384,6 +394,7 @@ export class DrapedTop {
       const uniforms = this.materials[key].userData.uniforms
       uniforms.uPhoto.value = this.photoTextures[0] ?? uniforms.uPhoto.value
       uniforms.uPhotoSoft.value = this.photoTextures[1] ?? uniforms.uPhotoSoft.value
+      uniforms.uPhotoBack.value = this.photoTextures[2] ?? uniforms.uPhotoBack.value
       uniforms.uPhotoOn.value = map ? 1 : 0
     }
   }
@@ -561,6 +572,8 @@ export class DrapedTop {
 
   dispose() {
     this.printTexture?.dispose()
+    this.tileTexture?.dispose()
+    this.backTexture?.dispose()
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.geometry.dispose()
     for (const material of Object.values(this.materials)) {

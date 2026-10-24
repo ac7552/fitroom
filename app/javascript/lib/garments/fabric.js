@@ -189,6 +189,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // Pants' and skirts' shop photo, laid on the cloth where aPhoto says (see DrapedTop#setPhotoMap).
     uPhoto: { value: BLANK },
     uPhotoSoft: { value: BLANK },
+    uPhotoBack: { value: BLANK },
+    // A top's back, from the shop's photo of it (laid as the front's print is).
+    uBack: { value: BLANK },
+    uBackOn: { value: 0 },
     uPhotoOn: { value: 0 }
   }
   material.userData.uniforms = uniforms
@@ -232,6 +236,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform vec3 uTile;
         uniform sampler2D uPhoto;
         uniform sampler2D uPhotoSoft;
+        uniform sampler2D uPhotoBack;
+        uniform sampler2D uBack;
+        uniform float uBackOn;
         uniform float uPhotoOn;
         varying vec3 vPhoto;
         varying float vHide;
@@ -261,7 +268,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
       .replace("#include <color_fragment>", `#include <color_fragment>
         if ( vHide > 0.0 ) discard;
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
-        if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : texture2D( uPhotoSoft, vPhoto.xy ) ).rgb;
+        if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy ) ).rgb;
         vec3 thread = uThread;
         float groove = 1.0 - smoothstep( 0.0, 0.45, vEdge );
         float stitch = 0.0, metal = 0.0, shadow = 0.0;
@@ -300,10 +307,18 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         }
         diffuseColor.rgb *= 1.0 - 0.22 * groove - 0.5 * shadow;
         diffuseColor.rgb = mix( diffuseColor.rgb, thread, stitch * 0.85 );
-        if ( uPrintOn > 0.5 && uAllOver > 0.5 && !( vPiece > 0.5 && vPiece < 1.5 ) && gl_FrontFacing ) {
+        bool backPhoto = uBackOn > 0.5 && vPiece > 1.5;
+        if ( uPrintOn > 0.5 && uAllOver > 0.5 && !( vPiece > 0.5 && vPiece < 1.5 ) && !backPhoto && gl_FrontFacing ) {
           // Started half a repeat off the middle, so the back isn't mirrored about its centre seam.
           vec2 st = vec2( vPattern.x / uTile.x + 0.5, ( -vPattern.y - uTile.z ) / uTile.y );
           diffuseColor.rgb = texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
+        }
+        if ( backPhoto && gl_FrontFacing ) {
+          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
+          if ( st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0 ) {
+            vec4 printed = texture2D( uBack, vec2( st.x, 1.0 - st.y ) );
+            diffuseColor.rgb = mix( diffuseColor.rgb, printed.rgb, printed.a );
+          }
         }
         if ( uPrintOn > 0.5 && vPiece > 0.5 && vPiece < 1.5 && gl_FrontFacing ) {
           vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
