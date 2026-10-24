@@ -269,13 +269,15 @@ function printAreas(alpha, gap, w, h) {
 
 // Long, thin marks aren't a print: a hem's fold catching the light runs across the front in a line, and the
 // shadow between a sleeve and the body runs down its side. Each mark (8-connected) much longer than it is
-// thick, across or down, is cleared.
+// thick, across or down, is cleared. Several running the same way down most of the front are a striped
+// cloth, though, and stay.
 function dropStreaks(alpha, w, h) {
   const seen = new Uint8Array(w * h)
-  const stack = [], piece = []
+  const stack = [], streaks = []
   for (let start = 0; start < w * h; start++) {
     if (seen[start] || alpha[start] <= 0.2) continue
-    stack.push(start); seen[start] = 1; piece.length = 0
+    stack.push(start); seen[start] = 1
+    const piece = []
     let x0 = w, x1 = -1, y0 = h, y1 = -1
     while (stack.length) {
       const k = stack.pop(), x = k % w, y = (k - x) / w
@@ -292,8 +294,10 @@ function dropStreaks(alpha, w, h) {
     // How thick it is: its area over its length (across and down, so a line that turns a corner counts too).
     const thick = piece.length / (across + down)
     const streak = (across >= w * 0.2 || down >= h * 0.15) && thick <= Math.max(2, 0.02 * Math.max(w, h))
-    if (streak) for (const k of piece) alpha[k] = 0
+    if (streak) streaks.push({ piece, stripe: down >= h * 0.4 && across <= w * 0.08 })
   }
+  const stripes = streaks.filter(s => s.stripe).length >= 3
+  for (const { piece, stripe } of streaks) if (!(stripes && stripe)) for (const k of piece) alpha[k] = 0
 }
 
 // The garment in a photo: each pixel's Lab colour, the background's colour (the median round the photo's

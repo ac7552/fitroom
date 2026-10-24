@@ -160,3 +160,20 @@ test("pants on a hanger: the hook and the hanger's bar aren't taken for the wais
   assert.ok(read.layout.top >= 48 && read.layout.top <= 44 + down, `top ${read.layout.top}`)
   assert.equal(read.color, "#28282c")
 })
+
+test("a striped front keeps its stripes, while a single fold's line is dropped", () => {
+  const w = 200, h = 200
+  const make = count => {
+    const data = new Uint8ClampedArray(4 * w * h)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let c = [236, 236, 236]
+      if ((x > 50 && x < 150 && y > 30 && y < 170) || (y > 30 && y < 70 && x > 20 && x < 180)) c = [20, 20, 22]
+      const stripe = [70, 85, 115, 130].slice(0, count).some(sx => x >= sx && x < sx + 2)
+      if (stripe && y > 40 && y < 168) c = [190, 40, 50]
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+    return findPrint(data, w, h)
+  }
+  assert.ok(make(4).print?.coverage > 0.02)
+  assert.equal(make(1).print, null)
+})
