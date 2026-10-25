@@ -36,7 +36,7 @@ Optional settings are environment variables, listed in `.env.example`. Fitroom r
 4. **Pick a size.** The best size is marked with a star. Tap any other size to see it drape. Each part
    (shoulders, chest, waist, sleeves, length) says if it fits, and what a tailor could fix.
 5. **Check the fit.** **Fit colors** paints the cloth by how each part fits. **Clothes only** hides the
-   mannequin. **Take a photo** saves what's on screen.
+   mannequin.
 
 ## Features
 
@@ -55,11 +55,6 @@ Optional settings are environment variables, listed in `.env.example`. Fitroom r
   made smaller than the body.
 - **Private:** no accounts. Your measurements are used for one answer and never stored or logged, and
   photos are read in your browser.
-- **Studio look (optional):** tick **Studio look (AI)** before **Take a photo** and the photo is repainted
-  to look like a studio shot, with real fabric texture and soft light. Only the mannequin's picture is sent
-  (to Fitroom's own photo service, `script/modal/studio_look.py`), nothing is kept, and the fit can't
-  change: if the repaint's outline differs from the render's by more than 15%, you get our own photo. It's
-  off unless you tick it, and only shows when the server is set up for it.
 - **Clear about the rest:** shoes, socks, belts and hats get a plain "not yet".
 
 ## How it's built

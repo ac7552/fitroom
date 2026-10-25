@@ -58,7 +58,6 @@
            data-fitting-room-fits-url-value="<%= api_v1_fits_path %>"
            data-fitting-room-import-url-value="<%= api_v1_garment_imports_path %>"
            data-fitting-room-studio-url-value="<%= api_v1_studio_photos_path %>"
-           <% if StudioLook.available? %>data-fitting-room-look-url-value="<%= api_v1_studio_looks_path %>"<% end %>
            data-fitting-room-garment-value="<%= @garment.to_json %>"
            data-fitting-room-dress-value="<%= @dress.to_json %>">
     <div class="fit-panel fit-panel--inputs">
@@ -249,14 +248,6 @@
             <% { "#f4f2ee" => "White", "#ecd0b6" => "Light", "#cfa07a" => "Medium", "#a8724c" => "Tan", "#7c4e31" => "Brown", "#4b2f20" => "Deep" }.each_with_index do |(color, label), i| %>
               <label title="<%= label %>"><input type="radio" name="tone" value="<%= color %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changeTone"><span style="background: <%= color %>" aria-hidden="true"></span><span class="visually-hidden"><%= label %></span></label>
             <% end %>
-          </div>
-          <div class="studio-start">
-            <% if StudioLook.available? %>
-              <label class="studio-ai" title="Sends only the mannequin's picture to our photo service, which makes it look like a studio photo and keeps nothing.">
-                <input type="checkbox" autocomplete="off" data-fitting-room-target="lookAi"><span>Studio look (AI)</span>
-              </label>
-            <% end %>
-            <button type="button" class="studio-take" data-action="fitting-room#studioPhoto">Take a photo</button>
           </div>
           <p class="stage-note" data-fitting-room-target="stageNote"></p>
         </div>
