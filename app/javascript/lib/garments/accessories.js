@@ -19,11 +19,14 @@ const BODY_HEIGHT = 1.76  // the heights below are for a body this tall (m); the
 
 // Each shoe's shape (m): its collar's height at the heel and at the front (the tongue, or a loafer's vamp),
 // how far it dips at the sides, the sole's height, the toe's room in front of the toes, the upper's
-// thickness, how far the sole stands out past it, and how high the toe box rises.
+// thickness, how far the sole stands out past it, and how high the toe box rises; and, for a boot, how
+// square its toe is (2 is an oval; more is blunter), how many lugs stand out round its sole and how far,
+// how thick its padded collar is, and how much of the toe box's height keeps the toes' full length (a boot's
+// toe is tall and round, not sloping down to a point).
 export const SHOES = {
   sneaker: { back: 0.1, front: 0.088, dip: 0.016, sole: 0.027, toe: 0.014, thick: 0.007, flare: 0.004, box: 0.045 },
   hightop: { back: 0.145, front: 0.135, dip: 0.006, sole: 0.03, toe: 0.014, thick: 0.007, flare: 0.004, box: 0.045 },
-  boot: { back: 0.175, front: 0.165, dip: 0.004, sole: 0.03, toe: 0.012, thick: 0.008, flare: 0.005, box: 0.048 },
+  boot: { back: 0.195, front: 0.18, dip: 0.004, sole: 0.036, toe: 0.016, thick: 0.009, flare: 0.007, box: 0.066, square: 2.6, lugs: 16, lug: 0.0024, pad: 0.011, full: 0.8 },
   loafer: { back: 0.066, front: 0.052, dip: 0.012, sole: 0.016, toe: 0.02, thick: 0.005, flare: 0.002, box: 0.038 },
   sandal: { back: 0.024, front: 0.024, dip: 0, sole: 0.024, toe: 0.006, thick: 0.004, flare: 0.006, box: 0.024, strap: [0.035, 0.058] }
 }
@@ -125,7 +128,8 @@ function ray(hull, from, a) {
   return best
 }
 
-// One shoe's geometry (side "L" or "R"), in two groups: 0 the sole (and its underside), 1 the upper.
+// One shoe's geometry (side "L" or "R"): groups 0 the sole (and its underside), 1 the upper, 2 laces, 3 a
+// boot's padded collar, 4 its eyelets.
 export function shoeGeometry(body, frame, side, styleName) {
   const style = SHOES[styleName] ?? SHOES.sneaker
   const s = (frame.top - frame.floor) / BODY_HEIGHT
@@ -134,6 +138,7 @@ export function shoeGeometry(body, frame, side, styleName) {
   const slices = legSlices(body, frame, side, floor + h("back") + 0.02)
   // Rounded off round the foot (a shoe's toe is round, not the point of the big toe).
   // The front half is filled out to an ellipse as long as the foot and as wide as its ball.
+  const square = style.square ?? 2
   const round = reach => {
     const blurred = Float64Array.from(reach, (_, j) => {
       let sum = 0, w = 0
@@ -152,7 +157,7 @@ export function shoeGeometry(body, frame, side, styleName) {
       const a = angleOf(j), c = Math.cos(a)
       if (c <= 0) return r
       const width = Math.sin(a) > 0 ? left : right
-      const ellipse = 1 / Math.sqrt((c / length) ** 2 + (Math.sin(a) / width) ** 2)
+      const ellipse = 1 / (Math.abs(c / length) ** square + Math.abs(Math.sin(a) / width) ** square) ** (1 / square)
       return Math.max(r, ellipse * 0.98)
     })
   }
@@ -170,7 +175,8 @@ export function shoeGeometry(body, frame, side, styleName) {
     const key = y.toFixed(5)
     const slice = rounded.get(key) ?? rounded.set(key, (sl => ({ centre: sl.centre, reach: round(sl.reach) }))(slices.at(y))).get(key)
     const a = angleOf(j), dx = Math.sin(a), dz = Math.cos(a)
-    const lift = Math.min(1, Math.max(0, (y - floor - h("box") * 0.55) / (h("box") * 0.45)))
+    const full = style.full ?? 0.55
+    const lift = Math.min(1, Math.max(0, (y - floor - h("box") * full) / (h("box") * (1 - full) + 1e-6)))
     const keep = 1 - lift * lift * (3 - 2 * lift)
     // The toe box: the toes' outline (about their own middle), blended into this slice's as it rises.
     const sx = slice.centre[0] + slice.reach[j] * dx, sz = slice.centre[1] + slice.reach[j] * dz
@@ -181,13 +187,15 @@ export function shoeGeometry(body, frame, side, styleName) {
     const forward = Math.max(0, dz) ** 1.6
     let out = h("thick") + h("toe") * forward * (1 - lift * 0.6)
     if (y < floor + h("sole") + 1e-6) out += h("flare")
+    // A boot's lugs: blocks of tread standing out round the bottom of the sole.
+    if (style.lugs && y < floor + h("sole") * 0.6) out += h("lug") * (0.5 + 0.5 * Math.sin(style.lugs * a)) ** 2
     return { x: x + out * dx, z: z + out * dz, centre: slice.centre }
   }
   // Rows up each column: the sole's (level, so its top edge is straight), then the upper's up to the collar.
-  const soleRows = [0, 0.5, 1].map(t => floor + 0.0008 + t * (h("sole") - 0.0008))
+  const soleRows = (style.lugs ? [0, 0.3, 0.55, 0.62, 1] : [0, 0.5, 1]).map(t => floor + 0.0008 + t * (h("sole") - 0.0008))
   const upperRows = 14
   const sandal = styleName === "sandal"
-  const positions = [], colors = [], indexSole = [], indexUpper = []
+  const positions = [], colors = [], indexSole = [], indexUpper = [], indexCollar = [], indexEyelets = []
   const columns = AROUND
   const grid = []   // grid[row][j]: vertex index
   const put = (x, y, z) => { positions.push(x, y, z); return positions.length / 3 - 1 }
@@ -203,7 +211,8 @@ export function shoeGeometry(body, frame, side, styleName) {
   }
   const quad = (list, a, b, c, d) => list.push(a, b, d, b, c, d)
   for (let row = 0; row + 1 < height; row++) {
-    const list = row < soleRows.length - 1 ? indexSole : indexUpper
+    // The sole's rows, and with a welt (a boot's) the ledge from its top in to the upper, in the sole's colour.
+    const list = row < soleRows.length - (style.lugs ? 0 : 1) ? indexSole : indexUpper
     for (let j = 0; j < columns; j++) {
       const jn = (j + 1) % columns
       quad(list, grid[row][j], grid[row][jn], grid[row + 1][jn], grid[row + 1][j])
@@ -215,25 +224,42 @@ export function shoeGeometry(body, frame, side, styleName) {
   for (let j = 0; j < columns; j++) indexSole.push(under, grid[0][(j + 1) % columns], grid[0][j])
   const top = grid[soleRows.length - 1]
   if (sandal) {
-    const middle = put(base.centre[0], soleRows[2], base.centre[1])
+    const middle = put(base.centre[0], soleRows[soleRows.length - 1], base.centre[1])
     for (let j = 0; j < columns; j++) indexSole.push(middle, top[j], top[(j + 1) % columns])
   } else {
-    // The collar's padded edge: a rim turned in over the top, then down inside.
-    const rimIn = [], wall = []
+    // The collar's padded edge: a rim turned in over the top, then down inside. A boot's is a thick padded
+    // roll in its own leather: out round the top of the shaft, over, and down inside.
+    const pad = style.pad ? h("pad") : 0
+    const rings = pad
+      ? [[0.45, -0.032, 0.35], [1, -0.02, 0.85], [1.15, -0.008, 1], [0.95, 0.002, 0.7], [0.3, 0.006, 0], [-0.5, 0.0, -0.6], [-0.9, -0.02, -1]]
+      : [[0, 0.002, -1.1], [0, -0.018, -1.43]]
+    const ringRows = rings.map(() => [])
     for (let j = 0; j < columns; j++) {
-      const a = angleOf(j), v = grid[height - 1][j]
+      const v = grid[height - 1][j]
       const x = positions[3 * v], y = positions[3 * v + 1], z = positions[3 * v + 2]
       const c = slices.at(y).centre
       const dx = x - c[0], dz = z - c[1], len = Math.hypot(dx, dz) || 1
-      const t = h("thick") * 1.1
-      rimIn.push(put(x - (dx / len) * t, y + 0.002, z - (dz / len) * t))
-      wall.push(put(x - (dx / len) * t * 1.3, y - 0.018 * s, z - (dz / len) * t * 1.3))
-      void a
+      const t = h("thick")
+      rings.forEach(([outPad, up, inThick], r) => {
+        const out = pad ? outPad * pad - (inThick < 0 ? -inThick * t * 1.2 : 0) : inThick * t
+        ringRows[r].push(put(x + (dx / len) * out, y + up * s, z + (dz / len) * out))
+      })
     }
-    for (let j = 0; j < columns; j++) {
-      const jn = (j + 1) % columns
-      quad(indexUpper, grid[height - 1][j], grid[height - 1][jn], rimIn[jn], rimIn[j])
-      quad(indexUpper, rimIn[j], rimIn[jn], wall[jn], wall[j])
+    const collarList = pad ? indexCollar : indexUpper
+    const from = pad ? 0 : -1
+    for (let r = from; r + 1 < rings.length; r++) {
+      const lower = r < 0 ? grid[height - 1] : ringRows[r], upper = ringRows[r + 1]
+      for (let j = 0; j < columns; j++) {
+        const jn = (j + 1) % columns
+        quad(r < 0 ? indexUpper : collarList, lower[j], lower[jn], upper[jn], upper[j])
+      }
+    }
+    if (pad) {
+      // The shaft up into the bottom of the roll.
+      for (let j = 0; j < columns; j++) {
+        const jn = (j + 1) % columns
+        quad(indexUpper, grid[height - 1][j], grid[height - 1][jn], ringRows[0][jn], ringRows[0][j])
+      }
     }
   }
   // Laces up the front of a sneaker or a boot: bars across the instep, from above the toes to the collar.
@@ -264,15 +290,26 @@ export function shoeGeometry(body, frame, side, styleName) {
         const corner = (i, j2, k2) => put(...[0, 1, 2].map(c => p[c] + n[c] * 0.0016 * s + across[c] * half[0] * i + along[c] * half[1] * j2 + n[c] * half[2] * k2))
         const v = [corner(-1, -1, -1), corner(1, -1, -1), corner(1, 1, -1), corner(-1, 1, -1), corner(-1, -1, 1), corner(1, -1, 1), corner(1, 1, 1), corner(-1, 1, 1)]
         for (const [a2, b2, c2, d2] of [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]) quad(indexLaces, v[a2], v[b2], v[c2], v[d2])
+        // A boot's metal eyelets (or hooks, higher up) at each end of the lace.
+        if (styleName === "boot") {
+          for (const end of [-1, 1]) {
+            const e = (i, j2, k2) => put(...[0, 1, 2].map(c => p[c] + n[c] * 0.0012 * s + across[c] * (half[0] * end * 1.08 + 0.0028 * s * i) + along[c] * 0.0028 * s * j2 + n[c] * 0.0014 * s * k2))
+            const w = [e(-1, -1, -1), e(1, -1, -1), e(1, 1, -1), e(-1, 1, -1), e(-1, -1, 1), e(1, -1, 1), e(1, 1, 1), e(-1, 1, 1)]
+            for (const [a2, b2, c2, d2] of [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]) quad(indexEyelets, w[a2], w[b2], w[c2], w[d2])
+          }
+        }
       }
     }
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex([...indexSole, ...indexUpper, ...indexLaces])
-  geometry.addGroup(0, indexSole.length, 0)
-  geometry.addGroup(indexSole.length, indexUpper.length, 1)
-  if (indexLaces.length) geometry.addGroup(indexSole.length + indexUpper.length, indexLaces.length, 2)
+  // Groups: 0 sole, 1 upper, 2 laces, 3 a boot's padded collar, 4 its eyelets.
+  geometry.setIndex([...indexSole, ...indexUpper, ...indexLaces, ...indexCollar, ...indexEyelets])
+  let at = 0
+  ;[indexSole, indexUpper, indexLaces, indexCollar, indexEyelets].forEach((list, group) => {
+    if (list.length) geometry.addGroup(at, list.length, group)
+    at += list.length
+  })
   geometry.computeVertexNormals()
   void colors
   return geometry

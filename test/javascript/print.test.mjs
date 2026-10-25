@@ -177,3 +177,21 @@ test("a striped front keeps its stripes, while a single fold's line is dropped",
   assert.ok(make(4).print?.coverage > 0.02)
   assert.equal(make(1).print, null)
 })
+
+test("wide legs lying touching don't put the crotch down at the knees", () => {
+  const { data, w, h } = bottoms({ hem: 48 })
+  // Fill the gap between the legs down to near the hem, as wide sweatpants laid flat lie touching.
+  for (let y = 100; y < 250; y++) for (let x = 70; x < 170; x++) data.set([40, 40, 44, 255], 4 * (y * w + x))
+  const { layout } = readBottom(data, w, h)
+  const share = (layout.crotch - layout.top) / (layout.bottom - layout.top)
+  assert.ok(share > 0.27 && share < 0.4, `crotch at ${share.toFixed(2)} of the length`)
+})
+
+test("a pale logo down a leg's outer seam stays on the photo", () => {
+  const { data, w, h } = bottoms({ hem: 40 })
+  // A cream band of lettering right along the photo's left leg's outer edge, near the backdrop's colour.
+  for (let y = 130; y < 250; y++) for (let x = 71; x < 79; x++) data.set([222, 218, 205, 255], 4 * (y * w + x))
+  const read = readBottom(data, w, h)
+  const at = (x, y) => [...read.filled.slice(4 * (y * w + x), 4 * (y * w + x) + 3)]
+  assert.ok(at(75, 190).every(v => v > 170), `logo ${at(75, 190)}`)
+})

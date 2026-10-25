@@ -355,6 +355,61 @@ export function promptPoints(data, w, h, kind = "top") {
   return points.length ? { points, mask, bg } : null
 }
 
+// What a segmentation model left out of a garment that's really something else in the photo: a model's
+// hand or arm, which reaches in from the garment's outline and is skin, of any tone. Any other part it left
+// out (a print, a logo down a seam, a drawstring, which it often takes for something separate) is put back:
+// keep is set to 1 there. data: the photo's RGBA pixels. Returns keep.
+export function keepInside(mask, keep, w, h, data = null, rim = Math.max(3, Math.round(w * 0.008))) {
+  // The garment a few pixels in from its outline: a model's mask often shaves the outline itself, and
+  // that thin rim would join a print to the edge.
+  let inner = Uint8Array.from(mask)
+  for (let pass = 0; pass < rim; pass++) {
+    const next = Uint8Array.from(inner)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      if (inner[i] && (x === 0 || y === 0 || x === w - 1 || y === h - 1 || !inner[i - 1] || !inner[i + 1] || !inner[i - w] || !inner[i + w])) next[i] = 0
+    }
+    inner = next
+  }
+  // On the rim itself, only skin goes (a print or logo can reach the very edge).
+  if (data) for (let i = 0; i < w * h; i++) if (mask[i] && !inner[i] && !keep[i] && !isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2])) keep[i] = 1
+  mask = inner
+  const left = i => mask[i] && !keep[i]
+  const seen = new Uint8Array(w * h), stack = []
+  for (let start = 0; start < w * h; start++) {
+    if (!left(start) || seen[start]) continue
+    // One left-out patch, and whether it touches the outline (a pixel next to it outside the cut-out).
+    const part = []
+    let edge = false
+    seen[start] = 1
+    stack.push(start)
+    while (stack.length) {
+      const i = stack.pop()
+      part.push(i)
+      const x = i % w, y = (i - x) / w
+      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) { edge = true; continue }
+        const j = ny * w + nx
+        if (!mask[j]) { edge = true; continue }
+        if (left(j) && !seen[j]) { seen[j] = 1; stack.push(j) }
+      }
+    }
+    let skin = 0
+    if (data) for (const i of part) if (isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2])) skin++
+    if (!edge || !data || skin < part.length * 0.35) for (const i of part) keep[i] = 1
+  }
+  return keep
+}
+
+// Whether a colour could be skin, light to deep (in YCbCr's usual skin box, and neither near grey nor
+// nearly black).
+function isSkin(r, g, b) {
+  const y = 0.299 * r + 0.587 * g + 0.114 * b
+  const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b
+  const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b
+  return y > 35 && cb >= 77 && cb <= 127 && cr >= 137 && cr <= 173 && r > b
+}
+
 // What the segmentation model kept (keep: 1 per pixel) and the backdrop cut didn't: everything of the
 // garment's piece it left out (a hand, an arm, a bag, a hanger) painted the backdrop's colour, so reading
 // the photo goes on as if they weren't there. Returns how much of the garment's piece was painted out
@@ -410,7 +465,12 @@ export function shoeColors(data, w, h) {
     const best = [...bins.values()].sort((p, q) => q[3] - p[3])[0]
     return best && "#" + best.slice(0, 3).map(v => Math.round(v / best[3]).toString(16).padStart(2, "0")).join("")
   }
-  return { color: commonest(top, soleFrom - 1), sole: commonest(soleFrom, bottom) }
+  // The band round the top (a boot's padded collar), when it's a different colour from the rest.
+  const color = commonest(top, soleFrom - 1)
+  const band = commonest(top, top + Math.max(1, Math.round((bottom - top) * 0.07)))
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+  const apart = color && band ? Math.hypot(...rgb(color).map((v, i) => v - rgb(band)[i])) : 0
+  return { color, sole: commonest(soleFrom, bottom), collar: apart > 40 ? band : null }
 }
 
 // The garment in a photo: each pixel's Lab colour, the background's colour (the median round the photo's
@@ -694,11 +754,23 @@ export function measureBottomMask(mask, w, h) {
   if (waist < w * 0.08) return null
   let hips = 0
   for (let y = row(0.02); y <= row(0.33); y++) hips = Math.max(hips, span(y))
-  // The crotch: the first row, a little way down, where the garment parts into two legs (and stays parted).
+  // The crotch: the first row, a little way down, where the garment parts into two legs and stays parted
+  // (nearly every row for the next 15% of its length: a drawstring's gap or a pocket's below the waistband
+  // closes again).
   let crotch = -1
-  for (let y = row(0.12); y <= row(0.85) && crotch < 0; y++) {
-    if (runs(y).length === 2 && [1, 2, 3].every(k => runs(Math.min(bottom, y + Math.round(tall * 0.02) * k)).length === 2)) crotch = y
+  const parted = y => runs(Math.min(bottom, y)).length >= 2
+  for (let y = row(0.12); y <= row(0.95) && crotch < 0; y++) {
+    if (runs(y).length !== 2) continue
+    const span15 = Math.max(4, Math.min(Math.round(tall * 0.15), bottom - y))
+    let apart = 0
+    for (let k = 0; k < span15; k++) if (parted(y + k)) apart++
+    if (apart >= span15 * 0.9) crotch = y
   }
+  // Long pants whose wide legs lie touching for most of their length part only near the hem: the crotch is
+  // about a third of the way down, as on most pants.
+  // And long pants don't part higher than about 28% of the way down (waist to crotch is 25 to 35 cm of 90 to
+  // 110): a parting above that is the shadow along the front seam, with the legs lying touching below it.
+  if (crotch >= 0 && tall / waist > 1.8 && ((crotch - top) / tall > 0.55 || (crotch - top) / tall < 0.27)) crotch = Math.round(top + tall * 0.33)
   const leg = y => { const r = runs(y); return r.length === 2 ? median([r[0][1] - r[0][0], r[1][1] - r[1][0]]) : null }
   const at = (y, n = 5) => median(Array.from({ length: n }, (_, k) => leg(Math.min(bottom, y + k))).filter(v => v != null)) / waist
   if (crotch < 0) {
@@ -807,7 +879,17 @@ export function readBottom(data, w, h) {
   toLab(rgb[0], rgb[1], rgb[2], clothLab, 0)
   const apart = Math.hypot(clothLab[0] - bg[0], clothLab[1] - bg[1], clothLab[2] - bg[2])
   if (apart > 20) {
-    const strict = Uint8Array.from(mask, (on, i) => (on && Math.hypot(lab[3 * i] - bg[0], lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) > apart * 0.35 ? 1 : 0))
+    // Only down the middle, between the legs: a light logo down a leg's outer seam, as near the backdrop's
+    // colour as that sliver, stays.
+    const middle = new Uint8Array(w * h)
+    for (let y = 0; y < h; y++) {
+      let a = -1, b = -1
+      for (let x = 0; x < w; x++) if (mask[y * w + x]) { if (a < 0) a = x; b = x }
+      if (a < 0) continue
+      const from = Math.round(a + (b - a) * 0.3), to = Math.round(b - (b - a) * 0.3)
+      for (let x = from; x <= to; x++) middle[y * w + x] = 1
+    }
+    const strict = Uint8Array.from(mask, (on, i) => (on && (!middle[i] || Math.hypot(lab[3 * i] - bg[0], lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) > apart * 0.35) ? 1 : 0))
     mask = largestPiece(strict, w, h).mask
     ;[top, bottom] = extent()
   }

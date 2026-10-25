@@ -56,6 +56,7 @@ export default class extends Controller {
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact", "lookAi",
+    "loading", "loadingLabel", "loadingBar",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
   ]
   static values = { fitsUrl: String, importUrl: String, studioUrl: String, lookUrl: String, garment: Object, dress: Object }
@@ -67,10 +68,7 @@ export default class extends Controller {
     this.shownBodyType = this.bodyType
     this.stage.setBodyType(this.bodyType)
     this.floatSwitches()
-    this.stage.onDrape = (phase, done) => {
-      this.draping = done ? null : DRAPE_TEXT[phase] ?? null
-      this.renderStageNote()
-    }
+    this.stage.onDrape = (phase, done) => this.showLoading(done ? null : DRAPE_TEXT[phase] ?? null)
     this.outfit = {}
     this.addItem(this.garmentValue)
     this.renderOwnSizes()
@@ -172,6 +170,7 @@ export default class extends Controller {
           if (!read?.color || this.outfit[kind] !== item) return
           garment.color = garment.photoColor = asNamed(read.color, garment.color_name, garment.color)
           if (read.sole) garment.sole = read.sole
+          if (read.collar) garment.collar = read.collar
           if (item.fit) this.render()
         }).catch(() => {})
       }
@@ -844,6 +843,7 @@ export default class extends Controller {
       style: garment.style,
       cut: garment.cut ?? null,
       sole: garment.sole ?? null,
+      collar: garment.collar ?? null,
       onePiece: Boolean(garment.one_piece),
       buckle: garment.buckle ?? null
     })))
@@ -906,11 +906,28 @@ export default class extends Controller {
     return `We guessed your ${listed(names)}. Add ${guessed.length === 1 ? "it" : "them"} in step 2 to see a truer fit.`
   }
 
+  // While the clothes are sewn, settle and move into a pose: a small pill over the figure saying which, with
+  // how far along it is. It fades once they're on.
+  showLoading(words) {
+    if (!this.hasLoadingTarget) return
+    const box = this.loadingTarget
+    if (!words) {
+      if (!box.hidden) box.classList.add("is-done")
+      clearTimeout(this.loadingTimer)
+      this.loadingTimer = setTimeout(() => { if (box.classList.contains("is-done")) box.hidden = true }, 400)
+      return
+    }
+    clearTimeout(this.loadingTimer)
+    box.classList.remove("is-done")
+    box.hidden = false
+    if (this.loadingLabelTarget.textContent !== words) this.loadingLabelTarget.textContent = words
+    this.loadingBarTarget.style.transform = `scaleX(${Math.max(0.04, this.stage.progress()).toFixed(3)})`
+  }
+
   renderStageNote() {
     if (!this.hasStageNoteTarget || !this.items().some(i => i.fit)) return
     const notes = []
     if (this.guessed?.length) notes.push(this.guessed.length === REQUIRED.length ? "An example body." : "Some of your numbers are guesses.")
-    if (this.draping) notes.push(this.draping)
     if (this.outfit.coat && this.outfit.jacket) notes.push("The coat over a jacket is drawn from a jacket, so it looks shorter here.")
     // A chart of usual sizes, not the clothes' own measurements: the fit shown is an estimate.
     const estimated = this.items().filter(({ garment }) => ["body", "sizes"].includes(garment.chart.kind)).map(({ kind }) => KIND_WORDS[kind] ?? kind)

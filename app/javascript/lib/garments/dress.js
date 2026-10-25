@@ -348,9 +348,14 @@ export class DrapedTop {
     // a heavier pull for a moment (a stretch knit or a rib cuff would be stretched by it, and spring back
     // crumpled); a skirt, held at its waistband, is sewn hanging, so it falls straight.
     const skirt = this.bottoms && item.style === "skirt"
-    this.steps = this.drape.phases(skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
+    const phases = skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
       : this.bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: this.drape.snug ? 0 : 60 }
-      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 })
+      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 }
+    this.steps = this.drape.phases(phases)
+    // About how many steps the drape takes (sewing stops when the seams close, so it's a guess), for a
+    // progress bar.
+    this.frames = 0
+    this.expected = (phases.relaxFrames ?? 0) + (phases.heavyFrames ?? 0) + phases.settleFrames + (this.bottoms ? 300 : 70)
     this.phase = "sewing"
     this.done = false
     this.frame = frame
@@ -376,9 +381,15 @@ export class DrapedTop {
         break
       }
       this.phase = next.value
+      this.frames++
     } while (performance.now() < end)
     this.update()
     return !this.done
+  }
+
+  // How far along the drape is, 0 to 1 (an estimate until it's done).
+  progress() {
+    return this.done ? 1 : Math.min(0.97, this.frames / this.expected)
   }
 
   makeGeometry() {

@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { paintOut, pickMask, promptPoints } from "../../app/javascript/lib/garments/print.js"
+import { keepInside, paintOut, pickMask, promptPoints } from "../../app/javascript/lib/garments/print.js"
 
 // A navy tee on a light backdrop with a skin-coloured hand held against its side.
 function photo() {
@@ -51,4 +51,23 @@ test("picks the tightest confident mask that still covers the garment, not the o
   // Not confident in the tight one: the most confident that covers enough.
   assert.equal(pickMask(bits, 3, plane, prompt.mask, [0.99, 0.6, 0.99]), 0)
   assert.equal(pickMask(new Uint8Array(3 * plane), 3, plane, prompt.mask, [1, 1, 1]), -1)
+})
+
+test("a print the model left out stays; only what reaches in from the garment's edge is painted out", () => {
+  const { data, w, h } = photo()
+  const prompt = promptPoints(data, w, h, "top")
+  const keep = Uint8Array.from(prompt.mask)
+  // The model left out the hand (at the tee's side, on its outline) and a print in the middle of the front.
+  for (let i = 0; i < w * h; i++) {
+    const x = i % w, y = Math.floor(i / w)
+    if ((x >= 150 && x < 170 && y > 110 && y < 150) || (x >= 85 && x < 115 && y >= 90 && y < 120)) keep[i] = 0
+  }
+  keepInside(prompt.mask, keep, w, h, data)
+  assert.equal(keep[100 * w + 100], 1, "the print is kept")
+  assert.equal(keep[130 * w + 160], 0, "the hand still goes")
+  // A dark logo along the tee's edge, left out too, isn't skin: it stays.
+  const logo = Uint8Array.from(prompt.mask)
+  for (let i = 0; i < w * h; i++) { const x = i % w, y = Math.floor(i / w); if (x >= 51 && x < 60 && y > 80 && y < 140) { logo[i] = 0; data.set([20, 20, 20, 255], 4 * i) } }
+  keepInside(prompt.mask, logo, w, h, data)
+  assert.equal(logo[110 * w + 53], 1, "the logo at the edge is kept")
 })

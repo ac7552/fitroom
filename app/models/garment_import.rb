@@ -138,7 +138,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 23
+  FORMAT = 24
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -676,7 +676,7 @@ class GarmentImport
             else "belt"
             end
     fabric = case words
-             when /suede/i then "suede"
+             when /suede|nubuck/i then "suede"
              when /leather/i then "leather"
              when /canvas|nylon|webbing|mesh|knit/i then "canvas"
              else kind == "socks" ? "knit" : kind == "belt" ? "leather" : "canvas"

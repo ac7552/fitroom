@@ -7,7 +7,7 @@
 // by the browser after that). The photo itself never leaves the page. Anything that goes wrong (no
 // network, an old browser, a mask that doesn't look like the garment) leaves the photo as it was.
 
-import { paintOut, pickMask, promptPoints } from "lib/garments/print"
+import { keepInside, paintOut, pickMask, promptPoints } from "lib/garments/print"
 
 const LIBRARY = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1"
 const MODEL = "Xenova/slimsam-77-uniform"
@@ -75,6 +75,8 @@ async function clean(src, kind) {
       }
     }
   }
+  // Only a hand or an arm reaching in from outside the garment: a print the model left out stays.
+  keepInside(prompt.mask, keep, w, h, pixels.data)
   const share = paintOut(new Uint8ClampedArray(pixels.data), w, h, prompt.mask, keep, prompt.bg)
   // Nothing worth painting out, or too much to trust: the photo as it was.
   if (share < 0.004 || share > 0.35) return src

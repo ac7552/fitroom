@@ -356,10 +356,19 @@ export class FittingStage {
     for (const side of ["L", "R"]) {
       if (socks) hang(new THREE.Mesh(sockGeometry(body, frame, side, socks.style), accessoryMaterial("knit", socks.color)), side)
       if (shoes) {
-        const upper = accessoryMaterial(shoes.fabric === "leather" || shoes.fabric === "suede" ? shoes.fabric : "canvas", shoes.color)
-        const sole = accessoryMaterial(shoes.style === "loafer" || shoes.style === "boot" ? "leather" : "rubber", shoes.sole ?? (shoes.style === "sneaker" || shoes.style === "hightop" ? "#ecebe6" : "#2a2522"))
-        const laces = accessoryMaterial("canvas", shoes.laces ?? (shoes.style === "boot" ? "#3a2a1e" : shoes.color))
-        this.feet.shoes[side] = hang(new THREE.Mesh(shoeGeometry(body, frame, side, shoes.style), [sole, upper, laces]), side)
+        const boot = shoes.style === "boot"
+        // A lace-up boot's leather is nearly always matte (nubuck, oiled or suede), not a shoe's polish.
+        const upper = accessoryMaterial(boot && shoes.fabric === "leather" ? "suede" : shoes.fabric === "leather" || shoes.fabric === "suede" ? shoes.fabric : "canvas", shoes.color)
+        // A loafer's sole is leather; others are rubber (a boot's lug sole too).
+        const sole = accessoryMaterial(shoes.style === "loafer" ? "leather" : "rubber", shoes.sole ?? (shoes.style === "sneaker" || shoes.style === "hightop" ? "#ecebe6" : "#2a2522"))
+        const laces = accessoryMaterial("canvas", shoes.laces ?? (boot ? `#${new THREE.Color(shoes.color).offsetHSL(0, -0.15, -0.16).getHexString()}` : shoes.color))
+        // A boot's padded collar, in a darker leather unless the photo shows its own colour.
+        const collar = accessoryMaterial("leather", shoes.collar ?? `#${new THREE.Color(shoes.color).offsetHSL(0, -0.25, -0.3).getHexString()}`)
+        if (boot) { sole.roughness = 0.9; sole.clearcoat = 0 }
+        collar.clearcoat = 0.1
+        collar.roughness = 0.6
+        const eyelets = accessoryMaterial("metal", "#8c8270")
+        this.feet.shoes[side] = hang(new THREE.Mesh(shoeGeometry(body, frame, side, shoes.style), [sole, upper, laces, collar, eyelets]), side)
         if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side)
       }
     }
@@ -722,6 +731,7 @@ export class FittingStage {
     const steps = long ? 6 : 3
     let before = null
     for (let s = 1; s <= steps; s++) {
+      d.poseStep = (s - 1) / steps
       this.applyPose(s / steps)
       const posed = skinPoints(d.restBind, d.weights.skinIndex, d.weights.skinWeight, this.meshes.body)
       const now = this.snapshotNow(d.slot)
@@ -1177,6 +1187,7 @@ export class FittingStage {
         return
       }
       if (d.posing) {
+        this.onDrape?.("posing", false)
         const end = performance.now() + this.drapeBudget
         while (performance.now() < end) {
           if (d.posing.next().done) { d.posing = null; d.top.shade(); break }
@@ -1189,6 +1200,21 @@ export class FittingStage {
         if (d.posing) return
       }
     }
+  }
+
+  // How far along getting everything on screen is, 0 to 1: each garment's drape counts for most of its
+  // share, moving it into the pose for the rest; a garment waiting for the one under it counts as not begun.
+  progress() {
+    const parts = []
+    for (const slot of this.order) {
+      if (this.waiting[slot]) { parts.push(0); continue }
+      const d = this.slots[slot]
+      if (!d) continue
+      if (!d.top.done) parts.push(0.8 * d.top.progress())
+      else if (d.posedAs !== this.pose || d.posing) parts.push(0.8 + 0.2 * (d.posedAs === this.pose ? d.poseStep ?? 0 : 0))
+      else parts.push(1)
+    }
+    return parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 1
   }
 
   show(d) {
