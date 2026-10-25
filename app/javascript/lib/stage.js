@@ -272,7 +272,6 @@ export class FittingStage {
     const modelCoat = Boolean(worn.coat && !drapedCoat)
     const body = this.meshes.body
     body.visible = this.view !== "ghost"
-    for (const part of [this.egg, this.eggNeck]) if (part) part.visible = body.visible
     body.material.userData.hideJacket.value = tailored || modelCoat ? 1 : 0
     body.material.userData.hideCasual.value = 0
     // Pants are draped, so the body under them stays (the cloth lies on it).
@@ -882,17 +881,19 @@ export class FittingStage {
     for (const kind of ["jacket", "coat", "trousers"]) this.meshes[kind].material = this.materials[kind].cloth
   }
 
-  // A faceless egg in place of MakeHuman's head, as on a shop's display mannequin, on a smooth oval neck that
-  // rises from a level cut on the body's neck (see NECK) up inside the egg. Both hang from the head bone, so
-  // they follow the pose and the mannequin's height.
+  // The head as the cloth meets it: an egg round MakeHuman's head (the mannequin shows its own sculpted
+  // head, in the same matte finish), on an oval neck, both hanging from the head bone so they follow the pose
+  // and the mannequin's height. Never drawn: a hood or collar drapes over this smooth shape rather than
+  // catching on the face.
   addEggHead({ centre, radii }) {
     const material = this.meshes.body.material.userData.plain
     const egg = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), material)
-    // A little longer at the bottom than the head it replaces.
-    egg.scale.set(radii[0], radii[1] * 1.1, radii[2] * 0.96)
+    // A little bigger all round than the head, so a hood lies over its crown and the back of the skull (a
+    // little longer at the bottom, down to the jaw).
+    egg.scale.set(radii[0] * 1.08, radii[1] * 1.14, radii[2] * 1.18)
     egg.position.fromArray(centre)
-    egg.position.y -= radii[1] * 0.1
-    egg.position.z -= 0.018   // back a little, over the neck
+    egg.position.y -= radii[1] * 0.06
+    egg.position.z -= 0.012   // the back of the skull reaches further back than the face does forward
     // The neck leans forward a little, from the body's neck into the middle of the egg (which sits forward of
     // it). Each body has its own (the women's is slimmer); both are kept, in the model's space.
     const neckAt = ({ radii, centreZ, flare = 1.04 }) => {
@@ -914,6 +915,7 @@ export class FittingStage {
     const head = this.model.getObjectByName("head")
     head?.attach(egg)
     head?.attach(neck)
+    egg.visible = neck.visible = false
     this.eggScale = egg.scale.clone()
     this.egg = egg
     this.eggNeck = neck
@@ -1356,19 +1358,16 @@ function mannequinMaterial() {
         attribute float _cover_jacket;
         attribute float _cover_casual;
         attribute float _cover_trousers;
-        attribute float _head;
         varying float vCovered;
-        varying float vNeck;
         uniform float uHideJacket;
         uniform float uHideCasual;
         uniform float uHideTrousers;`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
-        vCovered = max(max(max(_cover_jacket * uHideJacket, _cover_casual * uHideCasual), _cover_trousers * uHideTrousers), _head);
-        vNeck = position.y;`)
+        vCovered = max(max(_cover_jacket * uHideJacket, _cover_casual * uHideCasual), _cover_trousers * uHideTrousers);`)
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vCovered;\nvarying float vNeck;")
+      .replace("#include <common>", "#include <common>\nvarying float vCovered;")
       .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
-        if (vCovered > 0.5 || vNeck > ${NECK.cut.toFixed(4)}) discard;`)
+        if (vCovered > 0.5) discard;`)
   }
   return material
 }
