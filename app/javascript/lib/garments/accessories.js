@@ -315,6 +315,80 @@ export function shoeGeometry(body, frame, side, styleName) {
   return geometry
 }
 
+// Reshapes a 3D shoe to its side photo's outline (see print.js's shoeSide): each slice from heel to toe is
+// stretched up or down to the height the photo shows there, as a share of the shoe's length, so a boot's
+// shaft, a chunky sole or a low toe stand as photographed. Never pulled down into the foot. Null side: as built.
+export function shapeShoeToPhoto(geometry, side) {
+  if (!side) return geometry
+  const p = geometry.attributes.position.array, n = p.length / 3
+  const { floor, back, front, tops, bins, along } = shoeColumns(p, side.top.length)
+  const length = (side.right - side.left)
+  const wanted = Array.from({ length: bins }, (_, b) => ((side.bottom[b] - side.top[b]) * side.aspect / length) * (front - back))
+  const smooth = soften(soften(wanted))
+  const factor = smooth.map((v, b) => Math.min(2.5, Math.max(0.97, v / (tops[b] || v || 1))))
+  for (let i = 0; i < n; i++) {
+    const f = lerpAt(factor, along(p[3 * i + 2]))
+    p[3 * i + 1] = floor + (p[3 * i + 1] - floor) * f
+  }
+  geometry.attributes.position.needsUpdate = true
+  geometry.computeVertexNormals()
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+// A shoe's points by column, heel to toe: its floor, back and front, and its top in each of bins columns.
+function shoeColumns(p, bins) {
+  const n = p.length / 3
+  let floor = Infinity, back = Infinity, front = -Infinity
+  for (let i = 0; i < n; i++) { floor = Math.min(floor, p[3 * i + 1]); back = Math.min(back, p[3 * i + 2]); front = Math.max(front, p[3 * i + 2]) }
+  const along = z => Math.min(1, Math.max(0, (z - back) / (front - back || 1)))
+  const tops = new Float64Array(bins)
+  for (let i = 0; i < n; i++) {
+    const b = Math.min(bins - 1, Math.floor(along(p[3 * i + 2]) * bins))
+    tops[b] = Math.max(tops[b], p[3 * i + 1] - floor)
+  }
+  for (let b = 1; b < bins; b++) if (!tops[b]) tops[b] = tops[b - 1]
+  for (let b = bins - 2; b >= 0; b--) if (!tops[b]) tops[b] = tops[b + 1]
+  // Smoothed, so a lace or a lug standing up doesn't crumple the shoe or the photo on it.
+  return { floor, back, front, tops: soften(soften(tops)), bins, along }
+}
+
+// A list blurred over its neighbours, two either side.
+function soften(list) {
+  const k = [1, 4, 6, 4, 1], n = list.length
+  return Array.from(list, (_, b) => k.reduce((sum, w, d) => sum + w * list[Math.min(n - 1, Math.max(0, b + d - 2))], 0) / 16)
+}
+
+function lerpAt(list, u) {
+  const f = u * (list.length - 1), b = Math.min(list.length - 2, Math.floor(f)), t = f - b
+  return list[b] * (1 - t) + list[b + 1] * t
+}
+
+// Wraps a shoe's side photo round its 3D shoe (see print.js's shoeTexture): each point takes the photo's
+// pixel as far from heel to toe, and as far up from the floor to the shoe's top there, as it is on the 3D
+// shoe. Fitting the photo's outline to the shoe's column by column keeps the logo, stitching and sole where
+// they are on the real one, whatever the two shapes' differences. Seen from the inside of the foot, the
+// photo shows mirrored. Sets the geometry's uv.
+const EDGE_IN = 0.025
+export function wrapShoePhoto(geometry, side) {
+  const p = geometry.attributes.position.array, n = p.length / 3
+  const { floor, tops, along } = shoeColumns(p, side.top.length)
+  const at = lerpAt
+  const uv = new Float32Array(2 * n)
+  for (let i = 0; i < n; i++) {
+    const u = along(p[3 * i + 2])
+    const up = Math.min(1, Math.max(0, (p[3 * i + 1] - floor) / (at(tops, u) || 1)))
+    // The heel's and the toe's last columns are mostly the photo's soft edge: kept a little in from them.
+    const k = EDGE_IN + u * (1 - 2 * EDGE_IN)
+    const top = at(side.top, k), bottom = at(side.bottom, k)
+    uv[2 * i] = side.toeRight ? side.left + k * (side.right - side.left) : side.right - k * (side.right - side.left)
+    uv[2 * i + 1] = 1 - (bottom - up * (bottom - top))
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2))
+  return geometry
+}
+
 function normalize3(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l] }
 function cross3(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]] }
 

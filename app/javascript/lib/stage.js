@@ -9,7 +9,8 @@ import { N8AOPass } from "n8ao"
 import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
 import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
 import { bodyFrame } from "lib/garments/body"
-import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, shoeGeometry, sockGeometry, strapGeometry } from "lib/garments/accessories"
+import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, shapeShoeToPhoto, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
+import { shoeTexture } from "lib/garments/print"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
 // script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
@@ -327,7 +328,7 @@ export class FittingStage {
   // Shoes and socks, lofted round the mannequin's feet and legs as they stand (see accessories.js), then hung
   // on the calves' bones so they move with the legs. Rebuilt when the body or what's worn changes.
   dressFeet(shoes, socks) {
-    const key = JSON.stringify([shoes && [shoes.style, shoes.color, shoes.sole, shoes.fabric], socks && [socks.style, socks.color],
+    const key = JSON.stringify([shoes && [shoes.style, shoes.color, shoes.sole, shoes.fabric, shoes.shoeSide], socks && [socks.style, socks.color],
       this.fitted.scale, this.fitted.influences, this.bodyType])
     if (key === this.feet.key) return
     this.feet.key = key
@@ -368,12 +369,37 @@ export class FittingStage {
         collar.clearcoat = 0.1
         collar.roughness = 0.6
         const eyelets = accessoryMaterial("metal", "#8c8270")
-        this.feet.shoes[side] = hang(new THREE.Mesh(shoeGeometry(body, frame, side, shoes.style), [sole, upper, laces, collar, eyelets]), side)
+        const geometry = shapeShoeToPhoto(shoeGeometry(body, frame, side, shoes.style), shoes.shoeSide)
+        this.feet.shoes[side] = hang(new THREE.Mesh(geometry, [sole, upper, laces, collar, eyelets]), side)
         if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side)
       }
     }
     this.pose = pose
     this.applyPose()
+    if (shoes?.shoePhoto && shoes.shoeSide) this.wearShoePhoto(shoes, key)
+  }
+
+  // The shop's side photo on the shoes, once it's read: the logo, stitching and sole as photographed. The
+  // eyelets go (the photo has its own); the shoe keeps its finish (matte suede, glossy leather).
+  async wearShoePhoto(shoes, key) {
+    const read = await shoeTexture(shoes.shoePhoto).catch(() => null)
+    if (!read || this.feet.key !== key) return
+    const texture = new THREE.CanvasTexture(read.canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.anisotropy = 8
+    for (const mesh of Object.values(this.feet.shoes)) {
+      wrapShoePhoto(mesh.geometry, shoes.shoeSide)
+      const [sole, upper, laces, collar, eyelets] = mesh.material
+      for (const m of [sole, upper, laces, collar]) {
+        m.map = texture
+        m.color.set(0xffffff)
+        if (m.sheen) m.sheenColor.set(0x5a5a5a)
+        m.needsUpdate = true
+      }
+      eyelets.visible = false
+    }
+    this.feet.texture?.dispose()
+    this.feet.texture = texture
   }
 
   // Each shoe's outline as it stands now, for pants' hems to stay off (in place of the bare feet's).

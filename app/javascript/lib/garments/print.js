@@ -470,7 +470,128 @@ export function shoeColors(data, w, h) {
   const band = commonest(top, top + Math.max(1, Math.round((bottom - top) * 0.07)))
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
   const apart = color && band ? Math.hypot(...rgb(color).map((v, i) => v - rgb(band)[i])) : 0
-  return { color, sole: commonest(soleFrom, bottom), collar: apart > 40 ? band : null }
+  const side = shoeSide(data, w, h)
+  if (side) delete side.mask
+  return { color, sole: commonest(soleFrom, bottom), collar: apart > 40 ? band : null, side }
+}
+
+// A shoe's side photo made ready to wrap round the 3D shoe: the photo with the backdrop round the shoe filled in
+// from the shoe's own edge (so no white seeps in where the shoe's outline and the 3D one differ), and where the
+// shoe is in it: { canvas, side: { left, right, toeRight, top, bottom } }, the shoe's outline as shares of the
+// photo's width and height (top and bottom: the outline's top and bottom edge, heel to toe, in SIDE_BINS steps).
+// Null when no shoe stands out.
+export async function shoeTexture(src, size = 1024) {
+  const image = new Image()
+  image.src = src
+  try { await loaded(image) } catch { return null }
+  const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
+  const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, w, h)
+  const pixels = context.getImageData(0, 0, w, h)
+  // The outline is read on a smaller copy (as the colours are), the texture kept sharp.
+  const small = Math.min(1, SIZE / Math.max(w, h))
+  const sw = Math.max(8, Math.round(w * small)), sh = Math.max(8, Math.round(h * small))
+  const reader = document.createElement("canvas")
+  reader.width = sw
+  reader.height = sh
+  const rc = reader.getContext("2d", { willReadFrequently: true })
+  rc.drawImage(canvas, 0, 0, sw, sh)
+  const side = shoeSide(rc.getImageData(0, 0, sw, sh).data, sw, sh)
+  if (!side) return null
+  bleed(pixels.data, w, h, side.mask, sw, sh)
+  context.putImageData(pixels, 0, 0)
+  delete side.mask
+  return { canvas, side }
+}
+
+export const SIDE_BINS = 64
+
+// Where the shoe is in a side photo (see shoeTexture), with its mask at the photo's size.
+export function shoeSide(data, w, h) {
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const mask = cut.garment.mask.slice()
+  // The backdrop seen through the shoe (between the laces, under a pulled-up loop) isn't the shoe: small
+  // backdrop-coloured holes in it are taken out. A white shoe's own big white panels stay.
+  const { lab, bg, far } = cut
+  const backdrop = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) backdrop[i] = mask[i] && Math.abs(lab[3 * i] - bg[0]) <= far[0] && Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) <= far[1] ? 1 : 0
+  for (const hole of pieces(backdrop, w, h)) if (hole.length < cut.garment.count * 0.06) for (const i of hole) mask[i] = 0
+  let left = w, right = -1
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { left = Math.min(left, x); right = Math.max(right, x) }
+  if (right - left < w * 0.15) return null
+  let high = h, low = -1
+  for (let y = 0; y < h; y++) for (let x = left; x <= right; x++) if (mask[y * w + x]) { high = Math.min(high, y); low = Math.max(low, y) }
+  // A side view: a shoe stands one to five times as long as it's tall (a front or top view doesn't).
+  const long = (right - left + 1) / (low - high + 1)
+  if (long < 1 || long > 5) return null
+  const top = new Float64Array(SIDE_BINS).fill(Infinity), bottom = new Float64Array(SIDE_BINS).fill(-Infinity)
+  for (let x = left; x <= right; x++) {
+    const bin = Math.min(SIDE_BINS - 1, Math.floor(((x - left) / (right - left + 1)) * SIDE_BINS))
+    for (let y = 0; y < h; y++) {
+      if (!mask[y * w + x]) continue
+      top[bin] = Math.min(top[bin], y)
+      bottom[bin] = Math.max(bottom[bin], y + 1)
+    }
+  }
+  // Gaps (a bin with no column) take their neighbour's.
+  for (let b = 1; b < SIDE_BINS; b++) if (!Number.isFinite(top[b])) { top[b] = top[b - 1]; bottom[b] = bottom[b - 1] }
+  for (let b = SIDE_BINS - 2; b >= 0; b--) if (!Number.isFinite(top[b])) { top[b] = top[b + 1]; bottom[b] = bottom[b + 1] }
+  // The toe is the low end: a shoe stands taller at the heel.
+  const quarter = Math.round(SIDE_BINS / 4)
+  const tall = (from, to) => { let sum = 0; for (let b = from; b < to; b++) sum += bottom[b] - top[b]; return sum / (to - from) }
+  const toeRight = tall(SIDE_BINS - quarter, SIDE_BINS) < tall(0, quarter)
+  // A pixel in from the edge, so the outline's own soft edge isn't wrapped on.
+  const inset = Math.max(2, h * 0.008)
+  const order = toeRight ? b => b : b => SIDE_BINS - 1 - b
+  return {
+    left: left / w, right: (right + 1) / w, toeRight, aspect: h / w,
+    top: Array.from({ length: SIDE_BINS }, (_, b) => (top[order(b)] + inset) / h),
+    bottom: Array.from({ length: SIDE_BINS }, (_, b) => (bottom[order(b)] - inset) / h),
+    mask, w, h
+  }
+}
+
+// Fills the photo's pixels outside the shoe (mask, sw x sh) with the nearest shoe pixel's colour, a ring at a time.
+function bleed(data, w, h, mask, sw, sh) {
+  // In from the mask's edge (its soft, backdrop-tinted rim is filled over too).
+  const rim = Math.max(2, Math.round(Math.max(sw, sh) * 0.008))
+  const core = new Uint8Array(sw * sh)
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      let all = 1
+      for (let dy = -rim; dy <= rim && all; dy++) for (let dx = -rim; dx <= rim; dx++) {
+        const yy = y + dy, xx = x + dx
+        if (yy < 0 || yy >= sh || xx < 0 || xx >= sw || !mask[yy * sw + xx]) { all = 0; break }
+      }
+      core[y * sw + x] = all
+    }
+  }
+  const inside = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) {
+    const my = Math.min(sh - 1, Math.floor((y / h) * sh))
+    for (let x = 0; x < w; x++) inside[y * w + x] = core[my * sw + Math.min(sw - 1, Math.floor((x / w) * sw))]
+  }
+  let front = []
+  for (let i = 0; i < w * h; i++) if (inside[i]) front.push(i)
+  const rings = Math.round(Math.max(w, h) * 0.12)
+  for (let r = 0; r < rings && front.length; r++) {
+    const next = []
+    for (const i of front) {
+      const x = i % w
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (j < 0 || j >= w * h || inside[j]) continue
+        inside[j] = 1
+        data[4 * j] = data[4 * i]; data[4 * j + 1] = data[4 * i + 1]; data[4 * j + 2] = data[4 * i + 2]
+        next.push(j)
+      }
+    }
+    front = next
+  }
 }
 
 // The garment in a photo: each pixel's Lab colour, the background's colour (the median round the photo's
@@ -1020,6 +1141,26 @@ function toLab(r, g, b, out, at) {
 }
 
 // The largest 4-connected piece of a mask: { mask, count }.
+// Each joined piece of a mask: a list of its pixels' indexes.
+function pieces(mask, w, h) {
+  const seen = new Uint8Array(w * h), out = []
+  for (let start = 0; start < w * h; start++) {
+    if (!mask[start] || seen[start]) continue
+    const piece = [start]
+    seen[start] = 1
+    for (let k = 0; k < piece.length; k++) {
+      const i = piece[k], x = i % w
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (j < 0 || j >= w * h || !mask[j] || seen[j]) continue
+        seen[j] = 1
+        piece.push(j)
+      }
+    }
+    out.push(piece)
+  }
+  return out
+}
+
 function largestPiece(mask, w, h) {
   const label = new Int32Array(w * h)
   const stack = new Int32Array(w * h)

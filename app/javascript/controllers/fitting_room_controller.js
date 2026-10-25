@@ -174,6 +174,7 @@ export default class extends Controller {
           garment.color = garment.photoColor = asNamed(read.color, garment.color_name, garment.color)
           if (read.sole) garment.sole = read.sole
           if (read.collar) garment.collar = read.collar
+          if (read.side) garment.shoeSide = read.side
           if (item.fit) this.render()
         }).catch(() => {})
       }
@@ -847,6 +848,9 @@ export default class extends Controller {
       cut: garment.cut ?? null,
       sole: garment.sole ?? null,
       collar: garment.collar ?? null,
+      // Shoes are shaped to their side photo's outline and wear the photo itself (see accessories.js).
+      shoeSide: kind === "shoes" ? garment.shoeSide ?? null : null,
+      shoePhoto: kind === "shoes" && garment.shoeSide ? garment.photo : null,
       onePiece: Boolean(garment.one_piece),
       buckle: garment.buckle ?? null
     })))

@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, measureTop, measureBottom, readBottom } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, measureTop, measureBottom, readBottom, shoeSide } from "../../app/javascript/lib/garments/print.js"
 import "./support/lib.mjs"
 
 const { bottomsPhotoUV } = await import("lib/garments/photo_map")
@@ -194,4 +194,42 @@ test("a pale logo down a leg's outer seam stays on the photo", () => {
   const read = readBottom(data, w, h)
   const at = (x, y) => [...read.filled.slice(4 * (y * w + x), 4 * (y * w + x) + 3)]
   assert.ok(at(75, 190).every(v => v > 170), `logo ${at(75, 190)}`)
+})
+
+// A made-up boot's side photo: a tall shaft at the heel (left), a low toe (right), a gap of backdrop between
+// its laces, and a sole.
+function bootPhoto() {
+  const w = 240, h = 160, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = [238, 238, 238]
+      if (y >= 120 && y < 132 && x >= 40 && x < 210) c = [190, 140, 80]
+      else if (y < 120 && x >= 42 && x < 208 && (x < 120 ? y >= 30 : y >= 30 + (x - 120) * 0.8)) c = [60, 40, 30]
+      if (x >= 100 && x < 106 && y >= 40 && y < 48) c = [238, 238, 238]
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h }
+}
+
+test("reads a shoe's side photo: its outline heel to toe, which way the toe points, with backdrop gaps taken out", () => {
+  const { data, w, h } = bootPhoto()
+  const side = shoeSide(data, w, h)
+  assert.equal(side.toeRight, true)
+  assert.ok(Math.abs(side.left - 40 / w) < 0.01 && Math.abs(side.right - 210 / w) < 0.01)
+  assert.ok(side.top[2] < 0.25, "tall at the heel")
+  assert.ok(side.top.at(-3) > 0.6, "low at the toe")
+  assert.ok(Math.abs(side.bottom[10] - 132 / h) < 0.03)
+  assert.equal(side.mask[44 * w + 102], 0, "the gap between the laces")
+  assert.equal(side.mask[60 * w + 102], 1)
+  // Turned round, the toe points left and the outline still runs heel to toe.
+  const flipped = new Uint8ClampedArray(data.length)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) flipped.set(data.subarray(4 * (y * w + x), 4 * (y * w + x) + 4), 4 * (y * w + w - 1 - x))
+  const turned = shoeSide(flipped, w, h)
+  assert.equal(turned.toeRight, false)
+  assert.ok(Math.abs(turned.top[2] - side.top[2]) < 0.02)
+  // A shoe seen from the front isn't a side view.
+  const front = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) front.set(x > 100 && x < 140 && y > 10 && y < 150 ? [60, 40, 30, 255] : [238, 238, 238, 255], 4 * (y * w + x))
+  assert.equal(shoeSide(front, w, h), null)
 })
