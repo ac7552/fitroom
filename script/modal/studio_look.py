@@ -30,7 +30,7 @@ import base64
 
 import modal
 
-from silhouette import LEAST_IOU, NEGATIVE, edges, iou, load, mask_of, only_figure, png, prompt_for, sdxl_size
+from silhouette import LEAST_IOU, NEGATIVE, guide_edges, iou, load, mask_of, png, prompt_for, sdxl_size, stretch_depth
 
 BASE = "stabilityai/stable-diffusion-xl-base-1.0"
 DEPTH = "diffusers/controlnet-depth-sdxl-1.0"
@@ -145,8 +145,8 @@ class Studio:
             size = sdxl_size(*photo.size)
             photo = photo.resize(size)
             mask_picture = load(base64.b64decode(request["mask"]), "L").resize(size)
-            depth = only_figure(load(base64.b64decode(request["depth"])).resize(size), mask_picture)
-            lines = only_figure(edges(photo), mask_picture)
+            depth = stretch_depth(load(base64.b64decode(request["depth"])).resize(size), mask_picture)
+            lines = guide_edges(photo, mask_picture)
             outfit = str(request.get("outfit", ""))
             seed = int(request.get("seed", 7)) % 2**31
         except (KeyError, ValueError, TypeError):

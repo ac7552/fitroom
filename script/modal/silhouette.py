@@ -56,7 +56,7 @@ def iou(a, b):
     return float(np.logical_and(a, b).sum() / union)
 
 
-def edges(picture, low=60, high=160):
+def edges(picture, low=30, high=90):
     """Seams, hems and folds as white lines on black, for the edge guide (Canny when OpenCV is there)."""
     grey = np.asarray(picture.convert("L"))
     try:
@@ -73,6 +73,14 @@ def edges(picture, low=60, high=160):
     return Image.fromarray(lines).convert("RGB")
 
 
+def guide_edges(photo, mask):
+    """The edge guide: seams, hems and folds inside the figure, and the figure's own outline (which can be
+    faint where dark cloth meets a dark backdrop)."""
+    inside = np.asarray(only_figure(edges(photo), mask).convert("L"))
+    outline = np.asarray(edges(mask.convert("RGB").resize(photo.size)).convert("L"))
+    return Image.fromarray(np.maximum(inside, outline)).convert("RGB")
+
+
 def only_figure(picture, mask):
     """The guide picture with everything outside the figure's outline black (the floor's shadow, the
     backdrop's gradient), so the model is held to the clothes and not to the room."""
@@ -80,6 +88,23 @@ def only_figure(picture, mask):
     pixels = np.asarray(picture.convert("RGB")).copy()
     pixels[~keep] = 0
     return Image.fromarray(pixels)
+
+
+def stretch_depth(depth, mask):
+    """The depth guide stretched over the figure's own range, nearest white and farthest black, with
+    everything outside the outline black. The page's depth is only a narrow band of grey (the figure is
+    a few tens of centimetres deep, seen from metres away), which would give the model almost no relief."""
+    keep = mask_of(mask, depth.size)
+    grey = np.asarray(depth.convert("L"), dtype=np.float32)
+    out = np.zeros_like(grey)
+    if keep.any():
+        low, high = np.percentile(grey[keep], [1, 99])
+        if high - low >= 1:
+            out = np.clip((grey - low) / (high - low), 0, 1) * 235 + 20
+        else:
+            out[:] = 255
+        out[~keep] = 0
+    return Image.fromarray(out.astype(np.uint8)).convert("RGB")
 
 
 def png(picture):

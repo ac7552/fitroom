@@ -57,12 +57,25 @@ class SilhouetteTest(unittest.TestCase):
         self.assertEqual(guide.getpixel((10, 10)), (0, 0, 0))
         self.assertEqual(guide.getpixel((200, 300)), (90, 90, 90))
 
+    def test_depth_is_stretched_over_the_figure(self):
+        a = np.zeros((600, 400), dtype=np.uint8)
+        a[50:550, 100:300] = np.linspace(120, 138, 200, dtype=np.uint8)  # a narrow band, as the page draws it
+        out = np.asarray(s.stretch_depth(Image.fromarray(a), mask_picture(400, 600, (100, 50, 300, 550))).convert("L"))
+        self.assertEqual(out[10, 10], 0)
+        self.assertGreater(int(out[300, 295]) - int(out[300, 105]), 200)
+
     def test_edges_find_a_hem(self):
         a = np.zeros((300, 300), dtype=np.uint8)
         a[:150] = 220
         lines = np.asarray(s.edges(Image.fromarray(a)).convert("L"))
         self.assertGreater(lines[145:155].max(), 0)
         self.assertEqual(lines[:100].max(), 0)
+
+    def test_edge_guide_has_the_outline_even_on_a_dark_backdrop(self):
+        dark = Image.new("RGB", (400, 600), (20, 21, 24))
+        lines = np.asarray(s.guide_edges(dark, mask_picture(400, 600, (100, 50, 300, 550))).convert("L"))
+        self.assertGreater(lines[300, 95:106].max(), 0)
+        self.assertEqual(lines[300, 150:250].max(), 0)
 
     def test_prompt_keeps_plain_words_only(self):
         p = s.prompt_for("navy wool coat, black jeans <script>")
