@@ -962,13 +962,20 @@ export class FittingStage {
   // A still picture of what's on screen, sharper than the screen: drawn once at `width` by `height` pixels
   // with finer shadows, then the view goes back as it was. Returns a PNG Blob. Nothing leaves the device.
   async photo({ width = 1600, height = 2000 } = {}) {
+    return (await this.photoPasses({ width, height, guides: false })).image
+  }
+
+  // The photo, and with `guides` two more pictures from the same camera for an image model to keep to:
+  // depth (nearest white, farthest black, the figure only) and the figure's outline (white on black).
+  // Returns { image, depth, mask } as PNG Blobs (depth and mask null without guides).
+  async photoPasses({ width = 1600, height = 2000, guides = true } = {}) {
     this.wearBelt()
     this.wearScarf()
     this.wearCollars()
     this.hideCovered()
-    const renderer = this.renderer
+    const renderer = this.renderer, camera = this.camera
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
-    const aspect = this.camera.aspect
+    const { aspect, fov, near, far } = camera
     const key = this.scene.children.find(o => o.isDirectionalLight)
     const mapSize = key?.shadow.mapSize.clone()
     if (key) {
@@ -979,13 +986,41 @@ export class FittingStage {
     renderer.setPixelRatio(1)
     renderer.setSize(width, height, false)
     // Framed a little closer than the screen, like a lookbook photo.
-    const fov = this.camera.fov
-    this.camera.fov = fov * 0.85
-    this.camera.aspect = width / height
-    this.camera.updateProjectionMatrix()
-    renderer.render(this.scene, this.camera)
-    this.camera.fov = fov
-    const blob = await withGrain(renderer.domElement)
+    camera.fov = fov * 0.85
+    camera.aspect = width / height
+    camera.updateProjectionMatrix()
+    renderer.render(this.scene, camera)
+    const image = await withGrain(renderer.domElement)
+    let depth = null, mask = null
+    if (guides) {
+      const stand = [this.pool, this.floor, this.contact].filter(Boolean)
+      const background = this.scene.background
+      const shown = stand.map(o => o.visible)
+      stand.forEach(o => { o.visible = false })
+      this.scene.background = new THREE.Color(0x000000)
+      // Depth over the figure's own span, so its near and far ends use the whole range of grey.
+      const sphere = new THREE.Box3().setFromObject(this.model).getBoundingSphere(new THREE.Sphere())
+      const distance = camera.position.distanceTo(sphere.center)
+      camera.near = Math.max(0.05, distance - sphere.radius * 1.25)
+      camera.far = distance + sphere.radius * 1.25
+      camera.updateProjectionMatrix()
+      const depthMaterial = new THREE.MeshDepthMaterial()
+      this.scene.overrideMaterial = depthMaterial
+      renderer.render(this.scene, camera)
+      depth = canvasBlob(renderer.domElement)
+      const maskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+      this.scene.overrideMaterial = maskMaterial
+      renderer.render(this.scene, camera)
+      mask = canvasBlob(renderer.domElement)
+      this.scene.overrideMaterial = null
+      depthMaterial.dispose()
+      maskMaterial.dispose()
+      this.scene.background = background
+      stand.forEach((o, i) => { o.visible = shown[i] })
+      camera.near = near
+      camera.far = far
+    }
+    camera.fov = fov
     if (key) {
       key.shadow.mapSize.copy(mapSize)
       key.shadow.map?.dispose()
@@ -993,9 +1028,9 @@ export class FittingStage {
     }
     renderer.setPixelRatio(ratio)
     renderer.setSize(size.x, size.y, false)
-    this.camera.aspect = aspect
-    this.camera.updateProjectionMatrix()
-    return blob
+    camera.aspect = aspect
+    camera.updateProjectionMatrix()
+    return { image, depth: await depth, mask: await mask }
   }
 
   // Whether what's worn includes a draped garment (a top or casual jacket), which only the page can draw.
@@ -1380,6 +1415,15 @@ function paintFitMap(mesh, checks, regions) {
 // The backdrop: lightest just above the middle, darkening to the edges.
 // A still photo, with a faint film grain in its pixels (a render's perfectly smooth tones read as
 // computer-made): a PNG Blob of the canvas.
+// The canvas as just drawn, as a PNG Blob (copied at once: a 3D canvas is cleared after it's shown).
+function canvasBlob(source) {
+  const canvas = document.createElement("canvas")
+  canvas.width = source.width
+  canvas.height = source.height
+  canvas.getContext("2d").drawImage(source, 0, 0)
+  return new Promise((resolve, reject) => canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error("no picture"))), "image/png"))
+}
+
 function withGrain(source, amount = 3.2) {
   const canvas = document.createElement("canvas")
   canvas.width = source.width

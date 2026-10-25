@@ -7,6 +7,7 @@ Rails.application.routes.draw do
       resource :fit_guide, only: :show
       resources :garment_imports, only: :create
       resources :fits, only: :create
+      resources :studio_looks, only: :create
       resources :studio_photos, only: %i[create show] do
         get :image, on: :member
       end

@@ -105,6 +105,20 @@ Blender.
 `GET /api/v1/studio_photos/:id/image` → the PNG (transparent background), once. After that, and for
 renders nobody fetched within 10 minutes, it's gone.
 
+## Studio looks
+
+`POST /api/v1/studio_looks` with three PNG `data:` URLs from one camera, and what's worn in words:
+
+```json
+{ "photo": "data:image/png;base64,…", "depth": "data:image/png;base64,…", "mask": "data:image/png;base64,…", "outfit": "navy wool coat, black jeans" }
+```
+
+`depth` is the figure only, nearest white; `mask` is its outline, white on black. Responds `200` with
+`{ "image": "data:image/png;base64,…" }`, the photo repainted to look like a studio shot; `422` with
+`"error": "shape_changed"` when the repaint's outline overlapped the mask by less than 85% (twice), or
+`"invalid"` for anything that isn't a PNG; `502` if the photo service failed; `503` when the server has no
+`FITROOM_STUDIO_URL`. Sent with `Cache-Control: no-store`; nothing is kept or logged.
+
 ## POST /api/v1/size_charts/:key/fits
 
 Ranks the chart's sizes against a body. The measurements are used for this response only: nothing

@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
 import { readPhoto, readBottomPhoto, readGarment, readShoe, readTopShape, readBottomShape, loaded } from "lib/garments/print"
-import { describeOutfit, localStudioReady, studioLook } from "lib/local_studio"
+import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
@@ -55,10 +55,10 @@ export default class extends Controller {
     "input", "unit", "unitLabel", "cut", "results", "canvas", "sizes", "stageNote", "legend", "warnings",
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
-    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact",
+    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact", "lookAi",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
   ]
-  static values = { fitsUrl: String, importUrl: String, studioUrl: String, garment: Object, dress: Object }
+  static values = { fitsUrl: String, importUrl: String, studioUrl: String, lookUrl: String, garment: Object, dress: Object }
 
   connect() {
     this.unit = this.unitTargets.find(radio => radio.checked)?.value ?? "in"
@@ -651,11 +651,13 @@ export default class extends Controller {
       }
       const box = this.canvasTarget.parentElement
       const scale = 2000 / Math.max(box.clientWidth, box.clientHeight)
-      const blob = await this.stage.photo({ width: Math.round(box.clientWidth * scale), height: Math.round(box.clientHeight * scale) })
-      this.studioImages = { draped: URL.createObjectURL(blob) }
+      const cloud = this.hasLookAiTarget && this.lookAiTarget.checked && this.hasLookUrlValue
+      const passes = await this.stage.photoPasses({ width: Math.round(box.clientWidth * scale), height: Math.round(box.clientHeight * scale), guides: cloud })
+      this.studioImages = { draped: URL.createObjectURL(passes.image) }
       this.showStudioImage("draped")
       this.studioStatusTarget.textContent = "Your photo. It was made on this device and isn't saved anywhere."
-      this.finishStudioLook(blob)
+      if (cloud) this.cloudStudioLook(passes)
+      else this.finishStudioLook(passes.image)
       return
     }
     this.closeStudio()
@@ -663,7 +665,7 @@ export default class extends Controller {
     const token = this.studioToken = Symbol("studio")
     try {
       // With "Exact item" ticked, each item's photo (the shop's, or yours) goes along, shrunk to a sensible size.
-      const exact = this.exactTarget.checked
+      const exact = this.hasExactTarget && this.exactTarget.checked
       if (exact) {
         await Promise.all(snapshot.items.map(async item => {
           const photo = this.outfit[item.kind]?.garment.photo
@@ -739,6 +741,46 @@ export default class extends Controller {
     }
   }
 
+  // The studio look on Fitroom's photo service (see StudioLook), when the box is ticked: only the mannequin's
+  // picture goes, with its depth and outline so the fit can't change, and nothing is kept. Its light and
+  // cloth texture are then laid over this photo's own colours and prints.
+  async cloudStudioLook({ image, depth, mask }) {
+    const token = this.studioToken = Symbol("look")
+    const controller = this.studioAbort = new AbortController()
+    const began = Date.now()
+    const tick = setInterval(() => {
+      if (token !== this.studioToken || this.studioView === "look") return
+      const seconds = Math.round((Date.now() - began) / 1000)
+      this.studioStatusTarget.textContent = `Making the studio look… ${seconds}s (the first one can take a minute)`
+    }, 1000)
+    try {
+      const [photo, depthUrl, maskUrl] = await Promise.all([image, depth, mask].map(blob => pngDataUrl(blob, 1280)))
+      const outfit = describeOutfit(this.items().filter(i => i.fit))
+      const answer = await fetch(this.lookUrlValue, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ photo, depth: depthUrl, mask: maskUrl, outfit }),
+        signal: controller.signal
+      })
+      const reply = await answer.json()
+      if (token !== this.studioToken) return
+      if (!answer.ok) throw new Error(reply.message ?? "The studio look didn't work this time.")
+      const painted = await (await fetch(reply.image)).blob()
+      const look = await keepDetails(await createImageBitmap(image), await createImageBitmap(painted))
+      if (token !== this.studioToken) return
+      this.studioImages.look = URL.createObjectURL(look)
+      this.studioSwitchTarget.hidden = false
+      this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
+      this.studioLookOptionTarget.hidden = false
+      this.studioLookOptionTarget.querySelector("input").checked = true
+      this.showStudioImage("look")
+    } catch (error) {
+      if (token === this.studioToken && error.name !== "AbortError") this.studioStatusTarget.textContent = error.message
+    } finally {
+      clearInterval(tick)
+    }
+  }
+
   async fetchStudioImage(url) {
     const blob = await fetch(url, { cache: "no-store" }).then(r => r.blob())
     return URL.createObjectURL(blob)
@@ -758,7 +800,9 @@ export default class extends Controller {
     this.studioStatusTarget.textContent = variant === "exact"
       ? "The stores' own clothes painted on by AI. The fit is still the one we measured."
       : variant === "look"
-        ? "Finished by the studio program on this computer. The fit is the one we measured; nothing left your device."
+        ? this.hasLookAiTarget && this.lookAiTarget.checked
+          ? "Studio look by AI, from the mannequin's picture only. The fit is the one we measured; nothing was kept."
+          : "Finished by the studio program on this computer. The fit is the one we measured; nothing left your device."
         : "Your photo, in the size you picked. Nothing was kept on the server."
   }
 
@@ -985,6 +1029,17 @@ async function clothColor(url) {
 }
 
 // A photo as a JPEG data: URL no larger than 1024 px, for sending along with a studio photo.
+// A picture as a PNG data: URL, at most `most` pixels across.
+async function pngDataUrl(blob, most) {
+  const bitmap = await createImageBitmap(blob)
+  const scale = Math.min(1, most / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement("canvas")
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL("image/png")
+}
+
 async function shrunkPhoto(src) {
   const image = new Image()
   image.src = src

@@ -55,6 +55,11 @@ Optional settings are environment variables, listed in `.env.example`. Fitroom r
   made smaller than the body.
 - **Private:** no accounts. Your measurements are used for one answer and never stored or logged, and
   photos are read in your browser.
+- **Studio look (optional):** tick **Studio look (AI)** before **Take a photo** and the photo is repainted
+  to look like a studio shot, with real fabric texture and soft light. Only the mannequin's picture is sent
+  (to Fitroom's own photo service, `script/modal/studio_look.py`), nothing is kept, and the fit can't
+  change: if the repaint's outline differs from the render's by more than 15%, you get our own photo. It's
+  off unless you tick it, and only shows when the server is set up for it.
 - **Clear about the rest:** shoes, socks, belts and hats get a plain "not yet".
 
 ## How it's built

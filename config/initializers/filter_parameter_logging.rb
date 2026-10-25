@@ -6,5 +6,6 @@
 Rails.application.config.filter_parameters += [
   :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn, :cvv, :cvc,
   :measurements, # body measurements sent to /api/v1/.../fits are never logged
-  :body, :scale  # nor the body shape and height sent with a studio photo
+  :body, :scale, # nor the body shape and height sent with a studio photo
+  :photo, :depth, :mask # nor the pictures sent for a studio look
 ]
