@@ -253,6 +253,9 @@ export function dressDetails(item, pattern, cloth) {
 // Which points of an inner garment poke out through one worn over it: within `reach` (m) of the outer cloth
 // and not behind its surface (along its outward normal, less `gap`). inner, outer: DrapedTops as they're
 // draped now (their meshes up to date). Returns a Float32Array, 1 where covered.
+// How far (m) past an inner point the outer cloth must carry on for the point to count as covered.
+const EDGE_MARGIN = 0.008
+
 export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {}) {
   const field = outer.drape.field
   const a = inner.geometry.attributes.position.array
@@ -281,6 +284,9 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
       }
     }
     if (near < 0 || nearest > reach * reach) continue
+    // Only where the outer cloth carries on past this point: the nearest of it may be up to `reach` away,
+    // and just under a hem that's cloth above it, not over it (hidden there, the pants show the body).
+    if (free.length && free[near] * 0.01 < Math.sqrt(nearest) + EDGE_MARGIN) continue
     // The outer cloth's normal, turned to face away from the body (a piece's normals may face either way).
     let nx = normals[3 * near], ny = normals[3 * near + 1], nz = normals[3 * near + 2]
     if (field) {
