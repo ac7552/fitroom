@@ -2,6 +2,10 @@ import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js"
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js"
+import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js"
+import { N8AOPass } from "n8ao"
 import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
 import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
 import { bodyFrame } from "lib/garments/body"
@@ -39,6 +43,9 @@ const FABRICS = {
 // pattern and draped like tops (lib/garments).
 export const STYLES = ["tailored", "zip", "bomber", "shirt"]
 // Tops, and casual jackets, cut from a sewing pattern and draped on the mannequin with cloth simulation.
+// Contact shading's reach (metres; about a hand's width) and strength.
+const AO = { radius: 0.22, falloff: 1, intensity: 3.2 }
+
 export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "shortshirt", "dress", "polo", "tank", "sweater", "shortknit", "cardigan", "coat"]
 
 export const STATUS_COLORS = {
@@ -93,7 +100,6 @@ export class FittingStage {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
     this.scene = new THREE.Scene()
-    this.scene.background = backdrop()
     this.addLights()
 
     this.camera = new THREE.PerspectiveCamera(22, 1, 0.05, 50)
@@ -103,6 +109,8 @@ export class FittingStage {
     this.controls.enableZoom = false   // the page scrolls over it; zooming isn't needed to judge fit
     this.controls.minPolarAngle = 1.2
     this.controls.maxPolarAngle = 1.75
+    this.effects = this.addEffects()
+    this.scene.background = backdrop(this.backdropTone(1))
 
     this.resize()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -832,7 +840,7 @@ export class FittingStage {
     const day = name === "daylight"
     this.sceneLook = day ? "daylight" : "dark"
     this.scene.background?.dispose?.()
-    this.scene.background = day ? daylightBackdrop() : backdrop()
+    this.scene.background = day ? daylightBackdrop(this.backdropTone(1.05)) : backdrop(this.backdropTone(1))
     this.pool.visible = !day
     this.floor.material.opacity = day ? 0.3 : 0.45
     this.contact.material.opacity = day ? 0.38 : 0.55
@@ -989,7 +997,9 @@ export class FittingStage {
     camera.fov = fov * 0.85
     camera.aspect = width / height
     camera.updateProjectionMatrix()
-    renderer.render(this.scene, camera)
+    this.effects?.composer.setPixelRatio(1)
+    this.effects?.composer.setSize(width, height)
+    this.draw()
     const image = await withGrain(renderer.domElement)
     let depth = null, mask = null
     if (guides) {
@@ -1028,9 +1038,55 @@ export class FittingStage {
     }
     renderer.setPixelRatio(ratio)
     renderer.setSize(size.x, size.y, false)
+    this.effects?.composer.setPixelRatio(ratio)
+    this.effects?.composer.setSize(size.x, size.y)
     camera.aspect = aspect
     camera.updateProjectionMatrix()
     return { image, depth: await depth, mask: await mask }
+  }
+
+  // Contact shading (N8AO): the soft darkening where cloth folds, where an arm meets the body, under a
+  // collar and round the feet, as a room's light can't reach. It only darkens what's hidden, so a garment's
+  // colour stays the shop's in open light. Then the colours as the renderer would show them (tone mapping),
+  // and SMAA for clean edges (the screen's own smoothing doesn't work with it). Without WebGL 2, or if
+  // anything fails, the scene is drawn as before.
+  addEffects() {
+    try {
+      if (!this.renderer.capabilities.isWebGL2) return null
+      const size = this.renderer.getDrawingBufferSize(new THREE.Vector2())
+      const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType })
+      const composer = new EffectComposer(this.renderer, target)
+      const ao = new N8AOPass(this.scene, this.camera, size.x, size.y)
+      const phone = navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 820
+      ao.setQualityMode(phone ? "Performance" : "Medium")
+      ao.configuration.halfRes = phone
+      ao.configuration.gammaCorrection = false   // OutputPass does it
+      ao.configuration.transparencyAware = false // sheer cloth and the floor's shadow don't need it
+      ao.configuration.aoRadius = AO.radius
+      ao.configuration.distanceFalloff = AO.falloff
+      ao.configuration.intensity = AO.intensity
+      ao.configuration.screenSpaceRadius = false
+      composer.addPass(ao)
+      composer.addPass(new OutputPass())
+      composer.addPass(new SMAAPass(size.x, size.y))
+      return { composer, ao }
+    } catch {
+      return null
+    }
+  }
+
+  // How the backdrop's colours are to be painted. Drawn straight to the screen, an sRGB backdrop is shown as
+  // painted (three.js doesn't tone-map it); through the effects everything is tone-mapped at the end, which
+  // would sink the graphite stage to black and hide the floor's shadow in it. So with effects on, it's
+  // painted in the colours that come out as before.
+  backdropTone(exposure) {
+    return this.effects ? css => untoned(css, exposure) : css => css
+  }
+
+  // The scene, through the effects when there are any.
+  draw() {
+    if (this.effects) this.effects.composer.render()
+    else this.renderer.render(this.scene, this.camera)
   }
 
   // Whether what's worn includes a draped garment (a top or casual jacket), which only the page can draw.
@@ -1044,6 +1100,8 @@ export class FittingStage {
     const { clientWidth: width, clientHeight: height } = box
     if (!width || !height) return
     this.renderer.setSize(width, height, false)
+    this.effects?.composer.setPixelRatio(this.renderer.getPixelRatio())
+    this.effects?.composer.setSize(width, height)
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
     if (this.calibration) this.frame()
@@ -1062,7 +1120,7 @@ export class FittingStage {
     this.wearScarf()
     this.wearCollars()
     this.hideCovered()
-    this.renderer.render(this.scene, this.camera)
+    this.draw()
     this.frameId = this.visible ? requestAnimationFrame(this.tick) : null
   }
 
@@ -1143,6 +1201,8 @@ export class FittingStage {
       }
     })
     this.scene.environment?.dispose()
+    this.effects?.composer.dispose()
+    this.effects?.ao.dispose?.()
     this.renderer.dispose()
   }
 }
@@ -1459,14 +1519,39 @@ function contactShadow() {
   return texture
 }
 
-function backdrop() {
+// Khronos PBR Neutral, as three.js r170 applies it (tonemapping_pars_fragment), to linear RGB.
+function neutral([r, g, b], exposure) {
+  let c = [r * exposure, g * exposure, b * exposure]
+  const x = Math.min(...c)
+  const offset = x < 0.08 ? x - 6.25 * x * x : 0.04
+  c = c.map(v => v - offset)
+  const peak = Math.max(...c), start = 0.8 - 0.04
+  if (peak < start) return c
+  const d = 1 - start, top = 1 - (d * d) / (peak + d - start)
+  c = c.map(v => (v * top) / peak)
+  const k = 1 - 1 / (0.15 * (peak - top) + 1)
+  return c.map(v => v + (top - v) * k)
+}
+
+// The colour (CSS hex) that comes out as `css` once tone-mapped: the inverse of `neutral`, found by steps.
+export function untoned(css, exposure = 1) {
+  const want = new THREE.Color(css).toArray() // linear
+  let x = want.slice()
+  for (let i = 0; i < 40; i++) {
+    const got = neutral(x, exposure)
+    x = x.map((v, j) => Math.min(1, Math.max(0, v + (want[j] - got[j]))))
+  }
+  return `#${new THREE.Color().fromArray(x).getHexString()}`
+}
+
+function backdrop(tone = css => css) {
   const canvas = document.createElement("canvas")
   canvas.width = canvas.height = 512
   const context = canvas.getContext("2d")
   const gradient = context.createRadialGradient(256, 215, 0, 256, 215, 400)
-  gradient.addColorStop(0, BACKDROP[0])
-  gradient.addColorStop(0.55, BACKDROP[1])
-  gradient.addColorStop(1, BACKDROP[2])
+  gradient.addColorStop(0, tone(BACKDROP[0]))
+  gradient.addColorStop(0.55, tone(BACKDROP[1]))
+  gradient.addColorStop(1, tone(BACKDROP[2]))
   context.fillStyle = gradient
   context.fillRect(0, 0, 512, 512)
   const texture = new THREE.CanvasTexture(canvas)
@@ -1475,13 +1560,13 @@ function backdrop() {
 }
 
 // The daylight studio's backdrop: warm pale grey, a touch lighter high up, as a sweep is lit.
-function daylightBackdrop() {
+function daylightBackdrop(tone = css => css) {
   const canvas = document.createElement("canvas")
   canvas.width = canvas.height = 512
   const context = canvas.getContext("2d")
   const gradient = context.createLinearGradient(0, 0, 0, 512)
-  gradient.addColorStop(0, "#e6e3de")
-  gradient.addColorStop(1, "#d5d1ca")
+  gradient.addColorStop(0, tone("#e6e3de"))
+  gradient.addColorStop(1, tone("#d5d1ca"))
   context.fillStyle = gradient
   context.fillRect(0, 0, 512, 512)
   const texture = new THREE.CanvasTexture(canvas)
