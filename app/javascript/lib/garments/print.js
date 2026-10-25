@@ -545,6 +545,25 @@ export function shoeSide(data, w, h) {
   const quarter = Math.round(SIDE_BINS / 4)
   const tall = (from, to) => { let sum = 0; for (let b = from; b < to; b++) sum += bottom[b] - top[b]; return sum / (to - from) }
   const toeRight = tall(SIDE_BINS - quarter, SIDE_BINS) < tall(0, quarter)
+  // How thick the sole is: up from the bottom, as far as the colour stays the sole's (the bottom few rows'),
+  // in most columns. Sole and upper the same colour: a usual sole, a seventh of the shoe's height.
+  const soleThick = soleThickness(lab, mask, w, h, left, right, top, bottom) ?? (low - high) / 7
+  // The outline's front and back at each height (shares of its length, heel 0 to toe 1), from the floor up in
+  // SIDE_BINS steps to its top: how blunt the toe is, how the heel curves, how wide the shaft stands.
+  const ends = { front: new Array(SIDE_BINS).fill(null), back: new Array(SIDE_BINS).fill(null) }
+  for (let r = 0; r < SIDE_BINS; r++) {
+    const y = Math.round(low - ((r + 0.5) / SIDE_BINS) * (low - high))
+    let first = -1, last = -1
+    for (let x = left; x <= right; x++) if (mask[y * w + x]) { if (first < 0) first = x; last = x }
+    if (first < 0) continue
+    const share = x => (x - left) / (right - left + 1)
+    ends.front[r] = toeRight ? share(last + 1) : 1 - share(first)
+    ends.back[r] = toeRight ? share(first) : 1 - share(last + 1)
+  }
+  for (const list of [ends.front, ends.back]) {
+    for (let r = 1; r < SIDE_BINS; r++) if (list[r] === null) list[r] = list[r - 1]
+    for (let r = SIDE_BINS - 2; r >= 0; r--) if (list[r] === null) list[r] = list[r + 1]
+  }
   // A pixel in from the edge, so the outline's own soft edge isn't wrapped on.
   const inset = Math.max(2, h * 0.008)
   const order = toeRight ? b => b : b => SIDE_BINS - 1 - b
@@ -552,8 +571,45 @@ export function shoeSide(data, w, h) {
     left: left / w, right: (right + 1) / w, toeRight, aspect: h / w,
     top: Array.from({ length: SIDE_BINS }, (_, b) => (top[order(b)] + inset) / h),
     bottom: Array.from({ length: SIDE_BINS }, (_, b) => (bottom[order(b)] - inset) / h),
+    sole: Array.from({ length: SIDE_BINS }, (_, b) => Math.max(top[order(b)] + inset, bottom[order(b)] - soleThick) / h),
+    front: ends.front, back: ends.back, height: (low - high + 1) / h,
     mask, w, h
   }
+}
+
+// A shoe's sole's thickness in a side photo (pixels), or null when the sole isn't told apart from the upper.
+function soleThickness(lab, mask, w, h, left, right, top, bottom) {
+  const bins = top.length, middle = []
+  for (let b = Math.round(bins * 0.15); b < Math.round(bins * 0.85); b++) middle.push(b)
+  const columnsOf = b => [Math.round(left + ((b + 0.5) / bins) * (right - left + 1))]
+  // The sole's colour: the bottom rows'; the upper's: halfway up.
+  const near = (rowOf) => {
+    const values = [[], [], []]
+    for (const b of middle) for (const x of columnsOf(b)) {
+      const y = Math.round(rowOf(b)), i = y * w + x
+      if (y >= 0 && y < h && mask[i]) for (let c = 0; c < 3; c++) values[c].push(lab[3 * i + c])
+    }
+    return values[0].length ? values.map(median) : null
+  }
+  const sole = near(b => bottom[b] - 2 - (bottom[b] - top[b]) * 0.02), upper = near(b => (top[b] + bottom[b]) / 2)
+  if (!sole || !upper) return null
+  const gap = Math.hypot(sole[0] - upper[0], sole[1] - upper[1], sole[2] - upper[2])
+  if (gap < 8) return null
+  const thick = []
+  for (const b of middle) {
+    for (const x of columnsOf(b)) {
+      let run = 0, y = bottom[b] - 1
+      for (; y > top[b]; y--) {
+        const i = y * w + x
+        const d = Math.hypot(lab[3 * i] - sole[0], lab[3 * i + 1] - sole[1], lab[3 * i + 2] - sole[2])
+        run = d > gap / 2 ? run + 1 : 0
+        if (run >= 3) break
+      }
+      thick.push(bottom[b] - (y + 3))
+    }
+  }
+  const t = median(thick), tall = median(middle.map(b => bottom[b] - top[b]))
+  return t > tall * 0.05 && t < tall * 0.45 ? t : null
 }
 
 // Fills the photo's pixels outside the shoe (mask, sw x sh) with the nearest shoe pixel's colour, a ring at a time.

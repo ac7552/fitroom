@@ -37,6 +37,9 @@ const CLOTHS = {
   // Stretch (nylon and elastane): a very fine knit, a little sheen.
   stretch: { surface: "fine", tile: 0.012, roughness: 0.68, sheen: 0.35, sheenRoughness: 0.45, normal: 0.12 }
 }
+// Creases (see the cloth shader): how much a fold's shade (1 - aShade) counts beside the cloth's squeeze, and
+// how much darker and rougher the cloth is at a full crease. Kept low: dark creases read as dirt.
+const CREASE = { fold: 0.6, dark: 0.14, rough: 0.3 }
 // Which pattern fabric (pattern.js) is which cloth here; "denim" and "cotton" are what shops call them.
 const ALIASES = { cotton: "jersey", denim: "twill", nylon: "shell", leather: "shell" }
 
@@ -239,6 +242,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
       // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
       .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );"))
       .replace("#include <common>", `#include <common>
+        #define CREASE_FOLD ${CREASE.fold.toFixed(2)}
+        #define CREASE_DARK ${CREASE.dark.toFixed(2)}
+        #define CREASE_ROUGH ${CREASE.rough.toFixed(2)}
         uniform int uStitch;
         uniform int uClosure;
         uniform int uPocket;
@@ -292,8 +298,6 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
       .replace("#include <color_fragment>", `#include <color_fragment>
         if ( vHide > 0.0 || vHole > 0.0 || vCover > 0.5 ) discard;
         diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
-        // Gathered cloth sits in its own shade a little (its creases catch less light).
-        diffuseColor.rgb *= 1.0 - 0.1 * vStrain;
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
         if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy ) ).rgb;
         vec3 thread = uThread;
@@ -356,9 +360,14 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           }
         }
         diffuseColor.rgb = mix( diffuseColor.rgb, uMetal, metal );
+        // Creases: where the cloth is gathered (squeezed) or tucked into a fold, its tiny folds shade each
+        // other, so it's a little darker and rougher there (the photo's colour too, laid on above).
+        float crease = clamp( vStrain + CREASE_FOLD * ( 1.0 - vShade ), 0.0, 1.0 ) * ( 1.0 - metal );
+        diffuseColor.rgb *= 1.0 - CREASE_DARK * crease;
         if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.55;   // the inside`)
       .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-        roughnessFactor = mix( roughnessFactor, 0.28, metal );`)
+        roughnessFactor = mix( roughnessFactor, 0.28, metal );
+        roughnessFactor = min( 1.0, roughnessFactor * ( 1.0 + CREASE_ROUGH * crease ) );`)
       .replace("#include <aomap_fragment>", `#include <aomap_fragment>
         reflectedLight.indirectDiffuse *= vShade;
         reflectedLight.indirectSpecular *= vShade;`)

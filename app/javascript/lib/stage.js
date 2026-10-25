@@ -9,7 +9,7 @@ import { N8AOPass } from "n8ao"
 import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
 import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
 import { bodyFrame } from "lib/garments/body"
-import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, shapeShoeToPhoto, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
+import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture } from "lib/garments/print"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
@@ -46,6 +46,8 @@ export const STYLES = ["tailored", "zip", "bomber", "shirt"]
 // Tops, and casual jackets, cut from a sewing pattern and draped on the mannequin with cloth simulation.
 // The idle turn: how fast (OrbitControls' units: 2 is a turn in 30 s at 60 fps; this is about 75 s) and how
 // long after the last touch (ms) it starts.
+// The graphite stage's light from behind (see addLights).
+const RIM = { color: 0xdde6ff, intensity: 0.4, position: [-1.4, 2.6, -2.6] }
 const IDLE_TURN = { speed: 0.8, after: 8000 }
 
 // Contact shading's reach (metres; about a hand's width) and strength.
@@ -369,7 +371,8 @@ export class FittingStage {
         collar.clearcoat = 0.1
         collar.roughness = 0.6
         const eyelets = accessoryMaterial("metal", "#8c8270")
-        const geometry = shapeShoeToPhoto(shoeGeometry(body, frame, side, shoes.style), shoes.shoeSide)
+        // Built from the shop's side photo when there's one (see accessories.js), else from the style alone.
+        const geometry = (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, shoes.style)) || shoeGeometry(body, frame, side, shoes.style)
         this.feet.shoes[side] = hang(new THREE.Mesh(geometry, [sole, upper, laces, collar, eyelets]), side)
         if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side)
       }
@@ -379,24 +382,65 @@ export class FittingStage {
     if (shoes?.shoePhoto && shoes.shoeSide) this.wearShoePhoto(shoes, key)
   }
 
-  // The shop's side photo on the shoes, once it's read: the logo, stitching and sole as photographed. The
-  // eyelets go (the photo has its own); the shoe keeps its finish (matte suede, glossy leather).
+  // The shop's side photo on the shoes, once it's read: the logo, stitching and sole as photographed, where
+  // the shoe faces the side; elsewhere (the toe's top, the laces, the heel) the photo's own colours there,
+  // blurred, as the side photo can't show them (see accessories.js#wrapShoePhoto). The laces and eyelets
+  // stay 3D, in the laces' colour from the photo. The shoe keeps its finish (matte suede, glossy leather).
   async wearShoePhoto(shoes, key) {
     const read = await shoeTexture(shoes.shoePhoto).catch(() => null)
     if (!read || this.feet.key !== key) return
     const texture = new THREE.CanvasTexture(read.canvas)
     texture.colorSpace = THREE.SRGBColorSpace
     texture.anisotropy = 8
+    // A blurred copy of the photo, read on the CPU for each point's plain colour.
+    const size = 96, blur = document.createElement("canvas")
+    blur.width = blur.height = size
+    const bc = blur.getContext("2d", { willReadFrequently: true })
+    bc.filter = "blur(3px)"
+    bc.drawImage(read.canvas, 0, 0, size, size)
+    const pixels = bc.getImageData(0, 0, size, size).data
+    const colour = new THREE.Color()
+    const sample = (u, v, out, at) => {
+      const x = Math.min(size - 1, Math.max(0, Math.round(u * (size - 1)))), y = Math.min(size - 1, Math.max(0, Math.round((1 - v) * (size - 1))))
+      const i = 4 * (y * size + x)
+      colour.setRGB(pixels[i] / 255, pixels[i + 1] / 255, pixels[i + 2] / 255, THREE.SRGBColorSpace)
+      out[at] = colour.r; out[at + 1] = colour.g; out[at + 2] = colour.b
+    }
     for (const mesh of Object.values(this.feet.shoes)) {
-      wrapShoePhoto(mesh.geometry, shoes.shoeSide)
-      const [sole, upper, laces, collar, eyelets] = mesh.material
-      for (const m of [sole, upper, laces, collar]) {
+      const geometry = wrapShoePhoto(mesh.geometry, shoes.shoeSide)
+      const plainUV = geometry.attributes.uvPlain.array, uv = geometry.attributes.uv.array, n = geometry.attributes.position.count
+      const plain = new Float32Array(3 * n)
+      for (let i = 0; i < n; i++) sample(plainUV[2 * i], plainUV[2 * i + 1], plain, 3 * i)
+      geometry.setAttribute("aPlain", new THREE.BufferAttribute(plain, 3))
+      const [sole, upper, laces, collar] = mesh.material
+      for (const m of [sole, upper, collar]) {
         m.map = texture
         m.color.set(0xffffff)
         if (m.sheen) m.sheenColor.set(0x5a5a5a)
+        m.onBeforeCompile = shader => {
+          shader.vertexShader = shader.vertexShader
+            .replace("#include <common>", "#include <common>\nattribute vec3 aPlain;\nattribute float aPhoto;\nvarying vec3 vPlain;\nvarying float vPhoto;")
+            .replace("#include <begin_vertex>", "#include <begin_vertex>\nvPlain = aPlain;\nvPhoto = aPhoto;")
+          shader.fragmentShader = shader.fragmentShader
+            .replace("#include <common>", "#include <common>\nvarying vec3 vPlain;\nvarying float vPhoto;")
+            .replace("#include <map_fragment>", "#include <map_fragment>\ndiffuseColor.rgb = mix(vPlain, diffuseColor.rgb, vPhoto);")
+        }
+        m.customProgramCacheKey = () => "shoe-photo"
         m.needsUpdate = true
       }
-      eyelets.visible = false
+      // The laces: the photo's colour where they are in it (the front of the shaft, side on).
+      const index = geometry.index.array, group = geometry.groups.find(g => g.materialIndex === 2)
+      if (group) {
+        const sum = [0, 0, 0], seen = new Set(), one = [0, 0, 0]
+        for (let k = group.start; k < group.start + group.count; k++) {
+          const i = index[k]
+          if (seen.has(i)) continue
+          seen.add(i)
+          sample(uv[2 * i], uv[2 * i + 1], one, 0)
+          for (let c = 0; c < 3; c++) sum[c] += one[c]
+        }
+        if (seen.size) laces.color.setRGB(...sum.map(v => v / seen.size))
+      }
     }
     this.feet.texture?.dispose()
     this.feet.texture = texture
@@ -840,13 +884,14 @@ export class FittingStage {
     key.shadow.normalBias = 0.01
     this.scene.add(key)
     this.key = key
-    // In the daylight studio, a cool fill from the other side and a light from behind, which lifts the white
-    // mannequin off the pale backdrop.
+    // A light from behind, which catches the edges of the cloth and lifts the figure off the backdrop: dim and
+    // a little cool on the graphite stage (a studio's separation, not a colour cast), stronger in daylight. And
+    // in the daylight studio, a cool fill from the other side.
     this.fill = new THREE.DirectionalLight(0xf2f4ff, 0.55)
     this.fill.position.set(-2.5, 1.8, 2.0)
-    this.rim = new THREE.DirectionalLight(0xffffff, 0.55)
-    this.rim.position.set(0, 2.5, -3)
-    this.fill.visible = this.rim.visible = false
+    this.rim = new THREE.DirectionalLight(RIM.color, RIM.intensity)
+    this.rim.position.set(...RIM.position)
+    this.fill.visible = false
     this.scene.add(this.fill, this.rim)
 
     // A faint pool of light on the floor, so the figure stands on something, and its shadow in it.
@@ -884,7 +929,10 @@ export class FittingStage {
     this.pool.visible = !day
     this.floor.material.opacity = day ? 0.3 : 0.45
     this.contact.material.opacity = day ? 0.38 : 0.55
-    this.fill.visible = this.rim.visible = day
+    this.fill.visible = day
+    this.rim.color.set(day ? 0xffffff : RIM.color)
+    this.rim.intensity = day ? 0.55 : RIM.intensity
+    this.rim.position.set(...(day ? [0, 2.5, -3] : RIM.position))
     this.key.intensity = day ? 1.7 : 1.6
     this.key.shadow.radius = day ? 14 : 8
     this.scene.environmentIntensity = day ? 0.75 : 0.85

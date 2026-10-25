@@ -26,7 +26,7 @@ const BODY_HEIGHT = 1.76  // the heights below are for a body this tall (m); the
 export const SHOES = {
   sneaker: { back: 0.1, front: 0.088, dip: 0.016, sole: 0.027, toe: 0.014, thick: 0.007, flare: 0.004, box: 0.045 },
   hightop: { back: 0.145, front: 0.135, dip: 0.006, sole: 0.03, toe: 0.014, thick: 0.007, flare: 0.004, box: 0.045 },
-  boot: { back: 0.195, front: 0.18, dip: 0.004, sole: 0.036, toe: 0.016, thick: 0.009, flare: 0.007, box: 0.066, square: 2.6, lugs: 16, lug: 0.0024, pad: 0.011, full: 0.8 },
+  boot: { back: 0.195, front: 0.18, dip: 0.004, sole: 0.036, toe: 0.016, thick: 0.009, flare: 0.007, box: 0.066, square: 2.2, lugs: 16, lug: 0.0024, pad: 0.011, full: 0.45 },
   loafer: { back: 0.066, front: 0.052, dip: 0.012, sole: 0.016, toe: 0.02, thick: 0.005, flare: 0.002, box: 0.038 },
   sandal: { back: 0.024, front: 0.024, dip: 0, sole: 0.024, toe: 0.006, thick: 0.004, flare: 0.006, box: 0.024, strap: [0.035, 0.058] }
 }
@@ -315,25 +315,142 @@ export function shoeGeometry(body, frame, side, styleName) {
   return geometry
 }
 
-// Reshapes a 3D shoe to its side photo's outline (see print.js's shoeSide): each slice from heel to toe is
-// stretched up or down to the height the photo shows there, as a share of the shoe's length, so a boot's
-// shaft, a chunky sole or a low toe stand as photographed. Never pulled down into the foot. Null side: as built.
-export function shapeShoeToPhoto(geometry, side) {
-  if (!side) return geometry
-  const p = geometry.attributes.position.array, n = p.length / 3
-  const { floor, back, front, tops, bins, along } = shoeColumns(p, side.top.length)
-  const length = (side.right - side.left)
-  const wanted = Array.from({ length: bins }, (_, b) => ((side.bottom[b] - side.top[b]) * side.aspect / length) * (front - back))
-  const smooth = soften(soften(wanted))
-  const factor = smooth.map((v, b) => Math.min(2.5, Math.max(0.97, v / (tops[b] || v || 1))))
-  for (let i = 0; i < n; i++) {
-    const f = lerpAt(factor, along(p[3 * i + 2]))
-    p[3 * i + 1] = floor + (p[3 * i + 1] - floor) * f
+// A shoe built from its side photo (see print.js's shoeSide): its outline from heel to toe, as tall at each
+// point as photographed and as wide as the foot (and, up the shaft, the leg) inside it, plus the upper's
+// thickness, rounded in at the toe and heel. Its cross-sections are rounded boxes (a boot's squarer, a
+// sneaker's rounder), open on top where the leg comes out. Groups: 0 the sole (the photo's sole's height)
+// and its underside, 1 the upper. The photo is then wrapped on (wrapShoePhoto), which it fits exactly.
+const PHOTO_SHOE = { columns: 56, around: 28, round: { boot: 3.2, hightop: 3, sneaker: 2.6, loafer: 2.4, sandal: 2.4 } }
+export function photoShoeGeometry(body, frame, side, outline, styleName) {
+  const style = SHOES[styleName] ?? SHOES.sneaker
+  const s = (frame.top - frame.floor) / BODY_HEIGHT
+  const floor = frame.floor, thick = style.thick * s
+  const reachTop = floor + 0.32 * s
+  const slices = legSlices(body, frame, side, reachTop)
+  const rows = slices.rows
+  const ring = k => Array.from({ length: AROUND }, (_, j) => {
+    const a = angleOf(j), r = slices.reach[k][j]
+    return [slices.centres[k][0] + r * Math.sin(a), slices.centres[k][1] + r * Math.cos(a)]
+  })
+  const rings = Array.from({ length: rows }, (_, k) => ring(k))
+  // The foot's length: its outline's ends low down, with room for the toes and the heel counter.
+  let zmin = Infinity, zmax = -Infinity
+  for (let k = 0; k < rows && k * STEP < 0.05 * s; k++) for (const [, z] of rings[k]) { zmin = Math.min(zmin, z); zmax = Math.max(zmax, z) }
+  const back = zmin - thick - 0.003 * s, front = zmax + thick + style.toe * s
+  const length = front - back
+  const metres = length * outline.aspect / (outline.right - outline.left)
+  const bins = outline.top.length
+  const photoTall = u => lerpAt(outline.bottom, u) - lerpAt(outline.top, u)
+  // Where the body crosses a level line across the foot at z, at slice k: its x from and to, or null.
+  const across = (k, z) => {
+    let lo = Infinity, hi = -Infinity
+    const pts = rings[k]
+    for (let j = 0; j < AROUND; j++) {
+      const [x0, z0] = pts[j], [x1, z1] = pts[(j + 1) % AROUND]
+      if ((z0 - z) * (z1 - z) > 0 || z0 === z1) continue
+      const x = x0 + ((z - z0) / (z1 - z0)) * (x1 - x0)
+      lo = Math.min(lo, x); hi = Math.max(hi, x)
+    }
+    return lo <= hi ? [lo, hi] : null
   }
-  geometry.attributes.position.needsUpdate = true
+  // A boot's (or a high-top's) shaft goes up round the leg; a low shoe's collar sits under the ankle.
+  const tallShaft = styleName === "boot" || styleName === "hightop"
+  let shaft = 0
+  for (let b = 0; b < bins; b++) shaft = Math.max(shaft, (outline.bottom[b] - outline.top[b]) * metres)
+  const columns = PHOTO_SHOE.columns
+  const us = Array.from({ length: columns }, (_, c) => (1 - Math.cos((Math.PI * c) / (columns - 1))) / 2)
+  const tall = [], wide = [], middle = [], open = [], legAt = []
+  for (const u of us) {
+    const z = back + u * length
+    let height = photoTall(Math.min(1, Math.max(0, u))) * metres
+    let lo = Infinity, hi = -Infinity, footTop = -Infinity, low = [Infinity, -Infinity]
+    for (let k = 0; k < rows; k++) {
+      const y = floor + k * STEP
+      const x = across(k, z)
+      if (!x) continue
+      if (y <= height + 0.01 * s) { lo = Math.min(lo, x[0]); hi = Math.max(hi, x[1]) }
+      if (y < floor + 0.04 * s) { low[0] = Math.min(low[0], x[0]); low[1] = Math.max(low[1], x[1]) }
+      footTop = y - floor
+    }
+    // The leg comes out of the top here (the body carries on above the shoe): open on top.
+    // There, the shaft stands its full height (the shin can come out in front of where the photo's shaft
+    // ends, the mannequin's leg not standing just where the shop's did).
+    const through = footTop >= height + 0.03 * s
+    if (through) { if (tallShaft) height = Math.max(height, shaft) }
+    else if (Number.isFinite(footTop)) height = Math.max(height, footTop + thick)
+    tall.push(height)
+    wide.push(Number.isFinite(lo) ? (hi - lo) / 2 + thick : 0)
+    middle.push(Number.isFinite(low[0]) ? (low[0] + low[1]) / 2 : Number.isFinite(lo) ? (lo + hi) / 2 : null)
+    open.push(through)
+    const k = Math.min(rows - 1, Math.round((height - 0.01 * s) / STEP))
+    legAt.push(through ? across(k, z) : null)
+  }
+  // Middles where the foot isn't (the toe's room, behind the heel): the nearest one's.
+  for (let c = 1; c < columns; c++) if (middle[c] === null) middle[c] = middle[c - 1]
+  for (let c = columns - 2; c >= 0; c--) if (middle[c] === null) middle[c] = middle[c + 1]
+  const mid = soften(soften(middle))
+  // Rounded in at the toe and the heel: as wide as the ball, then an oval round to the tip.
+  const widest = (from, to) => Math.max(...us.map((u, c) => (u >= from && u <= to ? wide[c] : 0)))
+  const ball = widest(0.55, 0.85), heel = widest(0.08, 0.3), e = 2.4
+  const width = soften(us.map((u, c) => {
+    let w = wide[c]
+    if (u > 0.7) w = Math.max(w, ball * Math.max(0, 1 - ((u - 0.7) / 0.3) ** e) ** (1 / e))
+    if (u < 0.2) w = Math.max(w, heel * Math.max(0, 1 - ((0.2 - u) / 0.2) ** e) ** (1 / e))
+    return w
+  }))
+  const height = soften(tall)
+  const soleTall = us.map(u => Math.max(0.004 * s, (lerpAt(outline.bottom, u) - lerpAt(outline.sole ?? outline.bottom, u)) * metres))
+  // Each column's cross-section: a rounded box from one side's foot of the sole, over the top, to the other's.
+  const round = PHOTO_SHOE.round[styleName] ?? 2.6, around = PHOTO_SHOE.around
+  const positions = [], grid = []
+  const flare = style.flare * s
+  for (let c = 0; c < columns; c++) {
+    const z = back + us[c] * length, w = width[c], hgt = height[c], row = []
+    for (let r = 0; r <= around; r++) {
+      const phi = (Math.PI * r) / around, cos = Math.cos(phi), sin = Math.sin(phi)
+      // Up the shaft, where the leg comes out of the top, its walls stand straight to the top.
+      const e = open[c] && tallShaft ? 10 : round
+      const y = floor + 0.0008 + (hgt - 0.0008) * Math.abs(sin) ** (2 / e)
+      const out = y - floor < soleTall[c] ? flare : 0
+      const x = mid[c] + Math.sign(cos) * (w + out) * Math.abs(cos) ** (2 / e)
+      positions.push(x, y, z)
+      row.push(positions.length / 3 - 1)
+    }
+    grid.push(row)
+  }
+  const sole = [], upper = []
+  const quad = (list, a, b, c2, d) => list.push(a, b, d, b, c2, d)
+  const yOf = v => positions[3 * v + 1], xOf = v => positions[3 * v]
+  for (let c = 0; c + 1 < columns; c++) {
+    for (let r = 0; r < around; r++) {
+      const a = grid[c][r], b = grid[c + 1][r], c2 = grid[c + 1][r + 1], d = grid[c][r + 1]
+      // Open over the leg where it comes out of the top.
+      const leg = open[c] && open[c + 1] ? (legAt[c] ?? legAt[c + 1]) : null
+      if (leg && r > around * 0.25 && r < around * 0.75 && [a, b, c2, d].every(v => xOf(v) > leg[0] - 0.004 * s && xOf(v) < leg[1] + 0.004 * s)) continue
+      const lowest = Math.min(yOf(a), yOf(b), yOf(c2), yOf(d)) - floor
+      quad(lowest < Math.min(soleTall[c], soleTall[c + 1]) - 1e-4 ? sole : upper, a, b, c2, d)
+    }
+    // The underside: across from one side's foot to the other's.
+    quad(sole, grid[c][around], grid[c + 1][around], grid[c + 1][0], grid[c][0])
+  }
+  // The ends: closed with a fan from their middles.
+  for (const [c, flip] of [[0, true], [columns - 1, false]]) {
+    const x = mid[c], y = floor + height[c] / 2, z = back + us[c] * length
+    positions.push(x, y, z)
+    const centre = positions.length / 3 - 1
+    for (let r = 0; r < around; r++) {
+      const a = grid[c][r], b = grid[c][r + 1]
+      if (flip) upper.push(centre, a, b); else upper.push(centre, b, a)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex([...sole, ...upper])
+  geometry.addGroup(0, sole.length, 0)
+  geometry.addGroup(sole.length, upper.length, 1)
   geometry.computeVertexNormals()
-  geometry.computeBoundingBox()
-  geometry.computeBoundingSphere()
+  // Built to the photo's own scale: wrapShoePhoto lays it on exactly.
+  geometry.userData.photo = { floor, back, length, metres }
   return geometry
 }
 
@@ -370,23 +487,83 @@ function lerpAt(list, u) {
 // shoe. Fitting the photo's outline to the shoe's column by column keeps the logo, stitching and sole where
 // they are on the real one, whatever the two shapes' differences. Seen from the inside of the foot, the
 // photo shows mirrored. Sets the geometry's uv.
+//
+// What the side photo shows edge on (the top of the toe, the laces, the toe's and the heel's ends) would all
+// take the outline's last pixels and smear. Those parts are rolled in from the outline instead: a point takes
+// the photo's pixel as far in from the outline (against the way it faces) as the point is in from the shoe's
+// side, so the top of the toe shows the leather near the photo's top edge and the laces the laces.
+//
+// Even rolled in, the photo is only true for what faces the side, so each point also gets aPhoto (1 facing the
+// side, down to 0 facing the front, the back or up) and uvPlain: where in the photo its plain colour is, in
+// from the outline and its details (stage.js#wearShoePhoto blends the photo into that colour by aPhoto).
 const EDGE_IN = 0.025
+const ROLL = 0.75
 export function wrapShoePhoto(geometry, side) {
-  const p = geometry.attributes.position.array, n = p.length / 3
-  const { floor, tops, along } = shoeColumns(p, side.top.length)
+  if (!geometry.attributes.normal) geometry.computeVertexNormals()
+  const p = geometry.attributes.position.array, normals = geometry.attributes.normal.array, n = p.length / 3
+  const exact = geometry.userData.photo ?? null
+  const { floor, back, front, tops, bins, along: alongMesh } = shoeColumns(p, side.top.length)
+  const along = exact ? z => Math.min(1, Math.max(0, (z - exact.back) / exact.length)) : alongMesh
   const at = lerpAt
-  const uv = new Float32Array(2 * n)
+  // Each column's middle and half width across the foot.
+  const low = new Float64Array(bins).fill(Infinity), high = new Float64Array(bins).fill(-Infinity)
+  for (let i = 0; i < n; i++) {
+    const b = Math.min(bins - 1, Math.floor(along(p[3 * i + 2]) * bins))
+    low[b] = Math.min(low[b], p[3 * i]); high[b] = Math.max(high[b], p[3 * i])
+  }
+  for (let b = 1; b < bins; b++) if (!Number.isFinite(low[b])) { low[b] = low[b - 1]; high[b] = high[b - 1] }
+  for (let b = bins - 2; b >= 0; b--) if (!Number.isFinite(low[b])) { low[b] = low[b + 1]; high[b] = high[b + 1] }
+  const middle = soften(Array.from(low, (l, b) => (l + high[b]) / 2)), half = soften(Array.from(low, (l, b) => (high[b] - l) / 2))
+  // The photo's scale: its width (as a share of the photo's) and height (of its height) per metre.
+  const length = front - back || 1
+  const perX = (side.right - side.left) / length, perY = perX / side.aspect
+  const uv = new Float32Array(2 * n), plain = new Float32Array(2 * n), photo = new Float32Array(n)
+  const sole = soleVertices(geometry)
+  // The 3D sole on the photo's sole, the upper on its upper.
+  let soleTop = 0
+  for (let i = 0; i < n; i++) if (sole[i]) soleTop = Math.max(soleTop, p[3 * i + 1] - floor)
+  const rowAt = (k, y, top3d) => {
+    const bottom = at(side.bottom, k), top = at(side.top, k), line = side.sole ? at(side.sole, k) : bottom - (bottom - top) / 7
+    if (y <= soleTop) return bottom - (y / (soleTop || 1)) * (bottom - line)
+    return line - Math.min(1, (y - soleTop) / Math.max(1e-4, top3d - soleTop)) * (line - top)
+  }
   for (let i = 0; i < n; i++) {
     const u = along(p[3 * i + 2])
-    const up = Math.min(1, Math.max(0, (p[3 * i + 1] - floor) / (at(tops, u) || 1)))
+    {
+      const k = EDGE_IN * 4 + u * (1 - 8 * EDGE_IN)
+      const y = p[3 * i + 1] - floor, top3d = at(tops, u)
+      const into = sole[i] ? y : Math.min(y, soleTop + (top3d - soleTop) * 0.8)
+      plain[2 * i] = side.toeRight ? side.left + k * (side.right - side.left) : side.right - k * (side.right - side.left)
+      plain[2 * i + 1] = 1 - (exact ? Math.max(at(side.top, k), at(side.bottom, k) - (sole[i] ? y : Math.min(y, 0.8 * top3d)) / exact.metres) : rowAt(k, into, top3d))
+    }
     // The heel's and the toe's last columns are mostly the photo's soft edge: kept a little in from them.
-    const k = EDGE_IN + u * (1 - 2 * EDGE_IN)
-    const top = at(side.top, k), bottom = at(side.bottom, k)
+    let k = EDGE_IN + u * (1 - 2 * EDGE_IN)
+    let row = exact ? Math.max(at(side.top, k), at(side.bottom, k) - (p[3 * i + 1] - exact.floor) / exact.metres) : rowAt(k, p[3 * i + 1] - floor, at(tops, u))
+    // Rolled in from the outline: against the way the point faces, as far as it is in from the shoe's side.
+    const nx = normals[3 * i], nz = normals[3 * i + 2], ny = normals[3 * i + 1], flat = Math.hypot(nz, ny)
+    // Only what faces away from the side: the photo shows a side wall as it is.
+    const facing = Math.max(0, 1 - Math.abs(nx) / 0.8) ** 2
+    photo[i] = Math.min(1, Math.max(0, (Math.abs(nx) - 0.3) / 0.4))
+    const inward = Math.max(0, at(half, u) - Math.abs(p[3 * i] - at(middle, u))) * ROLL * facing
+    if (inward > 0 && flat > 0.05) {
+      k = Math.min(1 - EDGE_IN, Math.max(EDGE_IN, k - (nz / flat) * inward * perX / (side.right - side.left)))
+      row += (ny / flat) * inward * perY
+      row = Math.min(at(side.bottom, k), Math.max(at(side.top, k), row))
+    }
     uv[2 * i] = side.toeRight ? side.left + k * (side.right - side.left) : side.right - k * (side.right - side.left)
-    uv[2 * i + 1] = 1 - (bottom - up * (bottom - top))
+    uv[2 * i + 1] = 1 - row
   }
   geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2))
+  geometry.setAttribute("uvPlain", new THREE.BufferAttribute(plain, 2))
+  geometry.setAttribute("aPhoto", new THREE.BufferAttribute(photo, 1))
   return geometry
+}
+
+// Which points are on the sole (group 0).
+function soleVertices(geometry) {
+  const on = new Uint8Array(geometry.attributes.position.count), index = geometry.index.array
+  for (const group of geometry.groups) if (group.materialIndex === 0) for (let k = group.start; k < group.start + group.count; k++) on[index[k]] = 1
+  return on
 }
 
 function normalize3(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l] }
