@@ -43,6 +43,10 @@ const FABRICS = {
 // pattern and draped like tops (lib/garments).
 export const STYLES = ["tailored", "zip", "bomber", "shirt"]
 // Tops, and casual jackets, cut from a sewing pattern and draped on the mannequin with cloth simulation.
+// The idle turn: how fast (OrbitControls' units: 2 is a turn in 30 s at 60 fps; this is about 75 s) and how
+// long after the last touch (ms) it starts.
+const IDLE_TURN = { speed: 0.8, after: 8000 }
+
 // Contact shading's reach (metres; about a hand's width) and strength.
 const AO = { radius: 0.22, falloff: 1, intensity: 3.2 }
 
@@ -109,6 +113,7 @@ export class FittingStage {
     this.controls.enableZoom = false   // the page scrolls over it; zooming isn't needed to judge fit
     this.controls.minPolarAngle = 1.2
     this.controls.maxPolarAngle = 1.75
+    this.idleTurn()
     this.effects = this.addEffects()
     this.scene.background = backdrop(this.backdropTone(1))
 
@@ -1047,6 +1052,24 @@ export class FittingStage {
     return { image, depth: await depth, mask: await mask }
   }
 
+  // Left alone, the mannequin turns slowly, as a shop's turntable does, so the clothes are seen all round; a
+  // touch stops it, and it starts again a while after. Not for anyone who's asked for less motion.
+  idleTurn() {
+    const still = matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+    if (still) return
+    const controls = this.controls
+    controls.autoRotateSpeed = IDLE_TURN.speed
+    let timer = null
+    const later = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => { controls.autoRotate = true }, IDLE_TURN.after)
+    }
+    controls.addEventListener("start", () => { controls.autoRotate = false; clearTimeout(timer) })
+    controls.addEventListener("end", later)
+    later()
+    this.stopIdleTurn = () => { clearTimeout(timer); controls.autoRotate = false }
+  }
+
   // Contact shading (N8AO): the soft darkening where cloth folds, where an arm meets the body, under a
   // collar and round the feet, as a room's light can't reach. It only darkens what's hidden, so a garment's
   // colour stays the shop's in open light. Then the colours as the renderer would show them (tone mapping),
@@ -1190,6 +1213,7 @@ export class FittingStage {
   }
 
   dispose() {
+    this.stopIdleTurn?.()
     cancelAnimationFrame(this.frameId)
     for (const slot of LAYERS) this.removeDraped(slot)
     this.resizeObserver.disconnect()
