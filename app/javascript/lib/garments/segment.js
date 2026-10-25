@@ -19,6 +19,8 @@ function load() {
   loading ??= (async () => {
     const t = await import(/* webpackIgnore: true */ LIBRARY)
     t.env.allowLocalModels = false
+    // In a worker, so the page (the 3D view, the fit) keeps going while a photo is cleaned.
+    if (t.env.backends?.onnx?.wasm) t.env.backends.onnx.wasm.proxy = true
     // On the CPU (WebAssembly): this model's masks come back wrong on WebGPU in this library's version (all
     // of the picture, or none of it). A photo takes about five seconds.
     const model = await t.SamModel.from_pretrained(MODEL, { dtype: "q8", device: "wasm" })

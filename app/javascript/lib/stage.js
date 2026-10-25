@@ -977,10 +977,11 @@ export class FittingStage {
     const H = this.calibration.body.height / 100
     // Room above the head for the controls and below the feet for the size rows (on a phone the controls
     // sit above the picture instead, and the narrow picture needs a little more room round the figure).
-    const margin = this.camera.aspect < 0.8 ? 0.8 : 0.74
+    // A little low in the picture, so the note under the controls stays clear of the head.
+    const margin = 0.8
     const distance = (H * margin) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))
-    this.controls.target.set(0, H * 0.5, 0)
-    this.camera.position.set(Math.sin(0.25) * distance, H * 0.54, Math.cos(0.25) * distance)
+    this.controls.target.set(0, H * 0.56, 0)
+    this.camera.position.set(Math.sin(0.25) * distance, H * 0.6, Math.cos(0.25) * distance)
     this.controls.update()
   }
 
@@ -1162,6 +1163,10 @@ export class FittingStage {
   // A few milliseconds of draping per frame, so the page stays smooth while the cloth settles: the pants
   // first, then the top over them.
   advanceDrape() {
+    // Once everything is on (or nothing's being put on), say so, once: the page's loader goes.
+    if (this.settled) {
+      if (this.busy) { this.busy = false; this.onDrape?.("done", true) }
+    } else this.busy = true
     // A tucked top waits to be shown until the pants it's tucked into are (it's cut short, to end inside them).
     for (const slot of this.order) if (this.slots[slot]?.final && !this.slots[slot].posing) this.show(this.slots[slot])
     for (const slot of this.order) {

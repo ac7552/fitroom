@@ -68,7 +68,8 @@ export default class extends Controller {
     this.shownBodyType = this.bodyType
     this.stage.setBodyType(this.bodyType)
     this.floatSwitches()
-    this.stage.onDrape = (phase, done) => this.showLoading(done ? null : DRAPE_TEXT[phase] ?? null)
+    // One garment done isn't the outfit done: the loader goes when the stage says everything is on.
+    this.stage.onDrape = phase => this.showLoading(phase === "done" ? null : DRAPE_TEXT[phase] ?? this.loadingLabelTarget.textContent)
     this.outfit = {}
     this.addItem(this.garmentValue)
     this.renderOwnSizes()
@@ -104,6 +105,7 @@ export default class extends Controller {
 
   async importGarment(payload) {
     this.importErrorTarget.hidden = true
+    this.showLoading("Getting the clothes…")
     this.importButtonTarget.disabled = true
     this.importButtonTarget.textContent = "Reading the page…"
     try {
@@ -129,6 +131,7 @@ export default class extends Controller {
       }
       this.update()
     } catch (error) {
+      this.showLoading(null)
       this.showImportError(error.name === "TimeoutError" ? "That store's page took too long. Try again, or paste its size chart instead."
         : error.message.startsWith("Failed to fetch") ? "Can't reach Fitroom. Is the server running?" : error.message)
     } finally {
@@ -847,6 +850,8 @@ export default class extends Controller {
       onePiece: Boolean(garment.one_piece),
       buckle: garment.buckle ?? null
     })))
+    // Nothing to sew (shoes alone, or the same outfit again): no loader.
+    if (this.stage.settled) this.showLoading(null)
     this.tuckTarget.hidden = !this.stage.canTuck() || this.stage.onePiece
 
     this.renderStageNote()
