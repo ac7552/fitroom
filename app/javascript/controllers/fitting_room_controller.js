@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readBottomPhoto, readGarment, readShoe, readTopShape, readBottomShape, loaded } from "lib/garments/print"
+import { readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded } from "lib/garments/print"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
 
@@ -108,9 +108,12 @@ export default class extends Controller {
     this.showLoading("Getting the clothes…")
     this.importButtonTarget.disabled = true
     this.importButtonTarget.textContent = "Reading the page…"
+    let shoeViews = null, shoePhoto = null
     try {
       if (payload.url) {
         const shopData = await readShop(payload.url)
+        // A shoe's other photos stay here: only the 3D view uses them.
+        if (shopData) { shoeViews = shopData.shoeViews; shoePhoto = shopData.photo; delete shopData.shoeViews }
         if (shopData) payload = { ...payload, shop_data: shopData }
       }
       const response = await fetch(this.importUrlValue, {
@@ -121,6 +124,7 @@ export default class extends Controller {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message ?? "Couldn't read that.")
+      if (shoeViews?.length && data.garment.garment === "shoes" && data.garment.photo === shoePhoto) data.garment.shoeViews = shoeViews
       this.addItem(data.garment)
       // A women's piece goes on the woman mannequin while the numbers are still the example ones (a person
       // who entered their own keeps their mannequin).
@@ -851,6 +855,7 @@ export default class extends Controller {
       // Shoes are shaped to their side photo's outline and wear the photo itself (see accessories.js).
       shoeSide: kind === "shoes" ? garment.shoeSide ?? null : null,
       shoePhoto: kind === "shoes" && garment.shoeSide ? garment.photo : null,
+      shoeViews: kind === "shoes" && garment.shoeSide ? garment.shoeViews ?? null : null,
       onePiece: Boolean(garment.one_piece),
       buckle: garment.buckle ?? null
     })))
@@ -1150,14 +1155,42 @@ async function readShop(link) {
   const sizing = await json(`https://app.kiwisizing.com/api/getSizingChart?${query}`)
   const { id, handle: name, title, vendor, product_type, tags, body_html, images, options } = product
   const variants = (product.variants ?? []).slice(0, 40).map(v => ({ title: v.title }))
-  const photo = await readShopPhoto(images?.[0]?.src)
+  let photo = await readShopPhoto(images?.[0]?.src)
+  // A shoe's photos: one from the side (the first, or else the first that is), and any square on from
+  // above, behind or in front, for the 3D shoe (see print.js's shoeView).
+  let shoeViews = null
+  if (photo && SHOE_WORDS.test(`${product_type} ${title}`)) ({ photo, views: shoeViews } = await readShoePhotos(images, photo))
   // The photo's shape (how high its arms are sewn in, how far its sleeves reach), which says how a top is
   // cut when the shop gives no chart.
   const shape = photo ? await readTopShape(photo).catch(() => null) : null
   const bottomShape = photo ? await readBottomShape(photo).catch(() => null) : null
   const backPhoto = photo ? await readBackPhoto(images, { shape, bottomShape }) : null
   return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
-    photo, back_photo: backPhoto, shape, bottom_shape: bottomShape }
+    photo, back_photo: backPhoto, shape, bottom_shape: bottomShape, shoeViews }
+}
+
+const SHOE_WORDS = /sneakers?|\bshoes?\b|\bboots?\b|footwear|loafers?|sandals?|slides?\b|mules?\b|clogs?|trainers?|derby|oxfords?\b|runners?|low top|high top/i
+
+async function readShoePhotos(images, first) {
+  const rest = (images ?? []).slice(1, 8)
+  let photo = first, side = (await readShoe(first).catch(() => null))?.side
+  const others = []
+  for (const image of rest) {
+    const other = await readShopPhoto(image.src, 1000)
+    if (!other) continue
+    if (!side) {
+      const read = (await readShoe(other).catch(() => null))?.side
+      if (read) { photo = other; side = read; continue }
+    }
+    others.push(other)
+  }
+  if (!side) return { photo: first, views: null }
+  const views = []
+  for (const other of others) {
+    const view = await readShoeView(other, side).catch(() => null)
+    if (view && !views.some(v => v.kind === view.kind)) views.push(view)
+  }
+  return { photo, views }
 }
 
 // The shop's photo of the back, when it has one: the photo named for the back, or else the second photo
@@ -1183,11 +1216,11 @@ async function readBackPhoto(images, { shape, bottomShape }) {
 }
 
 // The product's photo, small, as a data: URL (Shopify's image host lets pages read its photos).
-async function readShopPhoto(src) {
+async function readShopPhoto(src, width = 1600) {
   if (!src) return null
   try {
     const url = new URL(src.startsWith("//") ? `https:${src}` : src)
-    url.searchParams.set("width", "1600")
+    url.searchParams.set("width", String(width))
     const response = await fetch(url, { signal: AbortSignal.timeout(6000), credentials: "omit" })
     const blob = await response.blob()
     if (!response.ok || !/^image\/(jpeg|png|webp)$/.test(blob.type) || blob.size > 2_500_000) return null

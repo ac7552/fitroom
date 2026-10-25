@@ -508,6 +508,34 @@ export async function shoeTexture(src, size = 1024) {
   return { canvas, side }
 }
 
+// One of the shop's other photos of a shoe made ready to lay on it (see shoeView): the backdrop round the shoes
+// filled in from their edges. A canvas, or null.
+export async function viewTexture(src, size = 1024) {
+  const image = new Image()
+  image.src = src
+  try { await loaded(image) } catch { return null }
+  const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
+  const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, w, h)
+  const pixels = context.getImageData(0, 0, w, h)
+  const small = Math.min(1, SIZE / Math.max(w, h))
+  const sw = Math.max(8, Math.round(w * small)), sh = Math.max(8, Math.round(h * small))
+  const reader = document.createElement("canvas")
+  reader.width = sw
+  reader.height = sh
+  const rc = reader.getContext("2d", { willReadFrequently: true })
+  rc.drawImage(canvas, 0, 0, sw, sh)
+  const cut = cutOut(rc.getImageData(0, 0, sw, sh).data, sw, sh)
+  if (!cut) return null
+  bleed(pixels.data, w, h, cut.all, sw, sh)
+  context.putImageData(pixels, 0, 0)
+  return canvas
+}
+
 export const SIDE_BINS = 64
 
 // Where the shoe is in a side photo (see shoeTexture), with its mask at the photo's size.
@@ -573,8 +601,160 @@ export function shoeSide(data, w, h) {
     bottom: Array.from({ length: SIDE_BINS }, (_, b) => (bottom[order(b)] - inset) / h),
     sole: Array.from({ length: SIDE_BINS }, (_, b) => Math.max(top[order(b)] + inset, bottom[order(b)] - soleThick) / h),
     front: ends.front, back: ends.back, height: (low - high + 1) / h,
+    // Its colours, for telling the shop's other photos apart (see shoeView): the upper's and the sole's,
+    // and up its heel's and its toe's ends (Lab, in VIEW_BANDS from the floor up).
+    colours: shoeColours(lab, mask, w, h, { left, right, high, low, toeRight, soleThick }),
     mask, w, h
   }
+}
+
+const VIEW_BANDS = 8
+
+function shoeColours(lab, mask, w, h, { left, right, high, low, toeRight, soleThick }) {
+  const at = (x0, x1, y0, y1) => {
+    const values = [[], [], []]
+    for (let y = Math.max(0, Math.round(y0)); y <= Math.min(h - 1, Math.round(y1)); y++) {
+      for (let x = Math.max(0, Math.round(x0)); x <= Math.min(w - 1, Math.round(x1)); x++) {
+        const i = y * w + x
+        if (mask[i]) for (let c = 0; c < 3; c++) values[c].push(lab[3 * i + c])
+      }
+    }
+    return values[0].length ? values.map(median) : null
+  }
+  const long = right - left, tall = low - high
+  const strip = share => {
+    const x = toeRight ? left + share * long : right - share * long
+    // Up from the floor: each band's colour, a few pixels in from that end.
+    return Array.from({ length: VIEW_BANDS }, (_, b) => at(x - long * 0.03, x + long * 0.03, low - ((b + 1) / VIEW_BANDS) * tall, low - (b / VIEW_BANDS) * tall))
+  }
+  return {
+    upper: at(left + long * 0.3, right - long * 0.3, high + tall * 0.4, low - soleThick - tall * 0.05),
+    sole: at(left + long * 0.2, right - long * 0.2, low - soleThick * 0.8, low - soleThick * 0.2),
+    heel: strip(0.06), toe: strip(0.94)
+  }
+}
+
+// What one of the shop's other photos of a shoe shows, read against its side photo (side: shoeSide's): a
+// view from above ("top"), from behind ("back") or in front ("front"), each one shoe or a pair standing
+// apart; or null (a sole, a close-up, a pair at an angle, which can't be laid on the 3D shoe). Each shoe in
+// it: its box (shares of the photo) and its outline across in VIEW_ROWS rows (top to bottom), and for a top
+// view whether its toe is up. Shops photograph these square on, which is what's used.
+// The same for a photo's address (see shoeView), with the photo itself: { ...view, photo: src }, or null.
+export async function readShoeView(src, side) {
+  const image = new Image()
+  image.src = src
+  try { await loaded(image) } catch { return null }
+  const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
+  const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, w, h)
+  const view = shoeView(context.getImageData(0, 0, w, h).data, w, h, side)
+  return view && { ...view, photo: src }
+}
+
+export const VIEW_ROWS = 48
+export function shoeView(data, w, h, side) {
+  // A pair lying touching (seen from above, side by side) is tried split in two when it isn't one shoe.
+  return viewOf(data, w, h, side, false) ?? viewOf(data, w, h, side, true)
+}
+
+function viewOf(data, w, h, side, pair) {
+  if (!side?.colours?.upper) return null
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const { lab } = cut
+  const all = pieces(cut.all, w, h).sort((a, b) => b.length - a.length)
+  if (!all.length) return null
+  // The shoes: the big pieces, a pair touching split where the columns between them are nearly empty.
+  const big = all.filter(p => p.length > all[0].length * 0.35)
+  if (big.length > 2) return null
+  const split = piece => {
+    let x0 = w, x1 = -1
+    for (const i of piece) { const x = i % w; x0 = Math.min(x0, x); x1 = Math.max(x1, x) }
+    const columns = new Float64Array(w)
+    for (const i of piece) columns[i % w]++
+    const most = Math.max(...columns)
+    let cut = -1, least = Infinity
+    for (let x = Math.round(x0 + (x1 - x0) * 0.3); x <= Math.round(x0 + (x1 - x0) * 0.7); x++) if (columns[x] < least) { least = columns[x]; cut = x }
+    if (cut < 0 || least > most * (pair ? 0.75 : 0.35)) return [piece]
+    return [piece.filter(i => i % w < cut), piece.filter(i => i % w >= cut)]
+  }
+  const shoes = big.length === 1 ? split(big[0]) : big
+  const boxes = shoes.map(piece => {
+    let x0 = w, x1 = -1, y0 = h, y1 = -1
+    for (const i of piece) { const x = i % w, y = (i - x) / w; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y) }
+    const inside = new Uint8Array(w * h)
+    for (const i of piece) inside[i] = 1
+    return { piece, inside, x0, x1, y0, y1, fill: piece.length / ((x1 - x0 + 1) * (y1 - y0 + 1)) }
+  }).sort((a, b) => a.x0 - b.x0)
+  // A close-up runs off the photo's edge.
+  if (boxes.some(b => b.x0 <= 1 || b.y0 <= 1 || b.x1 >= w - 2 || b.y1 >= h - 2)) return null
+  // A pair: side by side, the same size.
+  if (boxes.length === 2) {
+    const [a, b] = boxes
+    if (a.x1 > b.x0 + 1 || Math.abs((a.y1 - a.y0) / (b.y1 - b.y0) - 1) > 0.25) return null
+  }
+  const distance = (p, q) => p && q ? Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) : Infinity
+  const colourOf = (box, y0, y1, x0 = box.x0, x1 = box.x1) => {
+    const values = [[], [], []]
+    for (let y = Math.max(0, Math.round(y0)); y <= Math.min(h - 1, Math.round(y1)); y++) {
+      for (let x = Math.max(0, Math.round(x0)); x <= Math.min(w - 1, Math.round(x1)); x++) {
+        const i = y * w + x
+        if (box.inside[i]) for (let c = 0; c < 3; c++) values[c].push(lab[3 * i + c])
+      }
+    }
+    return values[0].length ? values.map(median) : null
+  }
+  const box = boxes[0], bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1
+  const rows = b => Array.from({ length: VIEW_ROWS }, (_, r) => {
+    const y = Math.min(h - 1, Math.round(b.y0 + ((r + 0.5) / VIEW_ROWS) * (b.y1 - b.y0)))
+    let first = -1, last = -1
+    for (let x = b.x0; x <= b.x1; x++) if (b.inside[y * w + x]) { if (first < 0) first = x; last = x }
+    return first < 0 ? null : [first / w, (last + 1) / w]
+  })
+  const fill = list => {
+    for (let r = 1; r < list.length; r++) list[r] ??= list[r - 1]
+    for (let r = list.length - 2; r >= 0; r--) list[r] ??= list[r + 1]
+    return list
+  }
+  const shoeOf = (b, extra = {}) => ({ left: b.x0 / w, right: (b.x1 + 1) / w, top: b.y0 / h, bottom: (b.y1 + 1) / h, rows: fill(rows(b)), ...extra })
+  const tall = bh / bw
+  // How far its outline's middle wanders from row to row, as a share of its width: little for a shoe seen
+  // square on from behind, in front or above; a lot for a pair at an angle.
+  const across = rows(box).filter(Boolean).map(([l, r]) => ((l + r) / 2) * w)
+  const centre = across.reduce((a, b) => a + b, 0) / across.length
+  const wander = across.reduce((sum, c) => sum + Math.abs(c - centre), 0) / across.length / bw
+  // Seen from above, a shoe is round at both ends; from behind or in front it stands on its sole, full width.
+  const widths = rows(box).map(r => (r ? r[1] - r[0] : 0)), widest = Math.max(...widths)
+  const ends = [widths[2], widths[VIEW_ROWS - 3]].map(v => v / widest)
+  const stands = ends[1] > 0.75
+  if (tall > 1.9 && tall < 4.5 && box.fill > 0.45 && wander < 0.09 && Math.max(...ends) < 0.75) {
+    // From above, not below: the opening (the lining, the insole) shows in the heel's half, unlike the
+    // shoe's edge; a sole is one colour all over.
+    const toeUpGuess = (() => { const widths = rows(box).map(r => (r ? r[1] - r[0] : 0)); return widths.indexOf(Math.max(...widths)) / VIEW_ROWS < 0.5 })()
+    const heelY = toeUpGuess ? box.y0 + bh * 0.8 : box.y0 + bh * 0.2
+    const opening = colourOf(box, heelY - bh * 0.06, heelY + bh * 0.06, box.x0 + bw * 0.4, box.x1 - bw * 0.4)
+    const rim = colourOf(box, box.y0 + bh * 0.45, box.y0 + bh * 0.55, box.x0, box.x0 + bw * 0.15)
+    if (distance(opening, rim) < 10) return null
+    // The toe is the end nearer the shoe's widest point (the ball of the foot).
+    const widths = rows(box).map(r => (r ? r[1] - r[0] : 0))
+    const widest = widths.indexOf(Math.max(...widths)) / VIEW_ROWS
+    const toeUp = widest < 0.5
+    return { kind: "top", aspect: h / w, shoes: boxes.map(b => shoeOf(b, { toeUp })) }
+  }
+  if (tall > 0.7 && tall < 3.2 && box.fill > 0.5 && wander < 0.04 && stands) {
+    // From behind or in front: which end of the side photo its middle, floor to top, looks like.
+    const strip = Array.from({ length: VIEW_BANDS }, (_, band) => colourOf(box, box.y1 - ((band + 1) / VIEW_BANDS) * bh, box.y1 - (band / VIEW_BANDS) * bh, box.x0 + bw * 0.4, box.x1 - bw * 0.4))
+    const gap = ends => strip.reduce((sum, c, band) => sum + Math.min(40, distance(c, ends[band])), 0)
+    const heel = gap(side.colours.heel), toe = gap(side.colours.toe)
+    if (Math.abs(heel - toe) < VIEW_BANDS * 1.5) return null
+    // Its bottom is level (the sole standing on the floor), not a pair at an angle.
+    return { kind: heel < toe ? "back" : "front", aspect: h / w, shoes: boxes.map(b => shoeOf(b)) }
+  }
+  return null
 }
 
 // A shoe's sole's thickness in a side photo (pixels), or null when the sole isn't told apart from the upper.
@@ -682,7 +862,7 @@ function cutOut(data, w, h) {
   }
   const garment = largestPiece(mask, w, h)
   if (garment.count < w * h * 0.05) return null
-  return { lab, bg, garment, far }
+  return { lab, bg, garment, far, all: mask }
 }
 
 // What a photo of one piece of clothing shows, from its outline: { kind: "top", "jacket" or "trousers",

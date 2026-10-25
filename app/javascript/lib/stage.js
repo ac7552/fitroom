@@ -10,7 +10,7 @@ import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
 import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
 import { bodyFrame } from "lib/garments/body"
 import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
-import { shoeTexture } from "lib/garments/print"
+import { shoeTexture, viewTexture } from "lib/garments/print"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
 // script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
@@ -330,7 +330,7 @@ export class FittingStage {
   // Shoes and socks, lofted round the mannequin's feet and legs as they stand (see accessories.js), then hung
   // on the calves' bones so they move with the legs. Rebuilt when the body or what's worn changes.
   dressFeet(shoes, socks) {
-    const key = JSON.stringify([shoes && [shoes.style, shoes.color, shoes.sole, shoes.fabric, shoes.shoeSide], socks && [socks.style, socks.color],
+    const key = JSON.stringify([shoes && [shoes.style, shoes.color, shoes.sole, shoes.fabric, shoes.shoeSide, (shoes.shoeViews ?? []).map(v => v.kind)], socks && [socks.style, socks.color],
       this.fitted.scale, this.fitted.influences, this.bodyType])
     if (key === this.feet.key) return
     this.feet.key = key
@@ -372,7 +372,8 @@ export class FittingStage {
         collar.roughness = 0.6
         const eyelets = accessoryMaterial("metal", "#8c8270")
         // Built from the shop's side photo when there's one (see accessories.js), else from the style alone.
-        const geometry = (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, shoes.style)) || shoeGeometry(body, frame, side, shoes.style)
+        const relief = !(shoes.shoeViews ?? []).some(v => v.kind === "top")
+        const geometry = (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, shoes.style, { laces: relief })) || shoeGeometry(body, frame, side, shoes.style)
         this.feet.shoes[side] = hang(new THREE.Mesh(geometry, [sole, upper, laces, collar, eyelets]), side)
         if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side)
       }
@@ -387,12 +388,19 @@ export class FittingStage {
   // blurred, as the side photo can't show them (see accessories.js#wrapShoePhoto). The laces and eyelets
   // stay 3D, in the laces' colour from the photo. The shoe keeps its finish (matte suede, glossy leather).
   async wearShoePhoto(shoes, key) {
-    const read = await shoeTexture(shoes.shoePhoto).catch(() => null)
+    const views = (shoes.shoeViews ?? []).filter(v => ["top", "back", "front"].includes(v.kind))
+    const [read, ...canvases] = await Promise.all([shoeTexture(shoes.shoePhoto), ...views.map(v => viewTexture(v.photo))].map(p => p.catch(() => null)))
     if (!read || this.feet.key !== key) return
-    const texture = new THREE.CanvasTexture(read.canvas)
-    texture.colorSpace = THREE.SRGBColorSpace
-    texture.anisotropy = 8
-    // A blurred copy of the photo, read on the CPU for each point's plain colour.
+    const textureOf = canvas => {
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.anisotropy = 8
+      return texture
+    }
+    const texture = textureOf(read.canvas)
+    const shown = views.filter((_, k) => canvases[k])
+    const others = Object.fromEntries(shown.map(v => [v.kind, textureOf(canvases[views.indexOf(v)])]))
+    // A blurred copy of the side photo, read on the CPU for each point's plain colour.
     const size = 96, blur = document.createElement("canvas")
     blur.width = blur.height = size
     const bc = blur.getContext("2d", { willReadFrequently: true })
@@ -406,8 +414,10 @@ export class FittingStage {
       colour.setRGB(pixels[i] / 255, pixels[i + 1] / 255, pixels[i + 2] / 255, THREE.SRGBColorSpace)
       out[at] = colour.r; out[at + 1] = colour.g; out[at + 2] = colour.b
     }
-    for (const mesh of Object.values(this.feet.shoes)) {
-      const geometry = wrapShoePhoto(mesh.geometry, shoes.shoeSide)
+    const blank = this.feet.blank ??= new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1)
+    blank.needsUpdate = true
+    for (const [foot, mesh] of Object.entries(this.feet.shoes)) {
+      const geometry = wrapShoePhoto(mesh.geometry, shoes.shoeSide, { views: shown, foot })
       const plainUV = geometry.attributes.uvPlain.array, uv = geometry.attributes.uv.array, n = geometry.attributes.position.count
       const plain = new Float32Array(3 * n)
       for (let i = 0; i < n; i++) sample(plainUV[2 * i], plainUV[2 * i + 1], plain, 3 * i)
@@ -418,12 +428,17 @@ export class FittingStage {
         m.color.set(0xffffff)
         if (m.sheen) m.sheenColor.set(0x5a5a5a)
         m.onBeforeCompile = shader => {
+          shader.uniforms.uTop = { value: others.top ?? blank }
+          shader.uniforms.uBack = { value: others.back ?? blank }
+          shader.uniforms.uFront = { value: others.front ?? blank }
           shader.vertexShader = shader.vertexShader
-            .replace("#include <common>", "#include <common>\nattribute vec3 aPlain;\nattribute float aPhoto;\nvarying vec3 vPlain;\nvarying float vPhoto;")
-            .replace("#include <begin_vertex>", "#include <begin_vertex>\nvPlain = aPlain;\nvPhoto = aPhoto;")
+            .replace("#include <common>", "#include <common>\nattribute vec3 aPlain;\nattribute vec4 aViews;\nattribute vec2 uvTop;\nattribute vec2 uvBack;\nattribute vec2 uvFront;\nvarying vec3 vPlain;\nvarying vec4 vViews;\nvarying vec2 vTop;\nvarying vec2 vBack;\nvarying vec2 vFront;")
+            .replace("#include <begin_vertex>", "#include <begin_vertex>\nvPlain = aPlain;\nvViews = aViews;\nvTop = uvTop;\nvBack = uvBack;\nvFront = uvFront;")
           shader.fragmentShader = shader.fragmentShader
-            .replace("#include <common>", "#include <common>\nvarying vec3 vPlain;\nvarying float vPhoto;")
-            .replace("#include <map_fragment>", "#include <map_fragment>\ndiffuseColor.rgb = mix(vPlain, diffuseColor.rgb, vPhoto);")
+            .replace("#include <common>", "#include <common>\nuniform sampler2D uTop;\nuniform sampler2D uBack;\nuniform sampler2D uFront;\nvarying vec3 vPlain;\nvarying vec4 vViews;\nvarying vec2 vTop;\nvarying vec2 vBack;\nvarying vec2 vFront;")
+            .replace("#include <map_fragment>", `#include <map_fragment>
+              float rest = max( 0.0, 1.0 - vViews.x - vViews.y - vViews.z - vViews.w );
+              diffuseColor.rgb = diffuseColor.rgb * vViews.x + texture2D( uTop, vTop ).rgb * vViews.y + texture2D( uBack, vBack ).rgb * vViews.z + texture2D( uFront, vFront ).rgb * vViews.w + vPlain * rest;`)
         }
         m.customProgramCacheKey = () => "shoe-photo"
         m.needsUpdate = true
@@ -439,10 +454,12 @@ export class FittingStage {
           sample(uv[2 * i], uv[2 * i + 1], one, 0)
           for (let c = 0; c < 3; c++) sum[c] += one[c]
         }
-        if (seen.size) laces.color.setRGB(...sum.map(v => v / seen.size))
+        // A shade darker: a lace's twist and its gaps shadow it.
+        if (seen.size) laces.color.setRGB(...sum.map(v => (v / seen.size) * 0.78))
       }
     }
-    this.feet.texture?.dispose()
+    for (const t of this.feet.textures ?? []) t.dispose()
+    this.feet.textures = [texture, ...Object.values(others)]
     this.feet.texture = texture
   }
 
