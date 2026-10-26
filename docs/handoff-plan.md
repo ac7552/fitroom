@@ -33,6 +33,7 @@ _Updated 23 Oct 2026: section 3 checks, Phase 2 leftovers and Phase 4 are done (
 | Cloth | `cloth.js`, `place.js`, `drape.js` (XPBD), `dress.js` (`DrapedTop`, `waistband`, `TUCKABLE`), `body.js` (frame, foot outlines with `lowest()`), `fabric.js` (looks; `matte` for nylon pants), `print.js` | |
 | AI try-on spike | `script/modal/tryon_engine.py` (the models and the validator, no Modal), `script/modal/tryon_spike.py` (the Modal app), `script/colab/fitroom_tryon_spike.ipynb` (the same on Colab's free T4, since Modal wants a card for GPUs) | FASHN VTON 1.5 and Leffa paint the shop photo onto the render; three gates in `validate.py` decide. `docs/ai-spike.md`. |
 | Spike in one command | `script/spike/run.mjs` (inputs from the running app via `inputs.mjs`, then a private Kaggle dataset + the kernel in `script/spike/kaggle/`, polled, output into `tmp/spike/out/`), `script/spike/lib.mjs` (pure parts, `test/javascript/spike_run.test.mjs`) | `node script/spike/run.mjs <store links>` runs the sheet on a free Kaggle GPU; needs a phone-verified account and `~/.kaggle/kaggle.json`. `docs/ai-spike.md`, "One command, free, on Kaggle". |
+| Outfit audit | `script/spike/audit.mjs` (drives the running app with Playwright through every outfit in `docs/outfits.json`, both mannequins, front and back pictures, per-piece JSON, contact sheets, `report.json` + `index.html` in `tmp/audit/`), `script/spike/lib.mjs` (`expectedFrom`, `flagsFor`, the sheet HTML; `test/javascript/audit.test.mjs`) | `node script/spike/audit.mjs --outfits 1-10` to start (~1 min a piece, ~2 h for all; `--resume` picks up where it stopped). `docs/ai-spike.md`, "Auditing the 37 outfits", lists the red flags. |
 
 Draping order: sew in a rest pose with the thighs slightly apart, then skin the cloth into the pose shown and settle it again.
 
@@ -89,7 +90,8 @@ These are turned away on import (`NOT_FITTED` / `UNSUPPORTED` in `garment_import
 - Mac setup notes: macOS 13 needs PyTorch 2.8 (2.9+ dropped MPS on macOS 13), and `av` 15.1 with ComfyUI's two `av.video.reformatter` imports wrapped in try/except.
 
 ### Phase 6: the 37 outfits
-- [ ] A real Kith link for each piece of the owner's 37 outfit scenarios (Man and Woman each), rendered on both mannequins, on a contact sheet beside the shop photos. Fix what looks wrong.
+- [x] **Runner built:** a real Kith link for each piece of the owner's 37 outfit scenarios (Man and Woman each) is in `docs/outfits.json`, and `script/spike/audit.mjs` renders them on both mannequins, on contact sheets beside the shop photos, with red flags per piece (`docs/ai-spike.md`, "Auditing the 37 outfits"). Built against a stand-in page, not the live app: run `--outfits 1-10` on the Mac first and fix the runner if the real page trips it.
+- [ ] Run the audit on everything and fix what looks wrong.
 - [ ] Re-record `docs/images/demo.gif` if the look has changed a lot.
 
 ---

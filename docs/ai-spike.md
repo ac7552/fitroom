@@ -214,6 +214,50 @@ its own parser and OpenPose, and the validator takes the garment's region as a b
 (`validate.band_mask`: tops 17–56% of the figure's height, bottoms 50–96%). The print mask follows the same
 route: without `NAME-mask.png` the garment's box is the band's box.
 
+### Auditing the 37 outfits
+
+The same Playwright route runs every outfit scenario in `docs/outfits.json` (plan Phase 6) through the
+running app and lays the results out on contact sheets, so what looks wrong can be seen in one place:
+
+```sh
+node script/spike/audit.mjs [--outfits 1-37] [--body men|women|both] [--out tmp/audit] [--base http://localhost:3000] [--resume]
+```
+
+It takes about a minute a piece (import, fit, drape), so about 2 hours for all 37 outfits on both
+mannequins; start with `--outfits 1-10` (or `3,5,7-9`). For each outfit × body it picks the mannequin and
+its example numbers, clears the outfit, adds each piece as `https://kith.com/products/<handle>` in order
+(2 s apart, since Kith rate-limits; a network-looking error is retried once), waits for the cloth to settle,
+and photographs the figure from the front and from behind. Everything lands in `tmp/audit/`:
+
+- `NN-men-tee-and-jeans-front.png` / `-back.png` (NAME is the outfit's number, body and name), the shop
+  photo of each piece (`NAME-1-<handle>.jpg`), and `NAME.json`: per piece its name, brand, kind and style,
+  fabric, cut, zip, women's flag, chart kind, missing parts and size names, the size picked and the best,
+  the verdict per part (status and ease in cm), the warnings the page showed, import and drape times, the
+  import error if any, whether a print, a photo map or a shoe's side was read, and `flags`.
+- `sheet-NN-body.png`: a row per piece — shop photo | front | back | words (name, kind/style/fabric/cut, best
+  size and verdicts in short words, flags in red). Rendered in the same Chrome from an HTML page, so the
+  text is real.
+- `report.json` (every outfit) and `index.html` (every sheet with its flag count), rewritten after each
+  outfit, and a summary table printed at the end (outfit, body, items, flags).
+
+`--resume` skips outfits whose `-front.png` and `.json` are already there. A piece that fails never stops
+the run, and a page that breaks is reopened (the pieces before it are then off the figure; `onAtEnd` says
+which pieces are on in the pictures). The flags (`flagsFor` in `script/spike/lib.mjs`):
+
+| Flag | Means |
+|---|---|
+| `import failed: …` / `not tried on: …` | The page showed an import error; the second is the "can't try on shoes yet" kind. |
+| `sizes guessed (… chart)` | No garment chart: sizes came from a body chart or the size names. |
+| `chart missing: …` | The chart has no number for those parts. |
+| `kind looks wrong: name says …, got …` | The listing's name says one thing (`expectedFrom`: hoodie, sweater, cardigan, polo, shirt, tee, jeans, jogger, short, skirt, dress, boot, sneaker…) and the import another. |
+| `best size X is the smallest/largest of …` | The example body's best size is at an end of the chart: the chart or the fit may be off. |
+| `<part> tight/short by N cm` / `loose/long by N cm` | A verdict beyond −8 cm or +12 cm in the size shown. |
+| `no print read from the photo` | The name says graphic, print, stripe or logo but no print (or photo map, for pants) was read. |
+| `drape not settled in 4 min` | The cloth never came to rest. |
+| `slow import: N s` | The import took more than 40 s. |
+| `replaced the <kind> already on` | A later piece of the same kind pushed an earlier one off (one of each kind is worn). |
+| `the page switched the mannequin …` | A women's piece on the men's run flipped the body; the audit flipped it back. |
+
 ### Pose JSON
 
 For FASHN, `--pose-json` replaces DWPose's answer with the page's own keypoints (the mannequin has no face, so

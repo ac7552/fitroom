@@ -96,7 +96,7 @@ export function writeStoreZip(out, files) {
 
 // Parses `node inputs.mjs LINK [LINK...] [--base URL] [--out DIR] [--body men|women]`. `flags` names
 // options that take no value (run.mjs' --skip-inputs); `defaults` adds options beyond inputs.mjs' own.
-export function parseArgs(argv, defaults = {}, flags = []) {
+export function parseArgs(argv, defaults = {}, flags = [], bodies = ["men", "women"]) {
   const options = { base: "http://localhost:3000", out: "tmp/spike", body: "men", ...defaults }
   const links = []
   for (let i = 0; i < argv.length; i++) {
@@ -109,8 +109,206 @@ export function parseArgs(argv, defaults = {}, flags = []) {
       if (options[key] === undefined) throw new Error(`${a} needs a value`)
     } else links.push(a)
   }
-  if (!["men", "women"].includes(options.body)) throw new Error("--body is men or women")
+  if (!bodies.includes(options.body)) throw new Error(`--body is ${bodies.join(" or ")}`)
   return { ...options, links }
+}
+
+// The outfit audit (script/spike/audit.mjs) ----------------------------------------------------------------
+// Pure parts, tested in test/javascript/audit.test.mjs.
+
+// Parses `node audit.mjs [--outfits 1-37] [--body men|women|both] [--out tmp/audit] [--base URL] [--resume]`.
+// `outfits` comes back as the list of outfit numbers (1-based); `bodies` as ["men"], ["women"] or both.
+export function parseAuditArgs(argv, count = 37) {
+  const options = parseArgs(argv, { outfits: `1-${count}`, out: "tmp/audit", body: "both" }, ["resume"], ["men", "women", "both"])
+  if (options.links.length) throw new Error(`unexpected argument ${options.links[0]}`)
+  options.outfits = parseRange(options.outfits, count)
+  options.bodies = options.body === "both" ? ["men", "women"] : [options.body]
+  options.resume = Boolean(options.resume)
+  return options
+}
+
+// "1-37", "3", "1-5,8,10-12" -> the numbers, once each, in order, all within 1..count.
+export function parseRange(text, count = Infinity) {
+  const numbers = []
+  for (const part of String(text ?? "").split(",").map(s => s.trim()).filter(Boolean)) {
+    const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(part)
+    if (!match) throw new Error(`--outfits wants numbers like 1-37 or 3,5,7-9, not "${part}"`)
+    const from = Number(match[1]), to = match[2] === undefined ? from : Number(match[2])
+    if (from < 1 || to < from || to > count) throw new Error(`--outfits: ${part} is outside 1-${count}`)
+    for (let n = from; n <= to; n++) if (!numbers.includes(n)) numbers.push(n)
+  }
+  if (numbers.length === 0) throw new Error("--outfits names no outfit")
+  return numbers
+}
+
+// "07-women-tee-and-jeans": the outfit's number (two digits), the mannequin and the outfit's name as a slug.
+export function auditName(number, body, outfitName) {
+  const slug = slugFor(outfitName, "")
+  return `${String(number).padStart(2, "0")}-${body}-${slug === "item" ? "outfit" : slug}`
+}
+
+// What a listing's name says the item should be: { kinds: [...], styles: [...] } (either empty when the name
+// doesn't say), or null when the name says nothing we know. The first matching line wins, so "T-Shirt" is a
+// tee before it's a shirt, "Dress Shirt" is a shirt, and "Short Sleeve Shirt" isn't shorts. Where the import
+// may fairly pick either of two (a hoodie that zips is a top or a jacket), both are listed.
+const EXPECTED = [
+  [/sneakers?|trainers?|\bshoes?\b|\bboots?\b|loafers?|sandals?|\bslides?\b|\bmules?\b|\bclogs?\b|\bheels?\b/i, ["shoes"], []],
+  [/\bbelts?\b/i, ["belt"], []],
+  [/\bsocks?\b/i, ["socks"], []],
+  [/\bdress(?:es)?\b(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?))|\bgowns?\b|\bmaxi\b|\bmidi\b|sundress/i, ["top"], ["dress"]],
+  [/\bskirts?\b|\bskort\b/i, ["trousers"], ["skirt"]],
+  [/\bleggings?\b|\btights\b/i, ["trousers"], ["leggings"]],
+  [/\bshorts?\b(?![- ]?sleeve)/i, ["trousers"], ["shorts"]],
+  [/joggers?|sweatpants?|track ?pants?|\bsweats\b/i, ["trousers"], ["joggers"]],
+  [/\bjeans?\b|denim (?:pants?|trousers?)/i, ["trousers"], ["jeans"]],
+  [/\bpants?\b|trousers?|chinos?|slacks/i, ["trousers"], []],
+  [/overcoat|topcoat|top coat|car coat|trench|peacoat|pea coat|parka|duffle|\bcoat\b/i, ["coat", "jacket"], []],
+  [/blazer|\bsuit\b|sport ?coat|tuxedo/i, ["jacket"], ["tailored"]],
+  [/bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington/i, ["jacket"], ["bomber"]],
+  [/\bjacket\b|overshirt|shacket|anorak|windbreaker|puffer/i, ["jacket", "coat"], []],
+  [/cardigan/i, ["top", "jacket"], ["cardigan"]],
+  [/hoodie|hooded/i, ["top", "jacket"], ["hoodie", "zip"]],
+  [/\bpolos?\b/i, ["top"], ["polo"]],
+  [/\btanks?\b|camisole|\bcami\b|singlet|bralette|\bbra\b/i, ["top"], ["tank"]],
+  [/sweater|jumper|\bknit\b|knitted|cashmere|merino/i, ["top"], ["sweater", "cardigan"]],
+  [/sweatshirt|crew ?neck|pullover|fleece/i, ["top"], ["sweatshirt", "hoodie", "sweater"]],
+  [/long[- ]?sleeve.*\b(?:t[- ]?shirt|tee)s?\b|\b(?:t[- ]?shirt|tee)s?\b.*long[- ]?sleeve|\bl\/s\b.*\btee\b/i, ["top"], ["longsleeve", "tee"]],
+  [/\bt[- ]?shirts?\b|\btees?\b/i, ["top"], ["tee", "longsleeve"]],
+  [/blouse|\bshirts?\b|camp collar|\btop\b/i, ["top"], ["shirt", "shortshirt", "longsleeve", "tee"]]
+]
+export function expectedFrom(name) {
+  const text = String(name ?? "")
+  for (const [pattern, kinds, styles] of EXPECTED) if (pattern.test(text)) return { kinds, styles }
+  return null
+}
+
+// Whether the kind and style the import gave match what the name says. True when the name says nothing.
+export function kindMatches(name, kind, style) {
+  const expected = expectedFrom(name)
+  if (!expected) return true
+  if (!expected.kinds.includes(kind)) return false
+  // A style is only checked on the kind that has styles of its own (a hoodie-named jacket may be any jacket).
+  if (expected.kinds.length > 1 && kind !== expected.kinds[0]) return true
+  return expected.styles.length === 0 || expected.styles.includes(style)
+}
+
+// Names that promise a print the page should have read from the photo.
+export const PRINTED_NAME = /graphic|print|stripe|striped|logo|\bcheck(?:ed|s)?\b|plaid|camo|floral|tie[- ]dye|pattern/i
+
+// Limits for the fit flags (cm): a part that's tighter or shorter than TIGHT, or looser or longer than LOOSE,
+// in the size shown, is a flag. Imports slower than SLOW_IMPORT ms are a flag too.
+export const TIGHT_CM = -8, LOOSE_CM = 12, SLOW_IMPORT_MS = 40000
+
+// The red flags for one audited item (the JSON audit.mjs writes per item). Each flag is a short sentence.
+export function flagsFor(item) {
+  const flags = []
+  if (item.importError) {
+    flags.push(item.unsupported ? `not tried on: ${item.importError}` : `import failed: ${item.importError}`)
+    return flags
+  }
+  if (item.guessed) flags.push(`sizes guessed (${item.chart?.kind ?? "?"} chart)`)
+  if (item.chart?.missing?.length) flags.push(`chart missing: ${item.chart.missing.join(", ")}`)
+  if (!kindMatches(item.name, item.kind, item.style)) {
+    const expected = expectedFrom(item.name)
+    flags.push(`kind looks wrong: name says ${expected.kinds.join("/")}${expected.styles.length ? ` (${expected.styles.join("/")})` : ""}, got ${item.kind}${item.style ? ` (${item.style})` : ""}`)
+  }
+  const names = item.chart?.sizes ?? []
+  if (item.best && names.length > 1 && (item.best === names[0] || item.best === names[names.length - 1])) {
+    flags.push(`best size ${item.best} is the ${item.best === names[0] ? "smallest" : "largest"} of ${names[0]}–${names[names.length - 1]}`)
+  }
+  for (const check of item.checks ?? []) {
+    const ease = Number(check.ease_cm)
+    if (!Number.isFinite(ease)) continue
+    if (["tight", "short"].includes(check.status) && ease < TIGHT_CM) flags.push(`${check.part} ${check.status} by ${Math.abs(ease).toFixed(0)} cm`)
+    if (["loose", "long"].includes(check.status) && ease > LOOSE_CM) flags.push(`${check.part} ${check.status} by ${ease.toFixed(0)} cm`)
+  }
+  if (PRINTED_NAME.test(item.name ?? "") && !item.printRead && !item.photoMapRead && !["shoes", "belt", "socks"].includes(item.kind)) flags.push("no print read from the photo")
+  if (item.settled === false) flags.push("drape not settled in 4 min")
+  if (item.importMs > SLOW_IMPORT_MS) flags.push(`slow import: ${Math.round(item.importMs / 1000)} s`)
+  if (item.replaced) flags.push(`replaced the ${item.replaced} already on`)
+  if (item.bodyFlipped) flags.push("the page switched the mannequin (a women's piece); switched back")
+  return flags
+}
+
+// The verdicts in short words for the sheet's text panel: "chest fits · waist tight −3 · length long +14".
+export function verdictWords(checks) {
+  const sign = n => (n > 0 ? `+${n.toFixed(0)}` : n.toFixed(0))
+  return (checks ?? []).map(c => `${c.part} ${c.status === "good" ? "fits" : c.status}${Number.isFinite(Number(c.ease_cm)) && c.status !== "good" ? ` ${sign(Number(c.ease_cm))}` : ""}`).join(" · ")
+}
+
+const html = s => String(s ?? "").replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch])
+
+// The contact sheet for one outfit on one mannequin, as a page: a header, then a row per item with the shop
+// photo, the outfit from the front and from behind (the same two pictures on every row), and a text panel.
+// `pictures`: { front, back } as data: URLs (or null); each item carries `photoData` (a data: URL) when the
+// page had its photo.
+export function sheetHtml({ number, outfitName, body, items, pictures, flags }) {
+  const rows = items.map((item, i) => {
+    const itemFlags = item.flags ?? []
+    return `
+      <section class="row">
+        <div class="cell photo">${item.photoData ? `<img src="${item.photoData}" alt="">` : `<div class="none">no photo</div>`}</div>
+        <div class="cell render">${pictures.front ? `<img src="${pictures.front}" alt="">` : `<div class="none">no render</div>`}</div>
+        <div class="cell render">${pictures.back ? `<img src="${pictures.back}" alt="">` : `<div class="none">no render</div>`}</div>
+        <div class="cell text">
+          <p class="mono">${i + 1} · ${html(item.handle)}</p>
+          <h2>${html(item.name ?? item.handle)}</h2>
+          <p class="meta">${html([item.brand, item.kind, item.style, item.fabric, item.cut && typeof item.cut === "object" ? Object.entries(item.cut).filter(([, v]) => v === true).map(([k]) => k).join(" ") : null, item.zip ? "zip" : null, item.women ? "women's" : null].filter(Boolean).join(" · "))}</p>
+          ${item.importError ? "" : `
+          <p><b>${html(item.selected ?? "?")}</b>${item.best && item.best !== item.selected ? ` (best ${html(item.best)})` : " best"} of ${html((item.chart?.sizes ?? []).join(" "))}${item.chart?.kind ? ` · ${html(item.chart.kind)} chart` : ""}${item.verdict ? ` · ${html(item.verdict)}` : ""}</p>
+          <p class="verdicts">${html(verdictWords(item.checks))}</p>
+          <p class="meta">${html([item.importMs != null ? `import ${(item.importMs / 1000).toFixed(1)} s` : null, item.drapeMs != null ? `drape ${(item.drapeMs / 1000).toFixed(1)} s` : null, item.printRead ? "print read" : null, item.photoMapRead ? "photo laid on" : null, item.shoeSideRead ? "shoe side read" : null].filter(Boolean).join(" · "))}</p>
+          ${(item.warnings ?? []).map(w => `<p class="meta">${html(w)}</p>`).join("")}`}
+          ${itemFlags.map(f => `<p class="flag">⚑ ${html(f)}</p>`).join("")}
+        </div>
+      </section>`
+  }).join("")
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${html(auditName(number, body, outfitName))}</title>
+<style>
+  body { margin: 0; padding: 24px; background: #15161a; color: #e8e8e6; font: 14px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; width: 1400px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #2d2f36; padding-bottom: 12px; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; } h2 { font-size: 15px; margin: 2px 0 4px; font-weight: 600; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #9a9ca3; margin: 0; }
+  .row { display: grid; grid-template-columns: 260px 300px 300px 1fr; gap: 16px; padding: 12px 0; border-bottom: 1px solid #2d2f36; }
+  .cell { min-width: 0; } .cell img { display: block; width: 100%; height: 400px; object-fit: contain; background: #1d1e23; border: 1px solid #2d2f36; }
+  .none { height: 400px; display: grid; place-items: center; color: #6b6d74; border: 1px dashed #2d2f36; }
+  .meta { color: #9a9ca3; margin: 2px 0; } .verdicts { margin: 4px 0; } p { margin: 4px 0; }
+  .flag { color: #f87171; margin: 3px 0; font-weight: 500; }
+  .count { color: ${flags ? "#f87171" : "#9a9ca3"}; }
+</style></head><body>
+<header><div><p class="mono">Outfit ${String(number).padStart(2, "0")} · ${html(body)}</p><h1>${html(outfitName)}</h1></div>
+<p class="count">${items.length} item${items.length === 1 ? "" : "s"} · ${flags} flag${flags === 1 ? "" : "s"}</p></header>
+${rows}
+</body></html>`
+}
+
+// tmp/audit/index.html: every sheet, with its flag count, red when there are flags.
+export function indexHtml(report) {
+  const rows = (report.outfits ?? []).map(o => `
+    <tr class="${o.flags ? "flagged" : ""}"><td class="mono">${String(o.number).padStart(2, "0")}</td><td>${html(o.outfitName)}</td><td>${html(o.body)}</td>
+      <td>${o.items.length}</td><td class="n">${o.flags}</td><td><a href="${html(o.sheet)}">sheet</a> · <a href="${html(o.json)}">json</a>${o.error ? ` · <span class="flag">${html(o.error)}</span>` : ""}</td></tr>`).join("")
+  const total = (report.outfits ?? []).reduce((n, o) => n + o.flags, 0)
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Outfit audit</title>
+<style>
+  body { margin: 0; padding: 24px; background: #15161a; color: #e8e8e6; font: 14px/1.5 -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  h1 { font-size: 20px; font-weight: 600; } table { border-collapse: collapse; } td, th { padding: 6px 12px; border-bottom: 1px solid #2d2f36; text-align: left; }
+  th { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #9a9ca3; }
+  .mono { font-family: ui-monospace, Menlo, monospace; } .n { text-align: right; } .flagged .n, .flag { color: #f87171; } a { color: #c7c9d1; }
+</style></head><body>
+<h1>Outfit audit · ${(report.outfits ?? []).length} sheets · ${total} flags${report.when ? ` · ${html(report.when)}` : ""}</h1>
+<table><thead><tr><th>#</th><th>Outfit</th><th>Body</th><th>Items</th><th>Flags</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+</body></html>`
+}
+
+// The summary table printed at the end: one line per outfit × body.
+export function summaryLines(report) {
+  const outfits = report.outfits ?? []
+  const width = Math.max(6, ...outfits.map(o => o.outfitName.length))
+  const lines = [`${"#".padEnd(3)} ${"outfit".padEnd(width)} ${"body".padEnd(6)} ${"items".padStart(5)} ${"flags".padStart(5)}`]
+  for (const o of outfits) lines.push(`${String(o.number).padStart(2, "0").padEnd(3)} ${o.outfitName.padEnd(width)} ${o.body.padEnd(6)} ${String(o.items.length).padStart(5)} ${String(o.flags).padStart(5)}${o.error ? `  ${o.error}` : ""}`)
+  return lines
 }
 
 // The Kaggle side (script/spike/run.mjs) -------------------------------------------------------------------
