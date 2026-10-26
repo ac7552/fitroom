@@ -192,6 +192,7 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_in_delta 46.5 * 2.54, size["chest"], 0.01
     # 34.5" was measured from the back of the neck; from the shoulder seam it's 34.5" minus half of 18".
     assert_in_delta (34.5 - 9) * 2.54, size["sleeve"], 0.01
+    assert_equal "centre_back_guessed", chart[:sleeve_from]
   end
 
   # The resale coat fixture, rewritten as a different listing: name, description and "Fabric" field.
@@ -345,6 +346,11 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_nil garment[:cropped]
     assert_equal "garment", garment[:chart][:kind]
     assert_in_delta 34 * 2.54, garment[:chart][:sizes].find { it["name"] == "M" }["chest"], 0.01
+    # Its 25.875" sleeve (65.7 cm) is from the shoulder seam: the shop's flat photo shows the cuffs about 24 cm
+    # below the hem, as 65.7 cm from the shoulder gives (from the centre back, 46.7 cm, they'd end at the hem).
+    # Extra-long sleeves on a shrunken body are the look; they aren't read as a centre back measurement.
+    assert_in_delta 25.875 * 2.54, garment[:chart][:sizes].find { it["name"] == "M" }["sleeve"], 0.01
+    assert_nil garment[:chart][:sleeve_from]
     # The same hoodie, insulated, is still a jacket; so is a knit zip-up with no hood (see kind_of).
     down = given.merge("product" => given["product"].merge("title" => "Lodge Hoodie - Black", "body_html" => "<p>Nylon, downproof. Two-way zipper closure.</p>"))
     assert_equal [ "jacket", "zip" ], import.from_shopify("https://kith.com/products/khwsw0106-265", given: down).values_at(:garment, :style)
@@ -355,6 +361,28 @@ class GarmentImportTest < ActiveSupport::TestCase
     # A sweater is a knit whatever its fibre; a slim-fit woven shirt is fitted but doesn't stretch.
     assert_equal "knit", import.send(:fabric_of, { name: "Merino Crewneck Sweater", fabric: "100% Merino Wool" }, "top")
     assert_equal({ fit: "fitted", stretch: false }, import.send(:top_cut, { name: "Slim Fit Oxford Shirt", description: "Cotton poplin." }))
+  end
+
+  test "a sleeve measured from the centre back is read from the shoulder seam, once, at import" do
+    # A women's knit whose sleeves are longer than any arm: the usual 58 cm arm plus half the shoulders.
+    cb = GarmentImport.from_text("Size | Chest | Shoulders | Sleeve | Length (cm)\nS | 84 | 37 | 75 | 58\nM | 88 | 38 | 76 | 60\nL | 92 | 39 | 77 | 62\n", garment: "top")
+    assert_equal "centre_back_guessed", cb[:chart][:sleeve_from]
+    assert_equal [ 56.5, 57.0, 57.5 ], cb[:chart][:sizes].map { it["sleeve"] }
+    # A men's T-shirt's short sleeve is what it says.
+    tee = GarmentImport.from_text("Size | Chest | Shoulders | Sleeve | Length (cm)\nM | 104 | 46 | 22 | 70\nL | 110 | 48 | 23 | 72\n", garment: "top")
+    assert_nil tee[:chart][:sleeve_from]
+    assert_equal [ 22.0, 23.0 ], tee[:chart][:sizes].map { it["sleeve"] }
+    # A chart that says its sleeve runs from the centre back is converted even when the sleeve is short.
+    said = GarmentImport.from_text("Size | Chest | Shoulders | Sleeve (from center back) | Length (cm)\nM | 104 | 46 | 44 | 70\nL | 110 | 48 | 45 | 72\n", garment: "top")
+    assert_equal "centre_back", said[:chart][:sleeve_from]
+    assert_equal [ 21.0, 21.0 ], said[:chart][:sizes].map { it["sleeve"] }
+    # A men's long sleeve from the shoulder (66 cm on a 65 cm arm) is left alone; a chart with no shoulders
+    # takes off half a man's usual 46.
+    long = GarmentImport.from_text("Size | Chest | Shoulders | Sleeve | Length (cm)\nM | 108 | 47 | 66 | 72\nL | 114 | 49 | 67 | 74\n", garment: "top")
+    assert_nil long[:chart][:sleeve_from]
+    raglan = GarmentImport.from_text("Size | Chest | Sleeve | Length (cm)\nM | 108 | 86 | 72\nL | 114 | 88 | 74\n", garment: "top")
+    assert_equal [ 63.0, 65.0 ], raglan[:chart][:sizes].map { it["sleeve"] }
+    assert_equal "centre_back_guessed", raglan[:chart][:sleeve_from]
   end
 
   test "a site that turns away every app says so at once, without asking it" do
