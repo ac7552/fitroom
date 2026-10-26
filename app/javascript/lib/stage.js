@@ -364,13 +364,16 @@ export class FittingStage {
         const upper = accessoryMaterial(boot && shoes.fabric === "leather" ? "suede" : shoes.fabric === "leather" || shoes.fabric === "suede" ? shoes.fabric : "canvas", shoes.color)
         // A loafer's sole is leather; others are rubber (a boot's lug sole too).
         const sole = accessoryMaterial(shoes.style === "loafer" ? "leather" : "rubber", shoes.sole ?? (shoes.style === "sneaker" || shoes.style === "hightop" ? "#ecebe6" : "#2a2522"))
-        const laces = accessoryMaterial("canvas", shoes.laces ?? (boot ? `#${new THREE.Color(shoes.color).offsetHSL(0, -0.15, -0.16).getHexString()}` : shoes.color))
+        // A boot's laces are a shade darker than its leather (and read against it); a sneaker's match its upper.
+        const laces = accessoryMaterial("canvas", shoes.laces ?? (boot ? `#${new THREE.Color(shoes.color).offsetHSL(0, -0.1, -0.24).getHexString()}` : shoes.color))
         // A boot's padded collar, in a darker leather unless the photo shows its own colour.
         const collar = accessoryMaterial("leather", shoes.collar ?? `#${new THREE.Color(shoes.color).offsetHSL(0, -0.25, -0.3).getHexString()}`)
         if (boot) { sole.roughness = 0.9; sole.clearcoat = 0 }
         collar.clearcoat = 0.1
         collar.roughness = 0.6
-        const eyelets = accessoryMaterial("metal", "#8c8270")
+        // Brass eyelets, bright enough to catch the light.
+        const eyelets = accessoryMaterial("metal", "#b6975a")
+        eyelets.roughness = 0.35
         // Built from the shop's side photo when there's one (see accessories.js), else from the style alone.
         const relief = !(shoes.shoeViews ?? []).some(v => v.kind === "top")
         const geometry = (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, shoes.style, { laces: relief })) || shoeGeometry(body, frame, side, shoes.style)
@@ -422,8 +425,9 @@ export class FittingStage {
       const plain = new Float32Array(3 * n)
       for (let i = 0; i < n; i++) sample(plainUV[2 * i], plainUV[2 * i + 1], plain, 3 * i)
       geometry.setAttribute("aPlain", new THREE.BufferAttribute(plain, 3))
-      const [sole, upper, laces, collar] = mesh.material
-      for (const m of [sole, upper, collar]) {
+      // (The padded collar keeps its own leather: the photo shows the roll only edge on.)
+      const [sole, upper, laces] = mesh.material
+      for (const m of [sole, upper]) {
         m.map = texture
         m.color.set(0xffffff)
         if (m.sheen) m.sheenColor.set(0x5a5a5a)
@@ -455,7 +459,7 @@ export class FittingStage {
           for (let c = 0; c < 3; c++) sum[c] += one[c]
         }
         // A shade darker: a lace's twist and its gaps shadow it.
-        if (seen.size) laces.color.setRGB(...sum.map(v => (v / seen.size) * 0.78))
+        if (seen.size) laces.color.setRGB(...sum.map(v => (v / seen.size) * 0.66))
       }
     }
     for (const t of this.feet.textures ?? []) t.dispose()

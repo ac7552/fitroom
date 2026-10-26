@@ -467,33 +467,54 @@ export function shoeColors(data, w, h) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
   const { mask } = cut.garment
+  const { lab } = cut
   let top = h, bottom = -1
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { top = Math.min(top, y); bottom = Math.max(bottom, y) }
   if (bottom <= top) return null
   const soleFrom = bottom - Math.max(2, Math.round((bottom - top) * 0.1))
-  const commonest = (y0, y1) => {
-    const bins = new Map()
-    for (let y = y0; y <= y1; y++) {
+  // How flat the photo is at each pixel: a panel of leather is flat; a seam, stitching, an edge in shadow
+  // and the grain of a lug sole aren't. Flat pixels say what colour a thing is.
+  const L = Float32Array.from({ length: w * h }, (_, i) => lab[3 * i])
+  const near = boxBlur(L, w, h, 2)
+  const flat = Float32Array.from(L, (l, i) => (mask[i] ? 1 - smooth(Math.abs(l - near[i]), 1.5, 6) : 0))
+  const hex = c => "#" + c.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")
+  // The colour of the largest even patch in a band of rows: the heaviest cell of a coarse Lab histogram
+  // (weighted by flatness), then the median colour of the pixels near that cell. Not the mean of the band:
+  // on a shoe shot at an angle, the shadowed side and the warm bounce light under it pull a tan mean to
+  // orange. Pixels like `not` (within apart) are left out when enough is left without them.
+  const patch = (y0, y1, { not = null, apart = 14 } = {}) => {
+    const cells = new Map(), picked = []
+    for (let y = Math.max(0, y0); y <= Math.min(h - 1, y1); y++) {
       for (let x = 0; x < w; x++) {
         const i = y * w + x
         if (!mask[i]) continue
-        const key = (data[4 * i] >> 4) << 8 | (data[4 * i + 1] >> 4) << 4 | (data[4 * i + 2] >> 4)
-        const bin = bins.get(key) ?? [0, 0, 0, 0]
-        bin[0] += data[4 * i]; bin[1] += data[4 * i + 1]; bin[2] += data[4 * i + 2]; bin[3]++
-        bins.set(key, bin)
+        if (not && Math.hypot(lab[3 * i] - not[0], lab[3 * i + 1] - not[1], lab[3 * i + 2] - not[2]) < apart) continue
+        picked.push(i)
+        const key = `${Math.round(lab[3 * i] / 8)},${Math.round(lab[3 * i + 1] / 8)},${Math.round(lab[3 * i + 2] / 8)}`
+        cells.set(key, (cells.get(key) ?? 0) + 0.15 + flat[i])
       }
     }
-    const best = [...bins.values()].sort((p, q) => q[3] - p[3])[0]
-    return best && "#" + best.slice(0, 3).map(v => Math.round(v / best[3]).toString(16).padStart(2, "0")).join("")
+    if (!picked.length) return null
+    const centre = [...cells.entries()].sort((p, q) => q[1] - p[1])[0][0].split(",").map(v => v * 8)
+    const inside = picked.filter(i => Math.hypot(lab[3 * i] - centre[0], lab[3 * i + 1] - centre[1], lab[3 * i + 2] - centre[2]) < 12)
+    const from = inside.length >= 8 ? inside : picked
+    const colour = [0, 1, 2].map(c => median(from.map(i => data[4 * i + c])))
+    return { hex: hex(colour), lab: [0, 1, 2].map(c => median(from.map(i => lab[3 * i + c]))), count: from.length, of: picked.length }
   }
-  // The band round the top (a boot's padded collar), when it's a different colour from the rest.
-  const color = commonest(top, soleFrom - 1)
-  const band = commonest(top, top + Math.max(1, Math.round((bottom - top) * 0.07)))
-  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
-  const apart = color && band ? Math.hypot(...rgb(color).map((v, i) => v - rgb(band)[i])) : 0
+  const upper = patch(top, soleFrom - 1)
+  if (!upper) return null
+  // The sole: the bottom band of the shoe, in a colour that isn't the upper's when it has one (a sole the
+  // same colour as the upper reads as the upper's).
+  const soleBand = [soleFrom, bottom]
+  let sole = patch(...soleBand, { not: upper.lab })
+  const all = patch(...soleBand)
+  if (!sole || sole.of < all.of * 0.2) sole = all
+  // The band round the top (a boot's padded collar), when it's mostly one colour that isn't the upper's.
+  const band = patch(top, top + Math.max(1, Math.round((bottom - top) * 0.07)))
+  const apart = band ? Math.hypot(...band.lab.map((v, i) => v - upper.lab[i])) : 0
   const side = shoeSide(data, w, h)
   if (side) delete side.mask
-  return { color, sole: commonest(soleFrom, bottom), collar: apart > 40 ? band : null, side }
+  return { color: upper.hex, sole: sole.hex, collar: apart > 16 && band.count >= band.of * 0.6 ? band.hex : null, side }
 }
 
 // A shoe's side photo made ready to wrap round the 3D shoe: the photo with the backdrop round the shoe filled in

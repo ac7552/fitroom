@@ -26,7 +26,7 @@ const BODY_HEIGHT = 1.76  // the heights below are for a body this tall (m); the
 export const SHOES = {
   sneaker: { back: 0.1, front: 0.088, dip: 0.016, sole: 0.027, toe: 0.014, thick: 0.007, flare: 0.004, box: 0.045 },
   hightop: { back: 0.145, front: 0.135, dip: 0.006, sole: 0.03, toe: 0.014, thick: 0.007, flare: 0.004, box: 0.045 },
-  boot: { back: 0.195, front: 0.18, dip: 0.004, sole: 0.036, toe: 0.016, thick: 0.009, flare: 0.007, box: 0.066, square: 2.2, lugs: 16, lug: 0.0024, pad: 0.011, full: 0.45 },
+  boot: { back: 0.195, front: 0.18, dip: 0.004, sole: 0.036, toe: 0.016, thick: 0.009, flare: 0.007, box: 0.066, square: 2.2, lugs: 16, lug: 0.0036, pad: 0.011, full: 0.45 },
   loafer: { back: 0.066, front: 0.052, dip: 0.012, sole: 0.016, toe: 0.02, thick: 0.005, flare: 0.002, box: 0.038 },
   sandal: { back: 0.024, front: 0.024, dip: 0, sole: 0.024, toe: 0.006, thick: 0.004, flare: 0.006, box: 0.024, strap: [0.035, 0.058] }
 }
@@ -188,7 +188,7 @@ export function shoeGeometry(body, frame, side, styleName) {
     let out = h("thick") + h("toe") * forward * (1 - lift * 0.6)
     if (y < floor + h("sole") + 1e-6) out += h("flare")
     // A boot's lugs: blocks of tread standing out round the bottom of the sole.
-    if (style.lugs && y < floor + h("sole") * 0.6) out += h("lug") * (0.5 + 0.5 * Math.sin(style.lugs * a)) ** 2
+    if (style.lugs && y < floor + h("sole") * 0.62) out += h("lug") * (0.5 + 0.5 * Math.sin(style.lugs * a)) ** 2
     return { x: x + out * dx, z: z + out * dz, centre: slice.centre }
   }
   // Rows up each column: the sole's (level, so its top edge is straight), then the upper's up to the collar.
@@ -270,7 +270,7 @@ export function shoeGeometry(body, frame, side, styleName) {
       const v = grid[row][0]
       if (positions[3 * v + 1] > floor + h("box") * 1.15) path.push([positions[3 * v], positions[3 * v + 1], positions[3 * v + 2]])
     }
-    const bars = styleName === "boot" ? 8 : styleName === "hightop" ? 8 : 5
+    const bars = styleName === "boot" ? 9 : styleName === "hightop" ? 8 : 5
     if (path.length >= 3) {
       const lengths = [0]
       for (let k = 1; k < path.length; k++) lengths.push(lengths[k - 1] + Math.hypot(...[0, 1, 2].map(c => path[k][c] - path[k - 1][c])))
@@ -286,14 +286,15 @@ export function shoeGeometry(body, frame, side, styleName) {
         const outward = normalize3(cross3(across, along))
         const flip = outward[2] < 0 && outward[1] < 0.7 ? -1 : 1
         const n = outward.map(v => v * flip)
-        const half = [0.0135 * s * (1 - 0.25 * b / bars), 0.0019 * s, 0.0016 * s]
+        // A boot's bars are longer and thicker: its laces cross a wide throat, in a thick round lace.
+        const half = styleName === "boot" ? [0.019 * s * (1 - 0.2 * b / bars), 0.0026 * s, 0.0022 * s] : [0.0135 * s * (1 - 0.25 * b / bars), 0.0019 * s, 0.0016 * s]
         const corner = (i, j2, k2) => put(...[0, 1, 2].map(c => p[c] + n[c] * 0.0016 * s + across[c] * half[0] * i + along[c] * half[1] * j2 + n[c] * half[2] * k2))
         const v = [corner(-1, -1, -1), corner(1, -1, -1), corner(1, 1, -1), corner(-1, 1, -1), corner(-1, -1, 1), corner(1, -1, 1), corner(1, 1, 1), corner(-1, 1, 1)]
         for (const [a2, b2, c2, d2] of [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]) quad(indexLaces, v[a2], v[b2], v[c2], v[d2])
         // A boot's metal eyelets (or hooks, higher up) at each end of the lace.
         if (styleName === "boot") {
           for (const end of [-1, 1]) {
-            const e = (i, j2, k2) => put(...[0, 1, 2].map(c => p[c] + n[c] * 0.0012 * s + across[c] * (half[0] * end * 1.08 + 0.0028 * s * i) + along[c] * 0.0028 * s * j2 + n[c] * 0.0014 * s * k2))
+            const e = (i, j2, k2) => put(...[0, 1, 2].map(c => p[c] + n[c] * 0.0012 * s + across[c] * (half[0] * end * 1.1 + 0.0036 * s * i) + along[c] * 0.0036 * s * j2 + n[c] * 0.0016 * s * k2))
             const w = [e(-1, -1, -1), e(1, -1, -1), e(1, 1, -1), e(-1, 1, -1), e(-1, -1, 1), e(1, -1, 1), e(1, 1, 1), e(-1, 1, 1)]
             for (const [a2, b2, c2, d2] of [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]) quad(indexEyelets, w[a2], w[b2], w[c2], w[d2])
           }
@@ -456,15 +457,32 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
       if (open[c] || u < 0.2 || u > 0.82) continue
       if (height[c] > toeTop * 1.12 && height[c] < shaft * (tallShaft ? 0.97 : 1.01)) throat.push(c)
     }
-    const rows = styleName === "boot" ? 7 : styleName === "hightop" ? 7 : 5
     if (throat.length >= 3) {
       const first = throat[0], last = throat[throat.length - 1]
-      // Each row of eyelets: the cross-section's top, across part of the shoe's width either side of its middle.
+      // The rows of eyelets are spaced evenly along the throat as it runs (up the steep front of a boot's
+      // shaft as well as along the instep), one every couple of centimetres, so a boot laces up its shaft.
+      const zOf = c => back + us[c] * length
+      const run = [0]
+      for (let c = first + 1; c <= last; c++) run.push(run[run.length - 1] + Math.hypot(zOf(c) - zOf(c - 1), height[c] - height[c - 1]))
+      const total = run[run.length - 1]
+      const pitch = (styleName === "boot" ? 0.021 : 0.02) * s
+      const rows = Math.min(styleName === "sneaker" ? 6 : 9, Math.max(3, Math.round(total / pitch)))
+      // Each row: the cross-section's top, across part of the shoe's width either side of its middle,
+      // between two columns when it falls between them.
       const lines = []
       for (let b = 0; b < rows; b++) {
-        const c = Math.round(first + ((b + 0.5) / rows) * (last - first))
-        const reach = width[c] * 0.4
-        const path = grid[c].filter(v => Math.abs(xOf(v) - mid[c]) <= reach && yOf(v) > floor + height[c] * 0.7).map(v => [positions[3 * v], positions[3 * v + 1], positions[3 * v + 2]])
+        const goal = total * ((b + 0.5) / rows)
+        let c = first
+        while (c < last - 1 && run[c - first + 1] < goal) c++
+        const f = Math.min(1, Math.max(0, (goal - run[c - first]) / Math.max(1e-9, run[c - first + 1] - run[c - first])))
+        const reach = (width[c] * (1 - f) + width[c + 1] * f) * 0.4, middle = mid[c] * (1 - f) + mid[c + 1] * f
+        const tall = (height[c] * (1 - f) + height[c + 1] * f)
+        const path = []
+        for (let r = 0; r <= around; r++) {
+          const a = grid[c][r], b2 = grid[c + 1][r]
+          const p = [0, 1, 2].map(d => positions[3 * a + d] * (1 - f) + positions[3 * b2 + d] * f)
+          if (Math.abs(p[0] - middle) <= reach && p[1] > floor + tall * 0.7) path.push(p)
+        }
         if (path.length < 2) continue
         path.sort((a, b2) => a[0] - b2[0])
         // Along the throat here, and out from the shoe (up, leaning with the slope).
@@ -514,8 +532,8 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
       if (styleName === "boot") {
         for (const line of lines) {
           for (const end of [line.path[0], line.path[line.path.length - 1]]) {
-            const e = 0.0034 * s, at = positions.length / 3
-            for (const dx of [-1, 1]) for (const dy of [-1, 1]) for (const dz of [0, 1]) positions.push(end[0] + dx * e * 0.6, end[1] + dy * e * 0.6 * line.dir[1] + dz * lift * 1.5 * line.out[1], end[2] + dy * e * 0.6 * line.dir[2] + dz * lift * 1.5 * line.out[2])
+            const e = 0.0048 * s, at = positions.length / 3
+            for (const dx of [-1, 1]) for (const dy of [-1, 1]) for (const dz of [0, 1]) positions.push(end[0] + dx * e * 0.6, end[1] + dy * e * 0.6 * line.dir[1] + dz * lift * 1.8 * line.out[1], end[2] + dy * e * 0.6 * line.dir[2] + dz * lift * 1.8 * line.out[2])
             const v = k => at + k
             for (const [a, b2, c2, d] of [[0, 2, 6, 4], [1, 5, 7, 3], [0, 4, 5, 1], [2, 3, 7, 6], [4, 6, 7, 5]]) quad(eyelets, v(a), v(b2), v(c2), v(d))
           }
@@ -523,13 +541,57 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
       }
     }
   }
+  // A boot's padded collar: a roll round the top of the shaft where the leg comes out (the side photo shows
+  // it only edge on, and the shaft's top would otherwise be a bare ledge round the leg).
+  const collar = []
+  const openColumns = us.map((_, c) => c).filter(c => open[c])
+  if (tallShaft && style.pad && openColumns.length >= 2) {
+    const r = Math.max(0.006 * s, thick * 0.8)
+    const zOf = c => back + us[c] * length
+    const first = openColumns[0], last = openColumns[openColumns.length - 1]
+    // The roll's path: along each wall's top, in from its edge, and round the front and the back.
+    const loop = []
+    const wallAt = (c, sign) => [mid[c] + sign * (width[c] - r * 0.6), floor + height[c] - r * 0.35, zOf(c)]
+    const bend = (c, from, to) => {
+      const rad = width[c] - r * 0.6, y = floor + height[c] - r * 0.35
+      for (let k = 1; k < 8; k++) { const a = from + ((to - from) * k) / 8; loop.push([mid[c] + rad * Math.cos(a), y, zOf(c) + rad * Math.sin(a) * 0.7]) }
+    }
+    for (const c of openColumns) loop.push(wallAt(c, 1))
+    bend(last, 0, Math.PI)
+    for (const c of [...openColumns].reverse()) loop.push(wallAt(c, -1))
+    bend(first, Math.PI, 2 * Math.PI)
+    // Swept as a tube, a little flatter than it is wide.
+    const segments = 10, base = positions.length / 3, n = loop.length
+    const centre = loop.reduce((acc, p) => [acc[0] + p[0] / n, 0, acc[2] + p[2] / n], [0, 0, 0])
+    for (let k = 0; k < n; k++) {
+      const p = loop[k], q = loop[(k + 1) % n], o = loop[(k - 1 + n) % n]
+      const t = normalize3([q[0] - o[0], 0, q[2] - o[2]])
+      let b = [t[2], 0, -t[0]]
+      if ((p[0] - centre[0]) * b[0] + (p[2] - centre[2]) * b[2] < 0) b = b.map(v => -v)
+      for (let j = 0; j < segments; j++) {
+        const a = (2 * Math.PI * j) / segments
+        positions.push(p[0] + b[0] * r * Math.cos(a), p[1] + 0.75 * r * Math.sin(a), p[2] + b[2] * r * Math.cos(a))
+      }
+    }
+    for (let k = 0; k < n; k++) {
+      const kn = (k + 1) % n
+      for (let j = 0; j < segments; j++) {
+        const jn = (j + 1) % segments
+        quad(collar, base + k * segments + j, base + kn * segments + j, base + kn * segments + jn, base + k * segments + jn)
+      }
+    }
+  }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex([...sole, ...upper, ...strings, ...eyelets])
+  geometry.setIndex([...sole, ...upper, ...strings, ...collar, ...eyelets])
   geometry.addGroup(0, sole.length, 0)
   geometry.addGroup(sole.length, upper.length, 1)
-  if (strings.length) geometry.addGroup(sole.length + upper.length, strings.length, 2)
-  if (eyelets.length) geometry.addGroup(sole.length + upper.length + strings.length, eyelets.length, 4)
+  let at = sole.length + upper.length
+  if (strings.length) geometry.addGroup(at, strings.length, 2)
+  at += strings.length
+  if (collar.length) geometry.addGroup(at, collar.length, 3)
+  at += collar.length
+  if (eyelets.length) geometry.addGroup(at, eyelets.length, 4)
   geometry.computeVertexNormals()
   // Built to the photo's own scale: wrapShoePhoto lays it on exactly.
   geometry.userData.photo = { floor, back, length, metres }

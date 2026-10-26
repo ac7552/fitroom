@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, measureTop, measureBottom, readBottom, shoeSide } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
 import "./support/lib.mjs"
 
 const { bottomsPhotoUV } = await import("lib/garments/photo_map")
@@ -252,4 +252,24 @@ test("reads a shoe's side photo: its outline heel to toe, which way the toe poin
   const front = new Uint8ClampedArray(4 * w * h)
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) front.set(x > 100 && x < 140 && y > 10 && y < 150 ? [60, 40, 30, 255] : [238, 238, 238, 255], 4 * (y * w + x))
   assert.equal(shoeSide(front, w, h), null)
+})
+
+test("a shoe shot at an angle keeps its upper's colour, not its shadows', and its sole's", () => {
+  // A tan boot: a lit face, a darker and more saturated shaded face, warm bounce light under the toe, and a
+  // cream sole along the bottom. Too tall for its length to be a side view.
+  const w = 240, h = 240, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = [240, 240, 240]
+    const inside = x > 60 && x < 180 && y > 30 && y < 210
+    if (inside) c = x < 120 ? [201, 166, 107] : [170, 110, 40]
+    if (inside && y > 185) c = [222, 214, 190]
+    if (inside && y > 170 && y <= 185 && x >= 120) c = [190, 100, 20]
+    data.set([...c, 255], 4 * (y * w + x))
+  }
+  const read = shoeColors(data, w, h)
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+  assert.equal(read.side, null)
+  assert.ok(rgb(read.color).every((v, c) => Math.abs(v - [201, 166, 107][c]) <= 10), `upper ${read.color}`)
+  assert.ok(rgb(read.sole).every((v, c) => Math.abs(v - [222, 214, 190][c]) <= 10), `sole ${read.sole}`)
+  assert.equal(read.collar, null, "the shaded half of the top isn't a collar")
 })
