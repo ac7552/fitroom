@@ -145,6 +145,22 @@ export function measures(style, size, body, cut = null) {
   let sleeve = size.sleeve ?? (style.sleeve === "short" ? 19 + (chest - 100) / 8 : body.arm + 1.5)
   if (cuff) sleeve -= cuff.height - 0.5   // a chart's sleeve runs to the end of the cuff
   const roomy = Math.max(0, chest - body.chest)
+  // Round the arm as it really is (body.js): a sleeve is never cut smaller than the arm it goes on. A fitted
+  // knit gets 6% over it (it stretches, but stretched past its mesh it tears and shows skin); a loose sleeve
+  // 10%. Checked at the underarm, where the sleeve is its bicep wide, and at the elbow, where a slim sleeve's
+  // taper towards the wrist passes the forearm (see sleeve: it narrows in a straight line from the underarm
+  // to the hem).
+  const over = fitted ? 1.06 : 1.1
+  const upperArm = (body.upperArm ?? body.bicep ?? 32) * over
+  const bicep = fitted ? Math.max((body.bicep ?? 32) + 4, chest * 0.3, upperArm) : Math.max((body.bicep ?? 32) + (style.sleeve === "short" ? 7 : 9), chest * 0.34, upperArm)
+  let opening = style.sleeve === "short" ? null : fitted ? Math.max((body.wrist ?? 18) + (cuff ? 5 : 8), chest * 0.19) : Math.max((body.wrist ?? 18) + (cuff ? 9 : 12), chest * 0.21)
+  if (opening !== null && body.forearm && body.elbow) {
+    const underarm = (body.armpit ?? 19) - 4.4 + 1.5   // the cap's height: about the armhole's depth below the shoulder point
+    const elbow = body.elbow + 1.5                        // the elbow, below the shoulder point
+    const share = Math.min(Math.max((elbow - underarm) / Math.max(sleeve - underarm, 1), 0.05), 1)
+    const needed = (body.forearm * over - bicep * (1 - share)) / share
+    opening = Math.max(opening, Math.min(needed, bicep))
+  }
   // A shaped dress: in at the waist (about at the navel), out over the hips, and wider still at its hem.
   const shaped = style.shaped ? {
     waist: Math.max(size.waist ?? body.waist + 8, body.waist + 4),
@@ -164,8 +180,8 @@ export function measures(style, size, body, cut = null) {
     backNeck: 2,
     shoulderDrop: 4.4,
     armhole: (body.armpit ?? 19) + (fitted ? 0.5 : 2) + roomy / 8,
-    bicep: fitted ? Math.max((body.bicep ?? 32) + 4, chest * 0.3) : Math.max((body.bicep ?? 32) + (style.sleeve === "short" ? 7 : 9), chest * 0.34),
-    opening: style.sleeve === "short" ? null : fitted ? Math.max((body.wrist ?? 18) + (cuff ? 5 : 8), chest * 0.19) : Math.max((body.wrist ?? 18) + (cuff ? 9 : 12), chest * 0.21),
+    bicep,
+    opening,
     head: body.head ?? 58
   }
 }

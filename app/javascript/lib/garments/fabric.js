@@ -364,8 +364,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           diffuseColor.rgb = texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
         }
         // Stripes: the front's colour at this height, on every piece (the front's own photo goes on over it).
-        if ( uStripeOn > 0.5 && !backPhoto && gl_FrontFacing ) {
-          diffuseColor.rgb = texture2D( uStripe, vec2( 0.5, 1.0 - clamp( vDown / uStripeLength, 0.0, 1.0 ) ) ).rgb;
+        // A striped knit is striped on its inside too, a little duller: where a long sleeve gathers and a fold
+        // turns the cloth over, the fold shows stripes, not a plain band that reads as a tear.
+        if ( uStripeOn > 0.5 && !backPhoto ) {
+          vec3 stripe = texture2D( uStripe, vec2( 0.5, 1.0 - clamp( vDown / uStripeLength, 0.0, 1.0 ) ) ).rgb;
+          diffuseColor.rgb = gl_FrontFacing ? stripe : mix( diffuseColor.rgb, stripe, 0.8 );
         }
         if ( backPhoto && gl_FrontFacing ) {
           vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );

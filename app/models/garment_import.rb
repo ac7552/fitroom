@@ -145,7 +145,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 26
+  FORMAT = 27
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -796,7 +796,7 @@ class GarmentImport
   end
 
   def garment(product, chart, kind:, source_url:)
-    chart = plausible(chart, kind)
+    chart = shoulder_sleeves(plausible(chart, kind), product) unless kind == "trousers"
     style = kind == "top" ? top_style_of(product) : kind == "trousers" ? bottom_style_of(product) : nil
     # Shorts' "inseam" past 40 cm is their whole length from the waist (Armani's charts): less the rise.
     if style == "shorts"
@@ -926,13 +926,44 @@ class GarmentImport
   # A T-shirt's sleeve is short, so a long one on its chart was measured from the centre of the back (as
   # many shops do for tees): take off half the shoulders.
   def tee_sleeves(chart)
+    return chart if chart.sleeve_from
     sizes = chart.sizes.map do |size|
       next size unless size["sleeve"] && size["sleeve"] > Fit::SHORT_SLEEVE
 
-      size.merge("sleeve" => (size["sleeve"] - (size["shoulders"] || 46) / 2.0).round(2))
+      size.merge("sleeve" => from_shoulder(size))
     end
     chart.with(sizes:)
   end
+
+  # Charts measure a sleeve from the shoulder seam, or from the centre of the back of the neck (across half
+  # the shoulders first), and say which only sometimes. Fitroom keeps the sleeve from the shoulder seam:
+  # converted here, once, when the chart says it runs from the centre back (sleeve_from "centre_back", see
+  # ChartReader) or when its sleeves are too long to be from the shoulder ("centre_back_guessed"). A sleeve
+  # from the shoulder runs at most about 10 cm past the usual arm (extra-long sleeves that cover the hand:
+  # Kith's shrunken knit hoodie, 65.7 cm on a women's 58 cm arm, is one); from the centre back it's the arm
+  # plus half the shoulders, 18 to 24 cm past it. Judged on the chart's middle size, so every size is read
+  # the same way.
+  USUAL_ARM = { women: 58, men: 65 }.freeze
+  SHOULDER_SLEEVE_PAST_ARM = 10
+  WOMEN_SHOULDERS = 42   # a chart whose middle size's shoulders are under this is cut for women
+  def shoulder_sleeves(chart, product)
+    return chart if chart.sleeve_from && chart.sleeve_from != "centre_back"
+
+    sleeves = chart.sizes.filter_map { it["sleeve"] }.sort
+    return chart if sleeves.empty?
+
+    from = chart.sleeve_from
+    shoulders = chart.sizes.filter_map { it["shoulders"] }.sort
+    women = product[:women] || (shoulders.any? && shoulders[shoulders.size / 2] < WOMEN_SHOULDERS)
+    from ||= "centre_back_guessed" if sleeves[sleeves.size / 2] > USUAL_ARM.fetch(women ? :women : :men) + SHOULDER_SLEEVE_PAST_ARM
+    return chart unless from
+
+    chart.with(sizes: chart.sizes.map { it["sleeve"] ? it.merge("sleeve" => from_shoulder(it)) : it }, sleeve_from: from)
+  end
+
+  # A size's sleeve from the shoulder seam, when the chart gives it from the centre back: less half the
+  # shoulders (a man's usual 46 cm when the chart doesn't give them).
+  def from_shoulder(size) = (size["sleeve"] - (size["shoulders"] || 46) / 2.0).round(2)
 
   def top_style_of(product)
     style = product.values_at(:name, :category).each do |words|

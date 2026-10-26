@@ -6,7 +6,9 @@
 // Exports default(stage) -> details.
 const HOODIE = "/kith/kith-women-adley-shrunken-multi-sweater-hoodie-legacy-garment.jpg"
 const PANTS = "/kith/by-parra-sporte-sweatpant-heather-grey-garment.jpg"
-// From tmp/kith/garments.json (Kith's chart, in cm).
+// From tmp/kith/garments.json (Kith's chart, in cm). Its sleeve is from the shoulder seam (the shop's flat photo
+// shows the cuffs about 24 cm below the hem: extra-long sleeves on a shrunken body), so the import keeps it; on
+// the women's 58 cm arm the cuffs sit on the hands and the sleeves gather above them.
 const SIZES = {
   M: { chest: 86.36, shoulders: 38.1, sleeve: 65.72, length: 52.71 },
   XL: { chest: 99.06, shoulders: 41.28, sleeve: 67.95, length: 56.52 }

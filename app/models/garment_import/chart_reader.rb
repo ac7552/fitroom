@@ -41,9 +41,17 @@ class GarmentImport
     BODY_WORDS = /body measure|to fit|fits chest|fits waist|your (?:chest|waist|measure)|body size/i
     GARMENT_WORDS = /garment|finished|laid flat|product measure|item measure|flat measure/i
 
-    Chart = Data.define(:sizes, :unit, :kind, :missing) do
-      def as_json(*) = { sizes:, unit:, kind:, missing: }
+    # sleeve_from: where the chart's sleeve is measured from, when it isn't the shoulder seam: "centre_back"
+    # (the chart says so), or "centre_back_guessed" (its sleeves are too long to be from the shoulder, see
+    # GarmentImport#shoulder_sleeves). The sizes then hold the sleeve from the shoulder seam, converted once.
+    Chart = Data.define(:sizes, :unit, :kind, :missing, :sleeve_from) do
+      def initialize(sizes:, unit:, kind:, missing:, sleeve_from: nil) = super
+      def as_json(*) = { sizes:, unit:, kind:, missing:, **(sleeve_from ? { sleeve_from: } : {}) }
     end
+
+    # A chart that says its sleeves run from the centre of the back of the neck ("sleeve from CB", "centre
+    # back sleeve", "sleeve length (from center back)"), in the sleeve column's label or the text round it.
+    CENTRE_BACK = /\b(?:cb|c\.b\.|cbn|centre[- ]?back|center[- ]?back|back of (?:the )?neck|nape)(?![a-z])/i
 
     def self.measures(garment) = SCHEMES.fetch(scheme_for(garment))[:columns].keys
     def self.scheme_for(garment) = garment.to_s == "trousers" ? "trousers" : "jacket"
@@ -80,7 +88,7 @@ class GarmentImport
       sizes = raw.map { |size| to_garment_cm(size, unit, kind) }
       return unless sizes.all? { |s| s[@key]&.between?(@scheme[:plausible].min, @scheme[:plausible].max) }
 
-      Chart.new(sizes:, unit:, kind:, missing: @columns.keys - columns.keys)
+      Chart.new(sizes:, unit:, kind:, missing: @columns.keys - columns.keys, sleeve_from: sleeve_from(columns))
     end
 
     private
@@ -97,6 +105,17 @@ class GarmentImport
       # tables in size guides often have.
       return rows if key_label?(rows.first)
       return rows.transpose if key_label?(rows.map(&:first))
+
+      nil
+    end
+
+    # "centre_back" when the chart says its sleeve runs from the back of the neck: in the sleeve column's own
+    # label ("Sleeve from CB"), or in the words round the table ("sleeves are measured from the centre back").
+    # (A "centre back length" is a length, and says nothing about the sleeves.)
+    def sleeve_from(columns)
+      return unless columns.key?("sleeve")
+      return "centre_back" if CENTRE_BACK.match?(columns["sleeve"][:label])
+      return "centre_back" if @context.match?(/sleeve[^.;\n]{0,40}#{CENTRE_BACK.source}/i) || @context.match?(/#{CENTRE_BACK.source}[^.;\n]{0,24}sleeve/i)
 
       nil
     end
@@ -198,17 +217,6 @@ class GarmentImport
         cm += @scheme[:body_to_garment].fetch(key, 0) if cm && kind == "body"
         sizes[key] = cm&.round(2)
       end
-      from_shoulder_seam(out)
-    end
-
-    # No sleeve is longer than 76 cm (30 in) from the shoulder seam; longer ones were measured from the
-    # back of the neck, as resale shops and raglan sleeves often are. Take off half the shoulders.
-    CENTRE_BACK_SLEEVE = 76
-
-    def from_shoulder_seam(size)
-      return size unless size["sleeve"] && size["sleeve"] > CENTRE_BACK_SLEEVE
-
-      size.merge("sleeve" => (size["sleeve"] - (size["shoulders"] || 46) / 2.0).round(2))
     end
 
     def to_cm(value, unit) = unit == "in" ? value * 2.54 : value

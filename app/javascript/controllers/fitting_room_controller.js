@@ -353,6 +353,10 @@ export default class extends Controller {
         chart.kind === "body" ? "sizes guessed from the store's body chart" : null,
         chart.kind === "sizes" ? "sizes guessed from the size names" : null,
         chart.missing.length ? `the chart doesn't show the ${listed(chart.missing.map(m => (PART_NAMES[m] ?? m.replace("_", " ")).toLowerCase()))}` : null,
+        // The store measured its sleeves from the back of the neck (it said so, or they were too long to be
+        // from the shoulder); the import took off half the shoulders.
+        chart.sleeve_from === "centre_back" ? "sleeves measured from the centre back, read from the shoulder" : null,
+        chart.sleeve_from === "centre_back_guessed" ? "sleeves look measured from the centre back, so they're read from the shoulder" : null,
         garment.cut?.details?.length ? `the 3D view doesn't show its ${listed(garment.cut.details)}` : null
       ].filter(Boolean)
       // The shop's photo on a tile in the stage's own tone, its white backdrop knocked out (see showTiles);
