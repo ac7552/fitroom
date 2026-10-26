@@ -103,6 +103,16 @@ function normalizeAll(normals) {
 // bodyCount: how many of the vertices are the body's own (the rest, garments under the cloth, all count).
 // arms: false for pants (hands rest on the outside of them; an arm coming down into a pose would trap the
 // cloth against the hips).
+function nearHand(frame, p, at) {
+  for (const side of ["L", "R"]) {
+    const arm = frame.arms[side]
+    const { t, distance } = arm.locate([p[at], p[at + 1], p[at + 2]])
+    if (t > (arm.lengths[1] + arm.lengths[2]) / 2 && distance < HAND_CLEAR) return true
+  }
+  return false
+}
+const HAND_CLEAR = 0.07
+
 export function collisionBody(body, frame, egg, bodyCount = body.positions.length / 3, { arms = true } = {}) {
   const n = body.positions.length / 3
   const keep = new Uint8Array(n)
@@ -110,7 +120,13 @@ export function collisionBody(body, frame, egg, bodyCount = body.positions.lengt
   for (let i = 0; i < n; i++) {
     const p = body.positions
     if (p[3 * i + 1] < knee) continue
-    if (i >= bodyCount) { keep[i] = 1; continue }
+    if (i >= bodyCount) {
+      // What's worn under (pants): not right by the hands, where a sleeve's cuff hangs beside the thigh; the
+      // pants there would push the cuff off the wrist. A sleeve may lie against them a little instead.
+      if (arms && nearHand(frame, p, 3 * i)) continue
+      keep[i] = 1
+      continue
+    }
     if (egg && body.head && body.head[i] > 0.5) continue
     const part = frame.part[i]
     if (part === 1 || part === 2) {
@@ -255,6 +271,22 @@ export function dressDetails(item, pattern, cloth) {
 // draped now (their meshes up to date). Returns a Float32Array, 1 where covered.
 // How far (m) past an inner point the outer cloth must carry on for the point to count as covered.
 const EDGE_MARGIN = 0.008
+// How far to one side of the nearest outer cloth (m) a point may be and still count as poking through it.
+const SIDEWAYS = 0.012
+
+function freeDistance(outer, b) {
+  const n = b.length / 3, out = new Float32Array(n).fill(Infinity)
+  const edge = [...new Set((outer.cloth.free ?? []).flat())]
+  for (let j = 0; j < n; j++) {
+    let best = Infinity
+    for (const e of edge) {
+      const d = (b[3 * j] - b[3 * e]) ** 2 + (b[3 * j + 1] - b[3 * e + 1]) ** 2 + (b[3 * j + 2] - b[3 * e + 2]) ** 2
+      if (d < best) best = d
+    }
+    out[j] = Math.sqrt(best)
+  }
+  return out
+}
 
 export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {}) {
   const field = outer.drape.field
@@ -263,10 +295,19 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
   const cell = reach, grid = new Map()
   const key = (x, y, z) => `${x},${y},${z}`
   // Not near the outer garment's edges (an open front, a hem, a cuff): what shows past them is meant to.
-  const free = outer.cloth.toFree ?? []
+  // How far (m) each point of the outer garment is from its nearest free edge (a hem, a cuff, an open
+  // front), as it hangs: across its seams too (a body panel's bottom is a rib's height from the hem).
+  const free = freeDistance(outer, b)
+  // Each piece covers its own part of the inner garment: a sleeve the sleeve under it, the body the body
+  // (and pants). A sleeve hanging beside the hip doesn't cover the pants: the pants there are seen past it.
+  const partOf = (cloth, i) => {
+    const name = cloth.panels?.[cloth.panel?.[i]] ?? ""
+    return /^(sleeve|cuff)/.test(name) ? (name.endsWith("_L") ? 1 : 2) : /^hood/.test(name) ? 3 : 0
+  }
   const nb = b.length / 3
+  const outerPart = Uint8Array.from({ length: nb }, (_, j) => partOf(outer.cloth, j))
   for (let j = 0; j < nb; j++) {
-    if (free[j] < 0.8) continue
+    if (free[j] < 0.008) continue
     const k = key(Math.floor(b[3 * j] / cell), Math.floor(b[3 * j + 1] / cell), Math.floor(b[3 * j + 2] / cell))
     let list = grid.get(k)
     if (!list) grid.set(k, (list = []))
@@ -275,10 +316,12 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
   const na = a.length / 3, covered = new Float32Array(na)
   for (let i = 0; i < na; i++) {
     const x = a[3 * i], y = a[3 * i + 1], z = a[3 * i + 2]
+    const part = partOf(inner.cloth, i)
     const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell)
     let nearest = Infinity, near = -1
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
       for (const j of grid.get(key(cx + dx, cy + dy, cz + dz)) ?? []) {
+        if (outerPart[j] !== part) continue
         const d = (b[3 * j] - x) ** 2 + (b[3 * j + 1] - y) ** 2 + (b[3 * j + 2] - z) ** 2
         if (d < nearest) { nearest = d; near = j }
       }
@@ -286,7 +329,9 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
     if (near < 0 || nearest > reach * reach) continue
     // Only where the outer cloth carries on past this point: the nearest of it may be up to `reach` away,
     // and just under a hem that's cloth above it, not over it (hidden there, the pants show the body).
-    if (free.length && free[near] * 0.01 < Math.sqrt(nearest) + EDGE_MARGIN) continue
+    // The further the outer cloth is from the point, the further in from its edge it must be: under a hem
+    // that lifts away (a hoodie's front, over its pocket), the cloth seen beneath it is meant to show.
+    if (free[near] < 2 * Math.sqrt(nearest) + EDGE_MARGIN) continue
     // The outer cloth's normal, turned to face away from the body (a piece's normals may face either way).
     let nx = normals[3 * near], ny = normals[3 * near + 1], nz = normals[3 * near + 2]
     if (field) {
@@ -295,7 +340,9 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
       if (nx * h[0] + ny * h[1] + nz * h[2] < 0) { nx = -nx; ny = -ny; nz = -nz }
     }
     const out = (x - b[3 * near]) * nx + (y - b[3 * near + 1]) * ny + (z - b[3 * near + 2]) * nz
-    if (out > -gap) covered[i] = 1
+    // Straight out through the outer cloth, not off past it to one side (below a hem that ends there).
+    const aside = Math.sqrt(Math.max(0, nearest - out * out))
+    if (out > -gap && aside < SIDEWAYS) covered[i] = 1
   }
   return covered
 }
