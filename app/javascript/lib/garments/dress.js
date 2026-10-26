@@ -4,7 +4,7 @@ import { STYLES, draftTop } from "lib/garments/pattern"
 import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
-import { bottomsPhotoUV } from "lib/garments/photo_map"
+import { bottomsPhotoUV, heightsDown } from "lib/garments/photo_map"
 import { Drape } from "lib/garments/drape"
 import { clothMaterial } from "lib/garments/fabric"
 
@@ -146,12 +146,16 @@ function surfaceFor(style, fabric) {
   if (style === "dress" && ["stretch", "jersey"].includes(fabric)) return fabric
   // Silk and leather look like themselves on any top (a silk shirt, a leather tee).
   if (fabric === "silk" || (fabric === "leather" && style !== "zip" && style !== "bomber")) return fabric
-  // Knitwear's own knit.
+  // Knitwear's own knit: a sweater's, or anything the listing calls a knit (a sweater hoodie, a knit zip-up).
+  if (fabric === "knit") return "rib"
   if (STYLES[style]?.surface && !["silk", "leather", "nylon"].includes(fabric)) return STYLES[style].surface
   const own = STYLES[style]?.fabric ?? "jersey"
   if (fabric === "denim") return "twill"
   if (fabric === "linen") return "matte"
   if (fabric === "nylon" || fabric === "leather") return "shell"
+  // A zip-up or bomber in cotton or fleece is a sweat or a cotton twill, not a glossy nylon shell.
+  if (own === "shell" && fabric === "fleece") return "fleece"
+  if (own === "shell" && fabric === "cotton") return "twill"
   if (fabric === "wool" && own !== "shell") return own === "jersey" ? "jersey" : "wool"
   return own
 }
@@ -461,6 +465,7 @@ export class DrapedTop {
     geometry.setAttribute("aSheer", new THREE.BufferAttribute(sheer, 1))
     geometry.setAttribute("aCover", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("aStrain", new THREE.BufferAttribute(new Float32Array(n), 1))
+    geometry.setAttribute("aDown", new THREE.BufferAttribute(this.bottoms ? new Float32Array(n) : heightsDown(cloth, this.pattern), 1))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -521,10 +526,11 @@ export class DrapedTop {
     const band = this.pattern.panels.waistband ? Math.max(...this.pattern.panels.waistband.edges.flatMap(e => e.points).map(p => Math.abs(p[1]))) : 0
     // The photo shows one size (the shop's sample, about the middle of its chart): a print is that size on
     // every size, not stretched with the cloth, so it stays where it is on a bigger shirt, with more cloth
-    // round it. photoSize: { chest, length } of that size; the drafted one's when not known.
-    const shown = this.item.photoSize ?? { chest: m.chest, length: m.length }
+    // round it. photoSize: { chest, length } of that size (its chart's length, to the bottom of the hem band);
+    // the drafted one's when not known (the body's length, which stops where the band starts).
+    const shown = this.item.photoSize ?? { chest: m.chest, length: m.length + band }
     uniforms.uPrintHalf.value = shown.chest / 4
-    uniforms.uPrintLength.value = shown.length + band
+    uniforms.uPrintLength.value = shown.length
     const texture = (canvas, wrap = false) => {
       const t = new THREE.CanvasTexture(canvas)
       t.colorSpace = THREE.SRGBColorSpace
@@ -532,20 +538,34 @@ export class DrapedTop {
       if (wrap) t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping
       return t
     }
+    const striped = Boolean(print?.strip)
     if (print) {
       this.printTexture = uniforms.uPrint.value = texture(print.image)
       // An all-over print goes on the back, sleeves and collar too: its cloth, mirrored at its edges so the
       // repeats meet without a seam.
-      if (print.tile) {
+      if (print.tile && !striped) {
         this.tileTexture = uniforms.uPrintTile.value = texture(print.tile.image, true)
         const front = shown.chest / 2   // the front's width (cm), which the photo's front spans
         uniforms.uTile.value.set(print.tile.across * front, print.tile.down * front, print.tile.from * front)
       }
+      // Stripes go on every piece (the cuffs and hem too) by height down the garment, so they run on round
+      // the body and meet the sleeves' at the shoulder seams (see heightsDown).
+      if (striped) {
+        this.tileTexture = texture(print.strip)
+        this.tileTexture.generateMipmaps = false
+        this.tileTexture.minFilter = THREE.LinearFilter
+      }
     }
     if (back) this.backTexture = uniforms.uBack.value = texture(back.image)
     uniforms.uPrintOn.value = print ? 1 : 0
-    uniforms.uAllOver.value = print?.tile ? 1 : 0
+    uniforms.uAllOver.value = print?.tile && !striped ? 1 : 0
     uniforms.uBackOn.value = back ? 1 : 0
+    for (const key of ["main", "rib"]) {
+      const u = this.materials[key].userData.uniforms
+      u.uStripeOn.value = striped ? 1 : 0
+      u.uStripeLength.value = uniforms.uPrintLength.value * (print?.stripSpan ?? 1)
+      if (striped) u.uStripe.value = this.tileTexture
+    }
   }
 
   // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),

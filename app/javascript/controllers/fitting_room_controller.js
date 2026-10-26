@@ -219,7 +219,7 @@ export default class extends Controller {
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
         // printed gets the photo's print.
         else {
-          const printed = !(garment.cut && !garment.cut.printed)
+          const printed = !(garment.style === "dress" && garment.cut && !garment.cut.printed)
           garment.print = printed ? read?.print ?? null : null
           garment.backPrint = printed && back?.print ? { image: back.print.image } : null
         }
@@ -758,8 +758,7 @@ export default class extends Controller {
       const responses = await Promise.all(items.map(({ kind, garment }, i) => ACCESSORIES.includes(kind) ? Promise.resolve({ ok: true, data: accessoryFit(garment, this.outfit[kind]?.selected) }) : fetch(this.fitsUrlValue, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: garment.cut ?? (garment.women || garment.cropped || garment.snug || garment.dropped
-          ? { women: !!garment.women, cropped: !!garment.cropped, snug: !!garment.snug, dropped: !!garment.dropped } : undefined),
+        body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: fitDetails(garment),
           sizes: garment.chart.sizes, measurements }),
         signal: this.requests[i].signal,
         cache: "no-store"
@@ -1379,6 +1378,15 @@ function colorGap(a, b) {
   const rgb = hex => [1, 3, 5].map(i => parseInt(String(hex).slice(i, i + 2), 16) || 0)
   const [p, q] = [rgb(a), rgb(b)]
   return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
+}
+
+// What the fit engine needs to know about a garment besides its sizes: a dress's or a skirt's cut, a top's
+// ({ fit, stretch }), and how a top is made (a women's, cropped, a baby tee, dropped shoulders). Undefined
+// when there's nothing to say.
+function fitDetails(garment) {
+  const flags = Object.fromEntries(["women", "cropped", "snug", "dropped"].filter(key => garment[key]).map(key => [key, true]))
+  if (!garment.cut && !Object.keys(flags).length) return undefined
+  return { ...(garment.cut ?? {}), ...flags }
 }
 
 // The size a shop photographs (its sample): the middle of its chart. Its chest and length (cm) say how big

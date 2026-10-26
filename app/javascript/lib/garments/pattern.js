@@ -58,12 +58,14 @@ const HEMS = { rib: { height: 6.5, stretch: 0.86, fabric: "rib" }, band: { heigh
 // size: a chart's garment measurements (chest, waist, shoulders, sleeve, length; any but the chest may be
 // null). body: the wearer as modelled, in cm (chest, waist, shoulders, arm, height, and from the mesh: neck,
 // armpit (how far the armpit is below the high point of the shoulder), bicep, wrist, head).
-// cut: a dress's cut (see GarmentImport::DressCut), for styleName "dress".
+// cut: a dress's cut (see GarmentImport::DressCut), for styleName "dress"; a top's { fit: "fitted", stretch }
+// (a shrunken or baby knit, made close to the body in a cloth that stretches: cut to its chart's numbers with
+// no room added at the armholes and sleeves, and draped as a knit that gives).
 export function draftTop(styleName, size, body, cut = null) {
   if (styleName === "dress" && cut && !["short", "long"].includes(cut.sleeves)) return draftDress(size, body, cut)
   if (styleName === "tank") return draftTank(size, body)
   const style = dressStyle(STYLES[styleName] ?? STYLES.tee, cut)
-  const m = measures(style, size, body)
+  const m = measures(style, size, body, cut)
   if (style.neck) m.frontNeck = style.neck
   if (style.shaped) {
     shapeSkirt(m, size, body, cut)
@@ -125,14 +127,17 @@ export function draftTop(styleName, size, body, cut = null) {
   }
 
   // (A hoodie that zips down the front says so in its cut.)
-  return { panels, seams, style: styleName, closure: cut?.closure ?? style.closure ?? null, fabric: style.fabric, measures: m }
+  const fabric = !style.shaped && cut?.stretch ? "rib" : style.fabric
+  return { panels, seams, style: styleName, closure: cut?.closure ?? style.closure ?? null, fabric, measures: m }
 }
 
 // The finished measurements to cut to: the chart's, and what it doesn't give from the body and the style.
-export function measures(style, size, body) {
+// cut: { fit: "fitted" } cuts the armholes, sleeves and hem close (a fitted knit), with the chart's chest.
+export function measures(style, size, body, cut = null) {
   // A dress's sleeves are as long as its chart says (a long-sleeved dress has them to the wrist).
   if (style.shaped && size.sleeve > 40) style = { ...style, sleeve: "long" }
-  const chest = size.chest ?? body.chest + style.ease
+  const fitted = cut?.fit === "fitted" && !style.shaped
+  const chest = size.chest ?? body.chest + (fitted ? Math.min(style.ease, 2) : style.ease)
   const cuff = style.cuffs ? CUFFS[style.cuffs] : null
   const hemBand = style.hem ? HEMS[style.hem] : null
   const shoulders = size.shoulders ?? Math.min(body.shoulders + (style.sleeve === "short" ? 2 : 3), chest / 2.15)
@@ -158,9 +163,9 @@ export function measures(style, size, body) {
     frontNeck: { stand: 6, shirtstand: 7, rib: 6, hood: 8 }[style.collar] ?? 9,
     backNeck: 2,
     shoulderDrop: 4.4,
-    armhole: (body.armpit ?? 19) + 2 + roomy / 8,
-    bicep: Math.max((body.bicep ?? 32) + (style.sleeve === "short" ? 7 : 9), chest * 0.34),
-    opening: style.sleeve === "short" ? null : Math.max((body.wrist ?? 18) + (cuff ? 9 : 12), chest * 0.21),
+    armhole: (body.armpit ?? 19) + (fitted ? 0.5 : 2) + roomy / 8,
+    bicep: fitted ? Math.max((body.bicep ?? 32) + 4, chest * 0.3) : Math.max((body.bicep ?? 32) + (style.sleeve === "short" ? 7 : 9), chest * 0.34),
+    opening: style.sleeve === "short" ? null : fitted ? Math.max((body.wrist ?? 18) + (cuff ? 5 : 8), chest * 0.19) : Math.max((body.wrist ?? 18) + (cuff ? 9 : 12), chest * 0.21),
     head: body.head ?? 58
   }
 }

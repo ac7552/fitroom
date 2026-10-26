@@ -17,6 +17,8 @@ import * as THREE from "three"
 //   aSheer   1 where the cloth is sheer (drawn see-through, as much as uSheer says), 0 elsewhere
 //   aPhoto   where it is in the garment's shop photo, laid on pants and skirts ([u, v, which]: which 1 the
 //            photo, 2 its softened copy, 0 neither; see photo_map.js)
+//   aDown    how far down the garment it is (cm below the shoulders, as the shop photo shows it laid flat;
+//            see dress.js's heightsDown): a striped print is laid on every piece by this
 
 // Each cloth: the texture, its tile (metres of cloth one repeat covers), and its finish.
 const CLOTHS = {
@@ -195,6 +197,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uPrintTile: { value: BLANK },
     uAllOver: { value: 0 },
     uTile: { value: new THREE.Vector3(20, 20, 0) },
+    // A striped front (see print.js's stripeStrip): the cloth's colour at each height down the garment, laid
+    // on every piece by aDown, so the stripes meet at the seams.
+    uStripe: { value: BLANK },
+    uStripeOn: { value: 0 },
+    uStripeLength: { value: 70 },   // how far down the garment the strip reaches (cm)
     // Pants' and skirts' shop photo, laid on the cloth where aPhoto says (see DrapedTop#setPhotoMap).
     uPhoto: { value: BLANK },
     uPhotoSoft: { value: BLANK },
@@ -222,8 +229,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aHole;
         attribute float aCover;
         attribute float aStrain;
+        attribute float aDown;
         varying float vCover;
         varying float vStrain;
+        varying float vDown;
         attribute float aSheer;
         varying float vHole;
         varying float vSheer;
@@ -235,7 +244,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain; vDown = aDown;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
     shader.fragmentShader = shader.fragmentShader
@@ -259,6 +268,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform sampler2D uPrintTile;
         uniform float uAllOver;
         uniform vec3 uTile;
+        uniform sampler2D uStripe;
+        uniform float uStripeOn;
+        uniform float uStripeLength;
         uniform sampler2D uPhoto;
         uniform sampler2D uPhotoSoft;
         uniform sampler2D uPhotoBack;
@@ -268,6 +280,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uSheer;
         varying float vCover;
         varying float vStrain;
+        varying float vDown;
         varying float vHole;
         varying float vSheer;
         varying vec3 vPhoto;
@@ -349,6 +362,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           // Started half a repeat off the middle, so the back isn't mirrored about its centre seam.
           vec2 st = vec2( vPattern.x / uTile.x + 0.5, ( -vPattern.y - uTile.z ) / uTile.y );
           diffuseColor.rgb = texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
+        }
+        // Stripes: the front's colour at this height, on every piece (the front's own photo goes on over it).
+        if ( uStripeOn > 0.5 && !backPhoto && gl_FrontFacing ) {
+          diffuseColor.rgb = texture2D( uStripe, vec2( 0.5, 1.0 - clamp( vDown / uStripeLength, 0.0, 1.0 ) ) ).rgb;
         }
         if ( backPhoto && gl_FrontFacing ) {
           vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
