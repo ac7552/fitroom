@@ -196,6 +196,26 @@ test("a pale logo down a leg's outer seam stays on the photo", () => {
   assert.ok(at(75, 190).every(v => v > 170), `logo ${at(75, 190)}`)
 })
 
+test("the back's softened copy has the front's print painted out, keeping the wash and a band round the leg", () => {
+  const { data, w, h } = bottoms({ hem: 40 })
+  const paint = (x0, x1, y0, y1, c) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) data.set([...c, 255], 4 * (y * w + x)) }
+  paint(84, 96, 150, 240, [200, 40, 50])      // lettering down the photo's left leg
+  paint(88, 100, 60, 72, [190, 170, 60])      // a hip logo
+  paint(140, 160, 140, 230, [62, 62, 66])     // a broad, slightly lighter wash on the right leg
+  paint(130, 170, 262, 278, [120, 120, 124])  // a contrast band right round the right leg's hem
+  const read = readBottom(data, w, h)
+  const at = (pixels, x, y) => [...pixels.slice(4 * (y * w + x), 4 * (y * w + x) + 3)]
+  assert.ok(read.print[195 * w + 90] && read.print[66 * w + 94], "the lettering and the logo are print")
+  assert.ok(at(read.filled, 90, 195)[0] > 150, `the front keeps the lettering ${at(read.filled, 90, 195)}`)
+  assert.ok(at(read.soft, 90, 195).every(v => v < 80), `the back has it painted out ${at(read.soft, 90, 195)}`)
+  assert.ok(at(read.soft, 94, 66).every(v => v < 80), `and the logo ${at(read.soft, 94, 66)}`)
+  assert.ok(!read.print[185 * w + 150] && at(read.soft, 150, 185)[0] > 52, `the wash stays ${at(read.soft, 150, 185)}`)
+  assert.ok(!read.print[270 * w + 150] && at(read.soft, 150, 270)[0] > 100, `the band stays ${at(read.soft, 150, 270)}`)
+  // A thin bit hanging below the hem (lettering running off the leg) isn't the pants' length.
+  paint(86, 92, 280, 296, [200, 40, 50])
+  assert.ok(Math.abs(readBottom(data, w, h).layout.bottom - read.layout.bottom) <= 1, "the hem stays where it was")
+})
+
 // A made-up boot's side photo: a tall shaft at the heel (left), a low toe (right), a gap of backdrop between
 // its laces, and a sole.
 function bootPhoto() {

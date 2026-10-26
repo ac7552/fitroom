@@ -241,8 +241,8 @@ export function findPrint(data, w, h, shape = null) {
 
 // The areas a print covers (0 to 1, soft at the edge): its marks joined up across small gaps (a closing:
 // grown by a few per cent of the front's width, then shrunk back), leaving out what's background (gap).
-// Specks far from any other mark stay specks, and are dropped.
-function printAreas(alpha, gap, w, h) {
+// Specks far from any other mark stay specks, and are dropped (a piece under `least` of the picture).
+function printAreas(alpha, gap, w, h, least = 0.002) {
   const r = Math.max(2, Math.round(Math.max(w, h) * 0.035))
   const marks = Float32Array.from(alpha, a => (a > 0.3 ? 1 : 0))
   const grown = boxBlur(marks, w, h, r).map(v => (v > 0.001 ? 1 : 0))
@@ -260,7 +260,7 @@ function printAreas(alpha, gap, w, h) {
         seen[j] = 1; stack.push(j); piece.push(j)
       }
     }
-    if (piece.length < w * h * 0.002) for (const k of piece) closed[k] = 0
+    if (piece.length < w * h * least) for (const k of piece) closed[k] = 0
   }
   for (let k = 0; k < w * h; k++) if (gap[k]) closed[k] = 0
   const soft = boxBlur(closed, w, h, Math.max(1, Math.round(r / 3)))
@@ -1265,6 +1265,20 @@ export function readBottom(data, w, h) {
     mask = Uint8Array.from(mask)
     for (const hole of pieces(backdrop, w, h)) if (hole.length < area * 0.01) for (const i of hole) mask[i] = 0
   }
+  // Something thin hanging below the hem (a drawcord's end, a tag, lettering running off the leg) isn't the
+  // garment: the rows at the bottom far narrower than the legs above them go.
+  {
+    const span = y => runs(y).reduce((sum, [a, b]) => sum + (b - a + 1), 0)
+    let widest = 0
+    for (let y = Math.round(bottom - (bottom - top) * 0.3); y <= bottom; y++) widest = Math.max(widest, span(y))
+    let y = bottom
+    while (y > top && span(y) < widest * 0.3) y--
+    if (y < bottom) {
+      mask = Uint8Array.from(mask)
+      mask.fill(0, (y + 1) * w)
+      ;[top, bottom] = extent()
+    }
+  }
   const shape = measureBottomMask(mask, w, h)
   if (!shape || shape.length < 0.4) return null
   const tall = bottom - top + 1
@@ -1294,11 +1308,61 @@ export function readBottom(data, w, h) {
   const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
   // Out to well past the garment too (in coarser colours), so cloth laid a little outside the photo's
   // outline (a hip rounder than it lay flat) never shows the backdrop.
-  const painted = fillAround(evenLight(data, inner, w, h), inner, w, h, Math.max(4, Math.round(w * 0.03)))
-  const reached = Uint8Array.from({ length: w * h }, (_, i) => (inner[i] || painted[4 * i + 3] === 254 ? 1 : 0))
-  const filled = fillAround(painted, reached, w, h, Math.max(8, Math.round(w * 0.12)))
-  const soft = blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
-  return { color, filled, soft, layout: { w, h, top, bottom, crotch, rows } }
+  const lit = evenLight(data, inner, w, h)
+  const fillIn = keep => {
+    const painted = fillAround(lit, keep, w, h, Math.max(4, Math.round(w * 0.03)))
+    const reached = Uint8Array.from({ length: w * h }, (_, i) => (keep[i] || painted[4 * i + 3] === 254 ? 1 : 0))
+    return fillAround(painted, reached, w, h, Math.max(8, Math.round(w * 0.12)))
+  }
+  const filled = fillIn(inner)
+  // The back isn't photographed, and takes the softened copy: a print on the front (lettering down a leg, a
+  // hip logo, a contrast pocket) would show on it as a mirrored smear, so it's painted over in the cloth
+  // round it there, like the backdrop is. The cloth's wash and fading, its seams and its bands stay.
+  const print = bottomsPrint(lab, clothLab, inner, w, h, runs)
+  const plain = print.some(Boolean) ? fillIn(Uint8Array.from(inner, (on, i) => (on && !print[i] ? 1 : 0))) : filled
+  const soft = blurPixels(plain, inner, w, h, Math.max(3, Math.round(w * 0.025)))
+  return { color, filled, soft, print, layout: { w, h, top, bottom, crotch, rows } }
+}
+
+// Where a print lies on a bottoms photo (1 per pixel): the garment's pixels far from the cloth's colour, in
+// solid areas joined up as a print is (see printAreas). Not a band running right across the garment or a
+// leg (a contrast waistband, a stripe round the hem: those go round the back too), nor a broad patch most
+// of a leg's size (a heavy fade, a two-tone cloth, which the back shares).
+function bottomsPrint(lab, cloth, mask, w, h, runs) {
+  const alpha = new Float32Array(w * h)
+  let area = 0
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue
+    area++
+    const dl = Math.abs(lab[3 * i] - cloth[0]), dc = Math.hypot(lab[3 * i + 1] - cloth[1], lab[3 * i + 2] - cloth[2])
+    alpha[i] = Math.min(1, Math.max(smooth(dl, 22, 34), smooth(dc, 16, 26)))
+  }
+  const solid = boxBlur(alpha, w, h, 2)
+  for (let i = 0; i < w * h; i++) alpha[i] *= smooth(solid[i], 0.3, 0.55)
+  const gap = Uint8Array.from(mask, on => (on ? 0 : 1))
+  const whole = printAreas(alpha, gap, w, h, 0.0004)
+  const print = Uint8Array.from(whole, v => (v > 0.5 ? 1 : 0))
+  for (const piece of pieces(print, w, h)) {
+    let drop = piece.length > area * 0.3
+    if (!drop) {
+      // A band: on most of its rows it spans nearly all of the stretch of garment it lies on.
+      const byRow = new Map()
+      for (const i of piece) {
+        const x = i % w, y = (i - x) / w
+        const span = byRow.get(y) ?? [x, x]
+        span[0] = Math.min(span[0], x); span[1] = Math.max(span[1], x)
+        byRow.set(y, span)
+      }
+      let banded = 0
+      for (const [y, [a, b]] of byRow) {
+        const run = runs(y).find(([p, q]) => a >= p - 2 && b <= q + 2)
+        if (run && b - a >= (run[1] - run[0]) * 0.85) banded++
+      }
+      drop = banded >= byRow.size * 0.6
+    }
+    if (drop) for (const i of piece) print[i] = 0
+  }
+  return print
 }
 
 // The photo's own creases and shadows, mostly taken out: on the 3D cloth they'd be painted on, as streaks
@@ -1439,22 +1503,22 @@ function largestPiece(mask, w, h) {
   return { mask: Uint8Array.from(label, l => (l === best ? 1 : 0)), count: bestCount }
 }
 
+// A box blur of radius r (the mean over the 2r+1 square, cut off at the picture's edge), as a running sum
+// along each row, then each column.
 function boxBlur(values, w, h, r) {
   const tmp = new Float32Array(w * h), out = new Float32Array(w * h)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0, n = 0
-      for (let k = -r; k <= r; k++) { const xx = x + k; if (xx >= 0 && xx < w) { s += values[y * w + xx]; n++ } }
-      tmp[y * w + x] = s / n
+  const run = (get, set, length, stride, start) => {
+    let s = 0
+    for (let k = 0; k <= Math.min(r, length - 1); k++) s += get(start + k * stride)
+    for (let i = 0; i < length; i++) {
+      const lo = Math.max(0, i - r), hi = Math.min(length - 1, i + r)
+      set(start + i * stride, s / (hi - lo + 1))
+      if (i + r + 1 < length) s += get(start + (i + r + 1) * stride)
+      if (i - r >= 0) s -= get(start + (i - r) * stride)
     }
   }
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0, n = 0
-      for (let k = -r; k <= r; k++) { const yy = y + k; if (yy >= 0 && yy < h) { s += tmp[yy * w + x]; n++ } }
-      out[y * w + x] = s / n
-    }
-  }
+  for (let y = 0; y < h; y++) run(i => values[i], (i, v) => { tmp[i] = v }, w, 1, y * w)
+  for (let x = 0; x < w; x++) run(i => tmp[i], (i, v) => { out[i] = v }, h, w, x)
   return out
 }
 
