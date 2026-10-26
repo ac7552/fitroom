@@ -315,7 +315,9 @@ export class DrapedTop {
       // back of the pants rises over the seat.
       tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM }
     }
-    this.pattern = this.bottoms ? draftBottoms(item.style, size, wearer, item.cut ?? null) : draftTop(item.style, size, wearer, item.cut ?? null)
+    // A top that zips down the front (a zip hoodie) is drafted with that closure, so the zip is drawn on it.
+    const cut = item.zip && !this.bottoms ? { ...(item.cut ?? {}), closure: "zip" } : item.cut ?? null
+    this.pattern = this.bottoms ? draftBottoms(item.style, size, wearer, cut) : draftTop(item.style, size, wearer, cut)
     this.cloth = buildCloth(this.pattern, this.bottoms ? BOTTOM_SPACING : SPACING)
     const { positions, attach } = placeCloth(this.cloth, this.pattern, frame)
     // A skirt hangs round both legs; pants go round each.
@@ -789,7 +791,8 @@ function merge(body, others) {
 // arms move), with `fallback`, the bone a point follows when all it had was those.
 // legs: the garment is pants, whose cuffs are at the ankles (a top's are at the wrists, on the arms).
 export function garmentWeights(points, pieces, body, frame, { still = null, fallback = 0, legs = false } = {}) {
-  const parts = name => (legs ? [0, 4] : name.endsWith("_L") && /^(sleeve|cuff)/.test(name) ? [1] : name.endsWith("_R") && /^(sleeve|cuff)/.test(name) ? [2] : name.startsWith("hood") ? [3] : [0, 4])
+  // (A hood lies on the back and shoulders when it's down, so it takes the nearer of the torso and the head.)
+  const parts = name => (legs ? [0, 4] : name.endsWith("_L") && /^(sleeve|cuff)/.test(name) ? [1] : name.endsWith("_R") && /^(sleeve|cuff)/.test(name) ? [2] : name.startsWith("hood") ? [0, 3] : [0, 4])
   const cell = 0.04
   const grids = [new Map(), new Map(), new Map(), new Map(), new Map()]
   const key = (x, y, z) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`

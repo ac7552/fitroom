@@ -138,7 +138,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 24
+  FORMAT = 25
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -826,8 +826,14 @@ class GarmentImport
       **(kind == "top" && chart.kind == "sizes" && baby_tee?(product) ? { snug: true } : {}),
       **(skirt_cut ? { cut: skirt_cut } : {}),
       **(kind == "top" && product[:shape] && sleeves_sewn(product[:shape]) == :low ? { dropped: true } : {}),
+      **(style == "hoodie" && zipped?(product) ? { zip: true } : {}),
       chart: chart.as_json
     }
+  end
+
+  # A hoodie that zips all the way down the front (drawn with a zip; a half-zip pullover isn't).
+  def zipped?(product, words = product.values_at(:name, :description).join(" "))
+    words.match?(/full[- ]zip|zip[- ]up|zip(?:per)? (?:closure|front|hoodie|hoody|sweatshirt)|zip[- ]?thr(?:ough|u)|two-way zip|\bzipped\b/i) && !words.match?(/half[- ]zip|quarter[- ]zip|1\/4[- ]zip/i)
   end
 
   def dress_garment(product, chart, cut, source_url)

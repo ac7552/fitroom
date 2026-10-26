@@ -92,7 +92,11 @@ browser, in `app/javascript/lib/garments/`:
 - `fabric.js` draws the cloth: knit, rib, fleece, twill or nylon at real scale, with seams, hem stitching,
   zips, buttons and a hoodie's pocket.
 - `print.js` reads the shop's photo for the garment's colour and any print on its front, which is laid on
-  the cloth. Only the front: sleeves and backs stay plain.
+  the cloth. Only the front: sleeves and backs stay plain. (Pants take the whole photo; their back takes a
+  softened copy with the front's print painted out.)
+
+A hoodie's hood is worn down, lying on the back and shoulders, as a shop photo shows it. A hoodie whose
+listing says it zips up (`zip: true` on the import) is drawn with the zip and its pull.
 
 A top under the suit's jacket or a coat isn't drawn (the model's jacket has its own shirt).
 

@@ -117,6 +117,32 @@ export function placeCloth(cloth, pattern, frame) {
     return [h.centre[0] + r * Math.sin(angle), y, h.centre[2] + r * Math.cos(angle)]
   }
 
+  // A hood worn down, as a shop photo shows a hoodie (and as it's mostly worn): hanging down the back from the
+  // neckline, its crown seam straight down the centre back, the forehead end at the bottom, and the opening's
+  // edge running up its sides and over the shoulders. Each point lies as far round from the centre back as it
+  // is in from the crown edge on the flat piece, and as far down as it is up the piece. What's sewn to the
+  // front neckline stands up round the neck a little and folds back over the shoulder to lie on the back, on
+  // top of the rest. crownX: the crown edge's x at a height up the piece.
+  function hoodDown([px, py], side, crownX) {
+    const sign = side === "L" ? 1 : -1
+    const neckY = hpsY + lift - 0.01
+    const round = Math.max(radius, frame.torso.at(neckY - 0.1, sign * Math.PI * 0.75) + gap) + 0.012
+    const s = Math.max(py, 0) / 100
+    const across = Math.max(0, crownX(py) - Math.abs(px)) / 100
+    const shoulder = (Math.PI / 2) * 0.92, rise = 0.03
+    let fromBack = across / round, y = neckY - s, extra = 0
+    if (fromBack > shoulder) {
+      // Past the shoulder: sewn to the front neckline. Up the neck, then folded back onto the back.
+      if (s <= rise) y = neckY + s
+      else { fromBack = Math.max(0, 2 * shoulder - fromBack); y = neckY + rise - (s - rise); extra = 0.012 }
+    }
+    const a = sign * (Math.PI - fromBack)
+    const r = Math.max(radius, frame.torso.at(y, a) + gap) + 0.012 + extra
+    const q = [r * Math.sin(a), y, frame.torso.centreAt(y) + r * Math.cos(a)]
+    if (y < neckY) clearOfArms(q, -1)
+    return q
+  }
+
   // Pants: each leg piece round its quarter of the hips above the crotch, and round its half of the leg
   // below it. The crotch point hangs a little below the body's; a leg longer than the leg starts gathered
   // above the ankle, as extra length stacks there.
@@ -247,10 +273,20 @@ export function placeCloth(cloth, pattern, frame) {
   cloth.panels.forEach((name, panelIndex) => {
     const place = pattern.panels[name].place
     if (place.at === "band") return
-    let width = 0, tall = 0
+    let width = 0, tall = 0, crownX = null
     if (place.at === "head") {
       tall = Math.max(...pattern.panels[name].edges.flatMap(e => e.points).map(p => p[1]))
       width = pattern.panels[name].edges.filter(e => e.name.startsWith("sewn_")).reduce((s, e) => s + Math.abs(e.points[e.points.length - 1][0] - e.points[0][0]), 0)
+      // The crown edge as it rises from the neck (its x at each height), for a hood worn down.
+      const crown = pattern.panels[name].edges.find(e => e.name === "crown").points.map(([x, y]) => [Math.abs(x), y])
+      if (crown[0][1] > crown[crown.length - 1][1]) crown.reverse()
+      const rising = [crown[0]]
+      for (const q of crown.slice(1)) { if (q[1] <= rising[rising.length - 1][1]) break; rising.push(q) }
+      crownX = y => {
+        if (y <= rising[0][1]) return rising[0][0]
+        for (let k = 1; k < rising.length; k++) if (y <= rising[k][1]) return rising[k - 1][0] + (rising[k][0] - rising[k - 1][0]) * (y - rising[k - 1][1]) / (rising[k][1] - rising[k - 1][1])
+        return rising[rising.length - 1][0]
+      }
     }
     const widthAt = place.at === "arm" ? sleeveWidth(pattern.panels[name]) : null
     // A sleeve (and its cuff) longer than the arm starts gathered up the forearm, the way extra length bunches
@@ -270,7 +306,7 @@ export function placeCloth(cloth, pattern, frame) {
       if (cloth.panel[i] !== panelIndex) continue
       const p = cloth.points[i]
       const q = place.at === "torso" ? torso(p, place.side, lift) : place.at === "arm" ? arm(p, place.side, widthAt, squeeze)
-        : place.at === "leg" ? leg(p, place, name) : place.at === "skirt" ? skirt(p, place, name) : head(p, place.side, width, tall)
+        : place.at === "leg" ? leg(p, place, name) : place.at === "skirt" ? skirt(p, place, name) : place.down ? hoodDown(p, place.side, crownX) : head(p, place.side, width, tall)
       out.set(q, 3 * i)
       done[i] = 1
     }

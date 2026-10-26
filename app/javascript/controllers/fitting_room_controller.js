@@ -850,6 +850,7 @@ export default class extends Controller {
       fabric: garment.fabric,
       style: garment.style,
       cut: garment.cut ?? null,
+      zip: Boolean(garment.zip),
       sole: garment.sole ?? null,
       collar: garment.collar ?? null,
       // Shoes are shaped to their side photo's outline and wear the photo itself (see accessories.js).

@@ -682,11 +682,11 @@ export class FittingStage {
     const style = slot === "bottom" ? item.style ?? "trousers" : DRAPED_STYLES.includes(item.style) ? item.style : "tee"
     // Each layer is sewn over the ones under it, so a new one under it is a new drape for it too.
     const over = this.under(slot).map(d => d.key)
-    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, item.tuck ?? null, this.fitted.scale, this.fitted.influences, over, this.feet.key])
+    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, item.zip ?? false, item.tuck ?? null, this.fitted.scale, this.fitted.influences, over, this.feet.key])
     if (this.slots[slot]?.key !== key && this.waiting[slot]?.key !== key) {
       // The garment shown stays until the new one is sewn and in the pose shown, so nothing jumps about.
       this.removeDraped(slot, { keepShown: true })
-      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null, tuck: item.tuck ?? null, photoSize: item.photoSize ?? null } }
+      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null, zip: Boolean(item.zip), tuck: item.tuck ?? null, photoSize: item.photoSize ?? null } }
       // It waits for the layers under it to be sewn, then is sewn over them.
       if (this.under(slot).some(d => !d.top.done)) this.waiting[slot] = spec
       else {
