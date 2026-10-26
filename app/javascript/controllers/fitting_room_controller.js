@@ -4,6 +4,7 @@ import { FittingStage } from "lib/stage"
 import { readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded } from "lib/garments/print"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
+import { knockoutPhoto } from "lib/garments/knockout"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -31,7 +32,7 @@ const OWN_PARTS = {
   trousers: [["waist", "Waist"], ["seat", "Seat"], ["thigh", "Thigh"], ["inseam", "Inseam"], ["leg_opening", "Opening"]]
 }
 // What the 3D view says while it drapes a top.
-const DRAPE_TEXT = { sewing: "Sewing it together…", settling: "Letting the cloth settle…", posing: "Moving it into the pose…" }
+const DRAPE_TEXT = { sewing: "Sewing your size…", settling: "Letting it settle…", posing: "Striking the pose…" }
 const FLAT_PARTS = ["chest", "waist", "seat", "thigh", "leg_opening"]
 // The page's words for each measurement, for messages about them (see PagesHelper).
 const BODY_WORDS = {
@@ -56,7 +57,7 @@ export default class extends Controller {
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact", "lookAi",
-    "loading", "loadingLabel", "loadingBar",
+    "loading", "loadingLabel", "loadingBar", "scene", "stage",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
   ]
   static values = { fitsUrl: String, importUrl: String, studioUrl: String, lookUrl: String, garment: Object, dress: Object }
@@ -67,10 +68,15 @@ export default class extends Controller {
     this.stage = new FittingStage(this.canvasTarget)
     this.shownBodyType = this.bodyType
     this.stage.setBodyType(this.bodyType)
+    this.showScene(this.sceneTargets.find(radio => radio.checked)?.value ?? "studio")
+    // On the page, a garment just put on gets its slow turn round (not in a still picture).
+    this.stage.revealTurns = true
     this.floatSwitches()
+    this.watchInsets()
     // One garment done isn't the outfit done: the loader goes when the stage says everything is on.
     this.stage.onDrape = phase => this.showLoading(phase === "done" ? null : DRAPE_TEXT[phase] ?? this.loadingLabelTarget.textContent)
     this.outfit = {}
+    this.tiles = new Map()
     this.addItem(this.garmentValue)
     this.renderOwnSizes()
     this.update()
@@ -78,6 +84,7 @@ export default class extends Controller {
 
   disconnect() {
     this.switchWatch?.disconnect()
+    this.insetWatch?.disconnect()
     clearTimeout(this.timer)
     this.requests?.forEach(r => r.abort())
     this.stage?.dispose()
@@ -346,25 +353,64 @@ export default class extends Controller {
         chart.missing.length ? `the chart doesn't show the ${listed(chart.missing.map(m => (PART_NAMES[m] ?? m.replace("_", " ")).toLowerCase()))}` : null,
         garment.cut?.details?.length ? `the 3D view doesn't show its ${listed(garment.cut.details)}` : null
       ].filter(Boolean)
+      // The shop's photo on a tile in the stage's own tone, its white backdrop knocked out (see showTiles);
+      // until that's done, blended onto the tile. No photo: a swatch of the colour.
       const thumb = garment.photo
-        ? `<img class="swatch swatch--photo" src="${escape(garment.photo)}" alt="">`
-        : `<span class="swatch" style="background:${escape(garment.color)}"></span>`
+        ? `<img class="rail-photo" src="${escape(garment.photo)}" alt="">`
+        : `<span class="rail-swatch" style="background:${escape(garment.color)}"></span>`
       const source = garment.source_url ? ` <a href="${escape(garment.source_url)}" target="_blank" rel="noopener noreferrer">See it in the store</a>` : ""
       return `
-        <div class="garment-card">
-          ${thumb}
-          <div class="garment-text">
-            <p class="garment-kind mono">${garment.one_piece ? `One piece · ${kind === "top" ? "top half" : "bottom half"}` : KINDS[kind]}</p>
-            <p class="garment-name">${escape(garment.name)}</p>
-            <p class="garment-meta">${escape([garment.brand, garment.color_name, garment.fabric && garment.fabric !== "wool" ? garment.fabric : null].filter(Boolean).join(" · "))}</p>
-            <p class="garment-meta">${escape(capitalize(notes.join(", ")))}.${source}</p>
+        <div class="rail-item" data-kind="${kind}">
+          <div class="rail-tile" data-kind="${kind}">${thumb}</div>
+          <div class="rail-text">
+            <p class="rail-kind mono">${garment.one_piece ? `One piece · ${kind === "top" ? "top half" : "bottom half"}` : KINDS[kind]}</p>
+            <p class="rail-name">${escape(garment.name)}</p>
+            <p class="rail-meta">${escape([garment.brand, garment.color_name, garment.fabric && garment.fabric !== "wool" ? garment.fabric : null].filter(Boolean).join(" · "))}</p>
+            <p class="rail-size" data-rail-size="${kind}" hidden></p>
+            <p class="rail-notes">${escape(capitalize(notes.join(", ")))}.${source}</p>
           </div>
-          <button type="button" class="text-button garment-remove" data-kind="${kind}" data-action="fitting-room#removeItem" aria-label="Remove ${KINDS[kind].toLowerCase()}">Remove</button>
+          <button type="button" class="text-button rail-remove" data-kind="${kind}" data-action="fitting-room#removeItem" aria-label="Remove ${KINDS[kind].toLowerCase()}">Remove</button>
         </div>`
     }).join("") : `<p class="hint">Nothing yet. Paste a link below, or try one of ours.</p>`
+    this.showTiles(items)
+    this.showRailSizes(items)
 
     this.stagePhotosTarget.innerHTML = items.filter(i => i.garment.photo)
       .map(i => `<img class="stage-photo" src="${escape(i.garment.photo)}" alt="Your photo of the ${KINDS[i.kind].toLowerCase()}">`).join("")
+  }
+
+  // Each rail tile's photo with its white backdrop taken out, worked out once per photo (in the browser;
+  // the photo stays on the device) and swapped in when ready, if the item's still there.
+  showTiles(items) {
+    for (const { kind, garment } of items) {
+      if (!garment.photo) continue
+      let tile = this.tiles.get(garment.photo)
+      if (!tile) {
+        tile = knockoutPhoto(garment.photo)
+        this.tiles.set(garment.photo, tile)
+        if (this.tiles.size > 24) this.tiles.delete(this.tiles.keys().next().value)
+      }
+      tile.then(canvas => {
+        const box = this.outfitListTarget.querySelector(`.rail-tile[data-kind="${kind}"]`)
+        if (!canvas || !box || this.outfit[kind]?.garment.photo !== garment.photo) return
+        canvas.className = "rail-cut"
+        canvas.setAttribute("aria-hidden", "true")
+        box.replaceChildren(canvas)
+      })
+    }
+  }
+
+  // On each rail item, the size shown and whether it's the best one (once the fit is known).
+  showRailSizes(items = this.items()) {
+    for (const { kind, fit, selected } of items) {
+      const line = this.outfitListTarget.querySelector(`[data-rail-size="${kind}"]`)
+      if (!line) continue
+      if (!fit || !selected) { line.hidden = true; continue }
+      const best = fit.sizes.length > 1 && selected === fit.best
+      const only = fit.sizes.length === 1
+      line.hidden = false
+      line.innerHTML = `<span class="rail-chip">${escape(selected)}</span>${ACCESSORIES.includes(kind) ? "" : best || only ? `<span class="rail-best">${only ? "Only size" : "★ Best size"}</span>` : `<span class="rail-other">Best: ${escape(fit.best)}</span>`}`
+    }
   }
 
   // A different look for an item ("Looks like" or "Fabric" on its card): only the drawing changes.
@@ -469,10 +515,42 @@ export default class extends Controller {
 
   // The stage
 
-  // The studio: the dark stage, or a pale daylight one like a shop's photos.
+  // The studio: an off-white sweep like a shop's lookbook (the usual), a pale daylight one, or the dark stage.
   changeScene(event) {
-    this.stage.setScene(event.target.value)
-    this.canvasTarget.closest(".stage")?.classList.toggle("stage--daylight", event.target.value === "daylight")
+    this.showScene(event.target.value)
+  }
+
+  showScene(name) {
+    this.stage.setScene(name)
+    const box = this.canvasTarget.closest(".stage")
+    for (const scene of ["studio", "daylight", "dark"]) box?.classList.toggle(`stage--${scene}`, scene === name)
+  }
+
+  // The figure is framed between the controls over the top of the picture and the size rows over its
+  // bottom, however they wrap or the window is sized.
+  watchInsets() {
+    const box = this.canvasTarget.closest(".stage")
+    const top = box?.querySelector(".stage-top")
+    if (!box || !top || !("ResizeObserver" in window)) return
+    const measure = () => {
+      const canvas = this.canvasTarget.getBoundingClientRect()
+      if (!canvas.height) return
+      const over = (element, side) => {
+        if (!element || element.hidden) return 0
+        const r = element.getBoundingClientRect()
+        if (!r.height) return 0
+        return side === "top" ? Math.max(0, Math.min(canvas.height, r.bottom - canvas.top)) : Math.max(0, Math.min(canvas.height, canvas.bottom - r.top))
+      }
+      const rows = over(this.sizesTarget, "bottom")
+      // Things that sit just above the size rows (the sewing note, the legend) follow their height.
+      box.style.setProperty("--rows", `${Math.round(rows)}px`)
+      this.stage.setInsets({ top: Math.round(over(top, "top") + 8), bottom: Math.round(rows + 8) })
+    }
+    this.insetWatch = new ResizeObserver(measure)
+    this.insetWatch.observe(top)
+    this.insetWatch.observe(this.sizesTarget)
+    this.insetWatch.observe(this.canvasTarget)
+    this.stage.ready.then(measure)
   }
 
   changeView(event) {
@@ -884,6 +962,7 @@ export default class extends Controller {
                     title="${escape(VERDICT_TEXT[r.verdict])}">${escape(r.size)}</button>`).join("")}
         </div>`
     }).join("")
+    this.showRailSizes(items)
 
     this.resultsTarget.innerHTML = items.map(({ kind, garment, fit, selected }) => {
       const result = fit.sizes.find(s => s.size === selected)

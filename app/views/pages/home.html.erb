@@ -217,7 +217,7 @@
         <span class="step-number" aria-hidden="true">3</span>
         <h2>See it on and pick a size</h2>
       </div>
-      <div class="stage" data-fitting-room-target="stage">
+      <div class="stage stage--studio" data-fitting-room-target="stage">
         <canvas data-fitting-room-target="canvas" aria-label="A 3D body shaped like you, wearing the clothes in the size you pick. Drag to turn it."></canvas>
         <div class="stage-top">
           <div class="stage-switches" data-fitting-room-target="switches">
@@ -236,8 +236,9 @@
               <label><input type="radio" name="tuck" value="in" autocomplete="off" data-action="fitting-room#changeTuck"><span>Tucked in</span></label>
             </div>
             <div class="segmented segmented--dark" role="radiogroup" aria-label="Studio">
-              <label><input type="radio" name="scene" value="dark" checked autocomplete="off" data-action="fitting-room#changeScene"><span>Dark</span></label>
-              <label><input type="radio" name="scene" value="daylight" autocomplete="off" data-action="fitting-room#changeScene"><span>Daylight</span></label>
+              <label><input type="radio" name="scene" value="studio" checked autocomplete="off" data-fitting-room-target="scene" data-action="fitting-room#changeScene"><span>Studio</span></label>
+              <label><input type="radio" name="scene" value="daylight" autocomplete="off" data-fitting-room-target="scene" data-action="fitting-room#changeScene"><span>Daylight</span></label>
+              <label><input type="radio" name="scene" value="dark" autocomplete="off" data-fitting-room-target="scene" data-action="fitting-room#changeScene"><span>Dark</span></label>
             </div>
             <div class="segmented segmented--dark" role="radiogroup" aria-label="Mannequin">
               <label><input type="radio" name="body-type-stage" value="men" checked autocomplete="off" data-fitting-room-target="bodyType" data-action="fitting-room#changeBodyType"><span>Man</span></label>
@@ -252,6 +253,7 @@
           <p class="stage-note" data-fitting-room-target="stageNote"></p>
         </div>
         <div class="stage-loading" role="status" aria-live="polite" data-fitting-room-target="loading" hidden>
+          <div class="stage-loading-sweep" aria-hidden="true"></div>
           <div class="stage-loading-card">
             <span class="stage-loading-label" data-fitting-room-target="loadingLabel"></span>
             <span class="stage-loading-track" aria-hidden="true"><i data-fitting-room-target="loadingBar"></i></span>
