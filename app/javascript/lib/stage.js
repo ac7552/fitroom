@@ -11,6 +11,7 @@ import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepa
 import { bodyFrame } from "lib/garments/body"
 import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
+import { easeInOut, framing } from "lib/framing"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
 // script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
@@ -46,9 +47,33 @@ export const STYLES = ["tailored", "zip", "bomber", "shirt"]
 // Tops, and casual jackets, cut from a sewing pattern and draped on the mannequin with cloth simulation.
 // The idle turn: how fast (OrbitControls' units: 2 is a turn in 30 s at 60 fps; this is about 75 s) and how
 // long after the last touch (ms) it starts.
-// The graphite stage's light from behind (see addLights).
-const RIM = { color: 0xdde6ff, intensity: 0.4, position: [-1.4, 2.6, -2.6] }
 const IDLE_TURN = { speed: 0.8, after: 8000 }
+// The reveal, once a new garment is on: it fades in, and the figure makes one slow turn (ms).
+const REVEAL = { fade: 600, turn: 8000, camera: 600 }
+
+// The three studios (see setScene). "studio" is the default: a warm off-white seamless sweep, as a shop's
+// lookbook is shot, with a big soft key light, a long soft shadow under the feet and a faint cool light from
+// behind so the figure stands off the backdrop. "daylight" is a cooler pale grey, "dark" the graphite stage.
+// exposure also tones the backdrop (see backdropTone); environment is the HDRI's share; key, fill and rim are
+// the lights' strengths; floor and contact the shadows' darkness; stretch lengthens the contact shadow.
+const LOOKS = {
+  studio: {
+    exposure: 1.05, environment: 0.8, key: 1.75, keyRadius: 14, fill: 0.4,
+    rim: { color: 0xdbe4ff, intensity: 0.35, position: [-0.8, 2.6, -3] },
+    pool: false, floor: 0.22, contact: 0.32, stretch: 1.9
+  },
+  daylight: {
+    exposure: 1.05, environment: 0.75, key: 1.7, keyRadius: 14, fill: 0.55,
+    rim: { color: 0xffffff, intensity: 0.55, position: [0, 2.5, -3] },
+    pool: false, floor: 0.3, contact: 0.38, stretch: 1
+  },
+  dark: {
+    exposure: 1, environment: 0.85, key: 1.6, keyRadius: 8, fill: 0,
+    rim: { color: 0xdde6ff, intensity: 0.4, position: [-1.4, 2.6, -2.6] },
+    pool: true, floor: 0.45, contact: 0.55, stretch: 1
+  }
+}
+export const SCENES = Object.keys(LOOKS)
 
 // Contact shading's reach (metres; about a hand's width) and strength.
 const AO = { radius: 0.22, falloff: 1, intensity: 3.2 }
@@ -99,6 +124,15 @@ export class FittingStage {
     this.belt = { stamp: null, mesh: null, buckle: null }
     this.scarf = { stamp: null, mesh: null }
     this.collars = { stamp: null, meshes: [] }
+    // How the picture is framed: what's laid over its top and bottom (pixels; the figure is centred between),
+    // where the camera is moving to (see frameOutfit) and the figure's slow turn once a garment is on, which
+    // only the page asks for (revealTurns), not a headless picture.
+    this.insets = null
+    this.cameraMove = null
+    this.turn = null
+    this.revealTurns = false
+    this.revealed = false
+    this.stillness = Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
@@ -118,7 +152,7 @@ export class FittingStage {
     this.controls.maxPolarAngle = 1.75
     this.idleTurn()
     this.effects = this.addEffects()
-    this.scene.background = backdrop(this.backdropTone(1))
+    this.setScene("studio")
 
     this.resize()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -145,7 +179,7 @@ export class FittingStage {
     ])
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromEquirectangular(studio).texture
-    this.scene.environmentIntensity = 0.85
+    this.scene.environmentIntensity = LOOKS[this.sceneLook].environment
     studio.dispose()
     pmrem.dispose()
 
@@ -198,6 +232,7 @@ export class FittingStage {
     this.model.scale.setScalar(this.fitted.scale)
     for (const mesh of Object.values(this.meshes)) applyInfluences(mesh, this.fitted.influences)
     this.redraw()
+    this.frameOutfit()
     return this.fitted.limited
   }
 
@@ -722,6 +757,7 @@ export class FittingStage {
     const d = this.slots[slot]
     this.slots[slot] = null
     if (!d) { if (!keepShown) this.dropLeaving(slot); return }
+    if (d.fade) this.finishFade(d)
     if (keepShown && d.shown) {
       this.dropLeaving(slot)
       this.leaving[slot] = d
@@ -906,9 +942,7 @@ export class FittingStage {
     // in the daylight studio, a cool fill from the other side.
     this.fill = new THREE.DirectionalLight(0xf2f4ff, 0.55)
     this.fill.position.set(-2.5, 1.8, 2.0)
-    this.rim = new THREE.DirectionalLight(RIM.color, RIM.intensity)
-    this.rim.position.set(...RIM.position)
-    this.fill.visible = false
+    this.rim = new THREE.DirectionalLight(0xffffff, 0.4)
     this.scene.add(this.fill, this.rim)
 
     // A faint pool of light on the floor, so the figure stands on something, and its shadow in it.
@@ -936,25 +970,41 @@ export class FittingStage {
     this.contact = contact
   }
 
-  // "dark" (the graphite stage) or "daylight": a pale seamless studio like a shop's lookbook. The floor is
-  // only its shadows on the backdrop's colour, so there's no line where floor meets wall.
+  // "studio" (a warm off-white sweep, the default), "daylight" (pale grey) or "dark" (the graphite stage): see
+  // LOOKS. The floor is only its shadows on the backdrop's colour, so there's no line where floor meets wall.
   setScene(name) {
-    const day = name === "daylight"
-    this.sceneLook = day ? "daylight" : "dark"
+    const look = LOOKS[name] ?? LOOKS.studio
+    this.sceneLook = LOOKS[name] ? name : "studio"
+    const tone = this.backdropTone(look.exposure)
     this.scene.background?.dispose?.()
-    this.scene.background = day ? daylightBackdrop(this.backdropTone(1.05)) : backdrop(this.backdropTone(1))
-    this.pool.visible = !day
-    this.floor.material.opacity = day ? 0.3 : 0.45
-    this.contact.material.opacity = day ? 0.38 : 0.55
-    this.fill.visible = day
-    this.rim.color.set(day ? 0xffffff : RIM.color)
-    this.rim.intensity = day ? 0.55 : RIM.intensity
-    this.rim.position.set(...(day ? [0, 2.5, -3] : RIM.position))
-    this.key.intensity = day ? 1.7 : 1.6
-    this.key.shadow.radius = day ? 14 : 8
-    this.scene.environmentIntensity = day ? 0.75 : 0.85
-    this.renderer.toneMappingExposure = day ? 1.05 : 1
+    this.scene.background = this.sceneLook === "studio" ? studioBackdrop(tone) : this.sceneLook === "daylight" ? daylightBackdrop(tone) : backdrop(tone)
+    this.pool.visible = look.pool
+    this.floor.material.opacity = look.floor
+    this.contact.material.opacity = look.contact
+    this.contact.scale.set(1 + (look.stretch - 1) * 0.6, look.stretch, 1)
+    this.contact.position.z = 0.02 - (look.stretch - 1) * 0.06
+    this.fill.visible = look.fill > 0
+    this.fill.intensity = look.fill
+    this.rim.color.set(look.rim.color)
+    this.rim.intensity = look.rim.intensity
+    this.rim.position.set(...look.rim.position)
+    this.key.intensity = look.key
+    this.key.shadow.radius = look.keyRadius
+    this.scene.environmentIntensity = look.environment
+    this.renderer.toneMappingExposure = look.exposure
     this.start()
+  }
+
+  // What's laid over the picture's top and bottom (pixels: the page's controls and size rows), so the figure
+  // is framed between them. The first time, the camera goes straight there; after that it eases.
+  setInsets({ top = 0, bottom = 0 } = {}) {
+    const same = this.insets && this.insets.top === top && this.insets.bottom === bottom
+    if (same) return
+    const first = !this.insets
+    this.insets = { top, bottom }
+    if (!this.calibration) return
+    if (first) this.frame()
+    else this.frameOutfit()
   }
 
   async dress(textures) {
@@ -1063,17 +1113,87 @@ export class FittingStage {
     }
   }
 
-  // Head to toe, a little from the side, like a lookbook photo.
+  // Head to toe, a little from the side, like a lookbook photo: the figure fills most of the picture's height
+  // (see lib/framing), centred between the controls over the top of it and the size rows over its bottom.
+  // Straight there, with the camera a little from the side (a resize, or the first look).
   frame() {
-    const H = this.calibration.body.height / 100
-    // Room above the head for the controls and below the feet for the size rows (on a phone the controls
-    // sit above the picture instead, and the narrow picture needs a little more room round the figure).
-    // A little low in the picture, so the note under the controls stays clear of the head.
-    const margin = 0.8
-    const distance = (H * margin) / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))
-    this.controls.target.set(0, H * 0.56, 0)
-    this.camera.position.set(Math.sin(0.25) * distance, H * 0.6, Math.cos(0.25) * distance)
+    const goal = this.framingGoal()
+    this.cameraMove = null
+    this.controls.target.set(0, goal.centreY, 0)
+    this.camera.position.set(Math.sin(0.25) * goal.distance, goal.centreY + goal.height * 0.04, Math.cos(0.25) * goal.distance)
     this.controls.update()
+  }
+
+  // The same framing for the outfit as it is now (a tall person, a hood up, heels), eased to over a moment
+  // (see animate), keeping whichever way round the figure the camera is: pants alone or a whole outfit, the
+  // figure sits in the same place.
+  frameOutfit() {
+    if (!this.calibration) return
+    const goal = this.framingGoal()
+    const from = { target: this.controls.target.clone(), distance: this.camera.position.distanceTo(this.controls.target) }
+    const to = { target: new THREE.Vector3(0, goal.centreY, 0), distance: goal.distance }
+    if (this.cameraMove?.to.target.equals(to.target) && Math.abs(this.cameraMove.to.distance - to.distance) < 1e-4) return
+    if (from.target.distanceTo(to.target) < 0.002 && Math.abs(from.distance - to.distance) < 0.005) { this.cameraMove = null; return }
+    this.cameraMove = { from, to, t0: performance.now() }
+    this.start()
+  }
+
+  // Where the camera should look from (see lib/framing): the figure's height as drawn, with anything worn
+  // that reaches above the head.
+  framingGoal() {
+    const H = (this.calibration.body.height / 100) * (this.fitted?.scale ?? 1)
+    let top = H
+    for (const d of Object.values(this.slots)) {
+      if (!d?.shown) continue
+      d.top.geometry.computeBoundingBox()
+      const box = d.top.geometry.boundingBox
+      if (box && Number.isFinite(box.max.y)) top = Math.max(top, box.max.y)
+    }
+    const height = Math.min(top, H * 1.08)
+    const pictureHeight = this.renderer.getSize(new THREE.Vector2()).y
+    const narrow = Boolean(globalThis.matchMedia?.("(max-width: 720px)")?.matches)
+    return { height, ...framing({ height, fov: this.camera.fov, pictureHeight, insets: this.insets ?? { top: 0, bottom: 0 }, narrow }) }
+  }
+
+  // Each frame: the camera's move (frameOutfit), a shown garment's fade in (show) and the figure's slow
+  // turn once it's on (see reveal). The camera keeps its direction round the figure while it moves.
+  animate(now = performance.now()) {
+    const move = this.cameraMove
+    if (move) {
+      const t = (now - move.t0) / REVEAL.camera, e = easeInOut(t)
+      const direction = this.camera.position.clone().sub(this.controls.target).normalize()
+      this.controls.target.lerpVectors(move.from.target, move.to.target, e)
+      const distance = move.from.distance + (move.to.distance - move.from.distance) * e
+      this.camera.position.copy(this.controls.target).addScaledVector(direction, distance)
+      if (t >= 1) this.cameraMove = null
+    }
+    for (const d of Object.values(this.slots)) if (d?.fade) this.advanceFade(d, now)
+    const turn = this.turn
+    if (turn) {
+      const t = (now - turn.t0) / REVEAL.turn
+      const angle = easeInOut(t) * Math.PI * 2
+      this.turnCamera(angle - turn.turned)
+      turn.turned = angle
+      if (t >= 1) { this.turn = null; this.idle.later() }
+    }
+  }
+
+  // The camera round the figure by `angle` (radians), the way the idle turn goes.
+  turnCamera(angle) {
+    const offset = this.camera.position.clone().sub(this.controls.target)
+    const radius = Math.hypot(offset.x, offset.z), theta = Math.atan2(offset.x, offset.z) - angle
+    offset.x = Math.sin(theta) * radius
+    offset.z = Math.cos(theta) * radius
+    this.camera.position.copy(this.controls.target).add(offset)
+  }
+
+  // Once a new garment is on and everything's settled: one slow turn right round, so it's seen all round,
+  // which a touch stops. Only when the page asks (revealTurns) and not for anyone who's asked for less motion.
+  reveal() {
+    if (!this.revealTurns || this.stillness || this.turn) return
+    this.idle.stop()
+    this.turn = { t0: performance.now(), turned: 0 }
+    this.start()
   }
 
   // A still picture of what's on screen, sharper than the screen: drawn once at `width` by `height` pixels
@@ -1090,6 +1210,7 @@ export class FittingStage {
     this.wearScarf()
     this.wearCollars()
     this.hideCovered()
+    this.finishMoves()
     const renderer = this.renderer, camera = this.camera
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
     const { aspect, fov, near, far } = camera
@@ -1157,8 +1278,8 @@ export class FittingStage {
   // Left alone, the mannequin turns slowly, as a shop's turntable does, so the clothes are seen all round; a
   // touch stops it, and it starts again a while after. Not for anyone who's asked for less motion.
   idleTurn() {
-    const still = matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
-    if (still) return
+    this.idle = { later: () => {}, stop: () => {} }
+    if (this.stillness) return
     const controls = this.controls
     controls.autoRotateSpeed = IDLE_TURN.speed
     let timer = null
@@ -1166,10 +1287,12 @@ export class FittingStage {
       clearTimeout(timer)
       timer = setTimeout(() => { controls.autoRotate = true }, IDLE_TURN.after)
     }
-    controls.addEventListener("start", () => { controls.autoRotate = false; clearTimeout(timer) })
+    // A drag stops the idle turn and the reveal's turn alike.
+    controls.addEventListener("start", () => { controls.autoRotate = false; clearTimeout(timer); this.turn = null })
     controls.addEventListener("end", later)
     later()
-    this.stopIdleTurn = () => { clearTimeout(timer); controls.autoRotate = false }
+    this.idle = { later, stop: () => { clearTimeout(timer); controls.autoRotate = false } }
+    this.stopIdleTurn = this.idle.stop
   }
 
   // Contact shading (N8AO): the soft darkening where cloth folds, where an arm meets the body, under a
@@ -1210,8 +1333,10 @@ export class FittingStage {
     return this.effects ? css => untoned(css, exposure) : css => css
   }
 
-  // The scene, through the effects when there are any.
+  // The scene, through the effects when there are any. Drawn outside the frame loop (a still picture), nothing
+  // is left half-way.
   draw() {
+    if (!this.frameId) this.finishMoves()
     if (this.effects) this.effects.composer.render()
     else this.renderer.render(this.scene, this.camera)
   }
@@ -1240,6 +1365,7 @@ export class FittingStage {
   }
 
   tick = () => {
+    this.animate()
     this.controls.update()
     this.advanceDrape()
     this.fitTuck()
@@ -1257,6 +1383,7 @@ export class FittingStage {
     // Once everything is on (or nothing's being put on), say so, once: the page's loader goes.
     if (this.settled) {
       if (this.busy) { this.busy = false; this.onDrape?.("done", true) }
+      if (this.revealed) { this.revealed = false; this.reveal() }
     } else this.busy = true
     // A tucked top waits to be shown until the pants it's tucked into are (it's cut short, to end inside them).
     for (const slot of this.order) if (this.slots[slot]?.final && !this.slots[slot].posing) this.show(this.slots[slot])
@@ -1313,13 +1440,48 @@ export class FittingStage {
     return parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 1
   }
 
+  // A garment sewn and in the pose shown goes on screen: it fades in over a moment (see animate) while the
+  // one it replaces, if any, stays until the fade is done, so nothing blinks; then the figure is framed for
+  // the outfit and, once everything's on, makes its slow turn (see reveal).
   show(d) {
     if (d.shown) return
     const pants = this.slots.bottom
     if (d.slot === "top" && this.order === TUCKED_LAYERS && pants && !pants.shown) return
     d.shown = true
     d.top.mesh.visible = true
+    d.fade = { t0: performance.now(), materials: Object.values(d.top.materials).map(material => ({ material, transparent: material.transparent })) }
+    for (const { material } of d.fade.materials) { material.transparent = true; material.opacity = 0 }
+    this.revealed = true
+    this.frameOutfit()
+    this.start()
+  }
+
+  advanceFade(d, now = performance.now()) {
+    const t = (now - d.fade.t0) / REVEAL.fade
+    const opacity = easeInOut(t)
+    for (const { material } of d.fade.materials) material.opacity = opacity
+    if (t >= 1) this.finishFade(d)
+  }
+
+  // The fade's end: the cloth's materials as they were (opaque, unless the cloth is sheer), the garment it
+  // replaced gone.
+  finishFade(d) {
+    if (!d.fade) return
+    for (const { material, transparent } of d.fade.materials) { material.opacity = 1; material.transparent = transparent }
+    d.fade = null
     this.dropLeaving(d.slot)
+  }
+
+  finishFades() {
+    for (const d of Object.values(this.slots)) if (d?.fade) this.finishFade(d)
+  }
+
+  // Everything in motion brought to its end at once: the camera where it was going, garments fully shown,
+  // the slow turn dropped where it is. For a still picture, and when the scene is drawn without the frame loop.
+  finishMoves() {
+    this.turn = null
+    if (this.cameraMove) this.animate(Infinity)
+    this.finishFades()
   }
 
   // A tucked top isn't drawn below where the pants' waistband actually lies (see DrapedTop#tuckedAway).
@@ -1738,6 +1900,46 @@ function daylightBackdrop(tone = css => css) {
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   return texture
+}
+
+// The studio's backdrop: a warm off-white seamless sweep, lightest a little above the figure's middle, very
+// gently darker toward the floor and in the corners, with no line where the floor meets the wall. Painted
+// pixel by pixel (the corners' darkening is round, the floor's straight), each colour toned so it comes out
+// as painted (see backdropTone).
+export const STUDIO_SWEEP = { high: "#ebe8e2", middle: "#efece6", floor: "#e0dcd4", corner: 0.07 }
+function studioBackdrop(tone = css => css) {
+  const size = 256
+  const canvas = document.createElement("canvas")
+  canvas.width = canvas.height = size
+  const context = canvas.getContext("2d")
+  const image = context.createImageData(size, size)
+  const toned = new Map()
+  const hex = ([r, g, b]) => `#${[r, g, b].map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")}`
+  const rgb = css => [1, 3, 5].map(i => parseInt(css.slice(i, i + 2), 16))
+  const high = rgb(STUDIO_SWEEP.high), middle = rgb(STUDIO_SWEEP.middle), floor = rgb(STUDIO_SWEEP.floor)
+  for (let y = 0; y < size; y++) {
+    const v = y / (size - 1)
+    // Lightest at 38% down; the wall above a touch darker, the floor below more so.
+    const base = v < 0.38 ? mix(high, middle, v / 0.38) : mix(middle, floor, ((v - 0.38) / 0.62) ** 1.3)
+    for (let x = 0; x < size; x++) {
+      const u = x / (size - 1)
+      const r = Math.hypot((u - 0.5) * 2, (v - 0.45) * 2.1)
+      const dark = 1 - STUDIO_SWEEP.corner * easeInOut((r - 0.75) / 0.8)
+      const css = hex(base.map(c => c * dark))
+      let out = toned.get(css)
+      if (!out) { out = rgb(tone(css)); toned.set(css, out) }
+      const i = 4 * (y * size + x)
+      image.data[i] = out[0]; image.data[i + 1] = out[1]; image.data[i + 2] = out[2]; image.data[i + 3] = 255
+    }
+  }
+  context.putImageData(image, 0, 0)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  return texture
+}
+
+function mix(a, b, t) {
+  return a.map((v, i) => v + (b[i] - v) * t)
 }
 
 // A round soft-edged spot, as a texture.
