@@ -55,7 +55,7 @@ export default class extends Controller {
     "input", "unit", "unitLabel", "cut", "results", "canvas", "sizes", "stageNote", "legend", "warnings",
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
-    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact", "lookAi",
+    "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
     "loading", "loadingLabel", "loadingBar",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
   ]
@@ -686,12 +686,13 @@ export default class extends Controller {
       })
       const job = await start.json()
       if (!start.ok) throw new Error(job.message ?? "The studio couldn't take that outfit.")
-      if (exact && !job.exact_available) this.studioNote = "Exact-item photos need a FASHN API key on the server."
-      else if (exact && !job.exact) this.studioNote = "No item has a photo, so there's no exact-item version."
+      if (exact && !job.exact_available) this.studioNote = "Store-photo versions need the try-on service set up on the server."
+      else if (exact && !job.exact) this.studioNote = "No item has a photo, so there's no store-photo version."
       else this.studioNote = null
 
       const began = Date.now()
       this.studioImages = {}
+      this.studioChecks = null
       for (;;) {
         await new Promise(resolve => setTimeout(resolve, 1500))
         if (token !== this.studioToken) return
@@ -701,14 +702,26 @@ export default class extends Controller {
           this.studioImages.draped = await this.fetchStudioImage(job.image_url)
           this.showStudioImage("draped")
         }
+        // The try-on service's checks on each garment (shape, colour, print), to show beside the pictures.
+        if (status.exact_checks) this.studioChecks = status.exact_checks
         if (status.exact === "done" && !this.studioImages.exact) {
           this.studioImages.exact = await this.fetchStudioImage(job.exact_image_url)
           this.studioSwitchTarget.hidden = false
           this.studioSwitchTarget.querySelector('input[value="exact"]').checked = true
+          this.offerCompare()
           this.showStudioImage("exact")
         }
         if (status.status === "done") {
-          if (status.exact === "failed") this.studioNote = "The exact-item version didn't work; here's the measured drape."
+          if (status.exact === "failed") this.studioNote = "The store-photo version didn't work; here's the measured drape."
+          if (status.exact === "refused") {
+            // The service painted it but a check said no: the page keeps its own picture and can show why.
+            this.studioNote = "The AI's picture didn't pass our checks, so here's our own. Nothing was kept."
+            if (this.studioChecks) {
+              this.studioSwitchTarget.hidden = false
+              this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
+              this.offerCompare()
+            }
+          }
           this.studioStatusTarget.textContent = this.studioNote ?? this.studioStatusTarget.textContent
           return
         }
@@ -742,6 +755,7 @@ export default class extends Controller {
       this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
       this.studioLookOptionTarget.hidden = false
       this.studioLookOptionTarget.querySelector("input").checked = true
+      this.offerCompare()
       this.showStudioImage("look")
     } catch (error) {
       if (token === this.studioToken && error.name !== "AbortError") this.studioStatusTarget.textContent = error.message
@@ -780,6 +794,7 @@ export default class extends Controller {
       this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
       this.studioLookOptionTarget.hidden = false
       this.studioLookOptionTarget.querySelector("input").checked = true
+      this.offerCompare()
       this.showStudioImage("look")
     } catch (error) {
       if (token === this.studioToken && error.name !== "AbortError") this.studioStatusTarget.textContent = error.message
@@ -798,6 +813,7 @@ export default class extends Controller {
   }
 
   showStudioImage(variant) {
+    if (variant === "compare") return this.showCompare()
     const url = this.studioImages?.[variant]
     if (!url) return
     this.studioView = variant
@@ -813,6 +829,94 @@ export default class extends Controller {
         : "Your photo, in the size you picked. Nothing was kept on the server."
   }
 
+  // Compare: the store's photo, our fit and the AI's finish side by side, with what our checks said under
+  // the AI's, and one tap to keep it or send it away. Nothing about that tap goes anywhere.
+
+  offerCompare() {
+    if (!this.hasStudioCompareOptionTarget) return
+    this.studioCompareOptionTarget.hidden = false
+  }
+
+  // The AI picture being compared: the store photos painted on (exact) or the studio look.
+  aiVariant() {
+    return this.studioImages?.exact ? "exact" : this.studioImages?.look ? "look" : null
+  }
+
+  showCompare() {
+    const ai = this.aiVariant()
+    const items = this.items().filter(i => i.fit)
+    const rows = items.length ? items : [{ kind: null, garment: {} }]
+    this.studioView = "compare"
+    this.studioDownloadTarget.hidden = true
+    this.studioFrameTarget.innerHTML = `
+      <div class="studio-compare" role="group" aria-label="Compare the pictures">
+        ${rows.map(item => this.compareRow(item, ai)).join("")}
+        <div class="studio-gate">
+          <span class="mono">Does the AI picture look right?</span>
+          <button type="button" class="button button--dark" data-action="fitting-room#acceptAi" ${ai ? "" : "disabled"}>Looks right</button>
+          <button type="button" class="button button--dark" data-action="fitting-room#rejectAi" ${ai ? "" : "disabled"}>Not quite</button>
+          <span class="mono studio-gate-note">Your answer stays on this device. Nothing is sent or saved.</span>
+        </div>
+      </div>`
+    this.studioStatusTarget.textContent = ai
+      ? "Store photo, our fit, and the AI's finish. The lines under the AI picture are our checks."
+      : "The AI's picture didn't pass our checks, so only our fit is kept. The lines say which check failed."
+  }
+
+  compareRow(item, ai) {
+    const photo = item.garment?.photo
+    const checks = this.studioChecks?.[item.kind] ?? (ai === "look" ? { shape: { pass: true } } : null)
+    const frame = (label, src, alt, extra = "") => `
+      <figure class="studio-compare-frame">
+        ${src ? `<img src="${src}" alt="${alt}">` : `<div class="studio-compare-empty mono">No picture</div>`}
+        <figcaption class="mono">${label}</figcaption>${extra}
+      </figure>`
+    return `
+      <div class="studio-compare-row">
+        ${frame("Store photo", photo, "The store's photo of the item")}
+        ${frame("Our fit", this.studioImages?.draped, "Our picture, in the size you picked")}
+        ${frame("AI finish", ai ? this.studioImages[ai] : null, "The AI's picture", this.checkLines(checks))}
+      </div>`
+  }
+
+  // The checks in plain words. Each line is one gate; a gate the service skipped says so.
+  checkLines(checks) {
+    if (!checks) return `<ul class="studio-checks"><li class="studio-check--none">Not checked</li></ul>`
+    const line = (gate, yes, no, skipped) => {
+      const c = checks[gate]
+      if (!c || c.skipped) return `<li class="studio-check--none">${skipped}</li>`
+      return `<li class="${c.pass ? "studio-check--ok" : "studio-check--off"}">${c.pass ? yes : no}</li>`
+    }
+    return `<ul class="studio-checks">
+      ${line("shape", "Shape matches", "Shape is off", "Shape not checked")}
+      ${line("identity", "Colour matches", "Colour is off", "Colour not checked")}
+      ${line("print", "Print matches", "Print is off", "No print to check")}
+    </ul>`
+  }
+
+  // "Looks right": the AI picture stays the saved one.
+  acceptAi() {
+    const ai = this.aiVariant()
+    if (!ai) return
+    const radio = this.studioSwitchTarget.querySelector(`input[value="${ai}"]`)
+    if (radio) radio.checked = true
+    this.showStudioImage(ai)
+  }
+
+  // "Not quite": the AI picture is dropped, here only, and the saved photo is our fit again.
+  rejectAi() {
+    for (const variant of ["exact", "look"]) {
+      if (this.studioImages?.[variant]) URL.revokeObjectURL(this.studioImages[variant])
+      delete this.studioImages[variant]
+    }
+    this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
+    this.studioLookOptionTarget.hidden = true
+    this.studioCompareOptionTarget.hidden = true
+    this.studioSwitchTarget.querySelector('input[value="draped"]').checked = true
+    this.showStudioImage("draped")
+    this.studioStatusTarget.textContent = "Kept our fit. The AI picture is gone from this page; nothing was sent or saved."
+  }
+
   showStudio(message) {
     this.studioTarget.hidden = false
     this.studioStatusTarget.textContent = message
@@ -825,13 +929,16 @@ export default class extends Controller {
     this.studioView = null
     for (const url of Object.values(this.studioImages ?? {})) URL.revokeObjectURL(url)
     this.studioImages = {}
+    this.studioChecks = null
     if (!this.hasStudioTarget) return
     this.studioTarget.hidden = true
     this.studioFrameTarget.innerHTML = ""
     this.studioDownloadTarget.hidden = true
     this.studioSwitchTarget.hidden = true
     this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = false
+    this.studioSwitchTarget.querySelector('input[value="draped"]').checked = true
     this.studioLookOptionTarget.hidden = true
+    if (this.hasStudioCompareOptionTarget) this.studioCompareOptionTarget.hidden = true
   }
 
   // Rendering
