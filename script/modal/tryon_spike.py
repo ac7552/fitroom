@@ -123,8 +123,9 @@ image = (
         "HF_HUB_ENABLE_HF_TRANSFER": "0",
         "FASHN_PARSER": os.environ.get("FASHN_PARSER", "on"),
     })
+    # Baked in (copy=True) before the download step: that step imports this module, which imports them.
+    .add_local_python_source("silhouette", "validate", "tryon_prep", copy=True)
     .run_function(download, timeout=3600)
-    .add_local_python_source("silhouette", "validate", "tryon_prep")
 )
 
 app = modal.App("fitroom-tryon", image=image)
