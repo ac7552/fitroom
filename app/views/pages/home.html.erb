@@ -209,6 +209,31 @@
           <button type="button" class="button" data-action="fitting-room#fillExample">Use example numbers</button>
           <button type="button" class="button button--quiet" data-action="fitting-room#clear">Clear</button>
         </div>
+
+        <details class="more-ways">
+          <summary>Or use two photos</summary>
+          <div class="more-way more-way--first">
+            <p class="tip">Stand straight, arms a little out, in fitted clothes. One photo from the front, one from the side.
+              Type your height above, then we work out the other six numbers. The photos stay on your phone.</p>
+            <div class="photo-pair">
+              <label class="photo-pick">
+                <input type="file" accept="image/*" capture="environment" autocomplete="off"
+                       data-fitting-room-target="bodyPhotoFront" data-action="change->fitting-room#pickBodyPhoto">
+                <span data-fitting-room-target="bodyPhotoFrontLabel">+ Front photo</span>
+              </label>
+              <label class="photo-pick">
+                <input type="file" accept="image/*" capture="environment" autocomplete="off"
+                       data-fitting-room-target="bodyPhotoSide" data-action="change->fitting-room#pickBodyPhoto">
+                <span data-fitting-room-target="bodyPhotoSideLabel">+ Side photo</span>
+              </label>
+            </div>
+            <div class="fit-actions fit-actions--tight">
+              <button type="button" class="button button--dark" data-fitting-room-target="bodyPhotoButton" data-action="fitting-room#measurePhotos">Measure from photos</button>
+            </div>
+            <p class="photo-status mono" role="status" aria-live="polite" data-fitting-room-target="bodyPhotoStatus"></p>
+            <p class="tip photo-result" role="status" aria-live="polite" data-fitting-room-target="bodyPhotoResult" hidden></p>
+          </div>
+        </details>
       </section>
     </div>
 
@@ -285,6 +310,7 @@
 </main>
 
 <footer class="site-footer">
-  <p>// Fitroom keeps nothing about you. Your numbers are used to check the fit, then forgotten. Photos never leave your device.</p>
+  <p>// Fitroom keeps nothing about you. Your numbers are used to check the fit, then forgotten. Photos never leave your device.
+    Photos of you are read on your device only, to work out your numbers, and are never uploaded.</p>
   <p>Sample pages and charts are made up. MIT licensed.</p>
 </footer>

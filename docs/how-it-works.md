@@ -10,7 +10,10 @@ The details behind the [README](../README.md): how clothes are read from a link,
   they're never submitted, and `autocomplete="off"` keeps the browser from remembering them. Nothing goes in
   cookies or browser storage. Refresh the page and they're gone.
 - **There are no accounts or logins, and photos never leave the device.** A photo of a jacket is read in the
-  browser only, for a preview and its colour; it's never uploaded. A pasted product link is fetched once, read for its
+  browser only, for a preview and its colour; it's never uploaded. Photos of you (the "Or use two photos" way to
+  measure yourself) are read on your device only: MediaPipe's pose model runs in the tab, the photos are decoded,
+  read once and closed, never drawn into anything that stays around, and never uploaded; only the model itself is
+  downloaded (`app/javascript/lib/measure_photo.js`). A pasted product link is fetched once, read for its
   size chart, and cached for an hour by link; nothing records who pasted it.
 - **The only data in the repo is about garments:** size charts in `config/size_charts/`. The one there now
   is made-up sample data, not any real brand's.

@@ -5,6 +5,7 @@ import { readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTo
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
 import { knockoutPhoto } from "lib/garments/knockout"
+import { measureFromPhotos } from "lib/measure_photo"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -58,7 +59,8 @@ export default class extends Controller {
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "exact", "lookAi",
     "loading", "loadingLabel", "loadingBar", "scene", "stage",
-    "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck"
+    "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
+    "bodyPhotoFront", "bodyPhotoSide", "bodyPhotoFrontLabel", "bodyPhotoSideLabel", "bodyPhotoButton", "bodyPhotoStatus", "bodyPhotoResult"
   ]
   static values = { fitsUrl: String, importUrl: String, studioUrl: String, lookUrl: String, garment: Object, dress: Object }
 
@@ -445,6 +447,7 @@ export default class extends Controller {
     const value = parseFloat(slider.value)
     if (slider.dataset.sliderFor === "height") this.writeHeight(toCm(value, this.unit))
     else this.inputTargets.find(input => input.dataset.part === slider.dataset.sliderFor).value = value
+    this.clearFromPhotos(slider.dataset.sliderFor)
     this.update()
   }
 
@@ -493,19 +496,87 @@ export default class extends Controller {
   }
 
   fillExample() {
+    this.clearFromPhotos()
+    this.fillNumbers(this.example)
+  }
+
+  // Shows measurements (cm, by part) in the current unit; a height is set when given.
+  fillNumbers(cm) {
     for (const input of this.inputTargets) {
-      if (input.dataset.part === "height") continue
-      const cm = this.example[input.dataset.part]
-      input.value = this.unit === "in" ? round(cm / 2.54, 4) : round(cm, 2)
+      if (input.dataset.part === "height" || !(cm[input.dataset.part] > 0)) continue
+      input.value = this.unit === "in" ? round(cm[input.dataset.part] / 2.54, 4) : round(cm[input.dataset.part], 2)
     }
-    this.writeHeight(this.example.height)
+    if (cm.height > 0) this.writeHeight(cm.height)
     this.update()
   }
 
   clear() {
     this.inputTargets.forEach(input => { input.value = "" })
     this.writeHeight(null)
+    this.clearFromPhotos()
     this.update()
+  }
+
+  // Measuring from two photos (see lib/measure_photo.js): the photos are read here in the tab and dropped.
+
+  pickBodyPhoto(event) {
+    const input = event.currentTarget
+    const which = input === this.bodyPhotoFrontTarget ? "Front" : "Side"
+    const label = which === "Front" ? this.bodyPhotoFrontLabelTarget : this.bodyPhotoSideLabelTarget
+    label.textContent = input.files?.[0] ? `${which} photo added. Tap to change it.` : `+ ${which} photo`
+    this.bodyPhotoStatusTarget.textContent = ""
+  }
+
+  async measurePhotos() {
+    const front = this.bodyPhotoFrontTarget.files?.[0], side = this.bodyPhotoSideTarget.files?.[0]
+    const status = this.bodyPhotoStatusTarget
+    this.bodyPhotoResultTarget.hidden = true
+    if (!front || !side) { status.textContent = "Add both photos first: one from the front, one from the side."; return }
+    const height = this.readHeight()
+    if (height == null) { status.textContent = "Type your height first. We need it to work out how big you are in the photos."; return }
+
+    const button = this.bodyPhotoButtonTarget
+    button.disabled = true
+    try {
+      const found = await measureFromPhotos(front, side, toCm(height, this.unit), { onProgress: text => { status.textContent = text } })
+      const parts = ["chest", "waist", "hips", "shoulders", "arm", "inseam"]
+      this.fillNumbers(Object.fromEntries(parts.map(part => [part, found[part]])))
+      this.markFromPhotos(parts)
+      status.textContent = ""
+      const notes = found.notes.join(" ")
+      const rough = found.confidence < 0.6 ? " These are a rough guess." : ""
+      this.bodyPhotoResultTarget.textContent = `We filled in ${parts.length} numbers. Check them, and fix any that look off.${rough}${notes ? ` ${notes}` : ""}`
+      this.bodyPhotoResultTarget.hidden = false
+    } catch (error) {
+      status.textContent = error.plain ? error.message : "Couldn't load the photo tool. You can still type your numbers."
+    } finally {
+      button.disabled = false
+      // The photos are no longer needed: let the browser drop them.
+      this.bodyPhotoFrontTarget.value = this.bodyPhotoSideTarget.value = ""
+      this.bodyPhotoFrontLabelTarget.textContent = "+ Front photo"
+      this.bodyPhotoSideLabelTarget.textContent = "+ Side photo"
+    }
+  }
+
+  // "From your photos." under each number the photos filled in, until the person edits that number.
+  markFromPhotos(parts) {
+    for (const part of parts) {
+      const help = this.helpFor(part)
+      if (!help || help.querySelector(".field-help-from")) continue
+      const mark = document.createElement("span")
+      mark.className = "field-help-from"
+      mark.textContent = " From your photos."
+      help.append(mark)
+    }
+  }
+
+  clearFromPhotos(part = null) {
+    const helps = part ? [this.helpFor(part)] : this.inputTargets.map(input => this.helpFor(input.dataset.part))
+    for (const help of helps) help?.querySelector(".field-help-from")?.remove()
+  }
+
+  helpFor(part) {
+    return this.inputTargets.find(input => input.dataset.part === part)?.closest(".field")?.querySelector(".field-help") ?? null
   }
 
   // How snug the person likes clothes ("slim", "regular" or "classic", as the API calls them).
@@ -630,7 +701,9 @@ export default class extends Controller {
   }
 
   // Wait for a pause in typing, then ask the API about each item.
-  update() {
+  update(event) {
+    // A number typed over one the photos filled in is the person's own now.
+    if (event?.type === "input" && event.target?.dataset?.part) this.clearFromPhotos(event.target.dataset.part)
     this.syncSliders()
     clearTimeout(this.timer)
     this.requests?.forEach(r => r.abort())
