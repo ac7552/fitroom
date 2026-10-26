@@ -356,7 +356,7 @@ def check(checker, result, person, outline, garment, garment_mask, category, pri
     in_result = v.as_mask(garment_mask, person.size) if garment_mask is not None else v.band_mask(outline_mask, category)
     shop_cut = v.as_mask(checker.cutout(garment), garment.size)
     in_shop = shop_cut if flat_lay else v.band_mask(shop_cut, category)
-    return v.validate(outline_mask, result, garment, in_result, in_shop, print_mask, cutout=checker.cutout, embed=checker.embed)
+    return v.validate(outline_mask, result, garment, in_result, in_shop, print_mask, cutout=checker.cutout, embed=checker.embed, render=person)
 
 
 # One request -----------------------------------------------------------------------------------------------
