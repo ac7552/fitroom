@@ -16,6 +16,7 @@ Files:
 | `script/modal/tryon_spike.py` | The Modal app round the engine: the image, the container, the `tryon` endpoint for the server, `modal run`. |
 | `script/colab/fitroom_tryon_spike.ipynb` | The same engine in a Google Colab notebook on a free T4, see "Running on Google Colab". |
 | `script/spike/inputs.mjs` | On the Mac, against the running app: store links in, `tmp/spike/spike.zip` of the sheet's inputs out, see "Making the inputs". Its pure parts (`script/spike/lib.mjs`): `node --test test/javascript/spike_inputs.test.mjs`. |
+| `script/spike/run.mjs`, `script/spike/kaggle/` | The one command: the inputs, then the whole sheet on a free Kaggle GPU and the results back in `tmp/spike/out/`, see "One command, free, on Kaggle". `kaggle/spike.py` is the kernel (the notebook's cells as one script), `kernel-metadata.json` its settings. Pure parts in `lib.mjs`: `node --test test/javascript/spike_run.test.mjs`. |
 | `script/modal/validate.py` | The three gates (shape, identity, print). Runs on a CPU; `python3 -m unittest script/modal/test_validate.py`. |
 | `script/modal/tryon_prep.py` | Pose conversion, letterboxing, the sheet. `python3 -m unittest script/modal/test_tryon_prep.py`. |
 | `app/models/try_on.rb` | Talks to the service (or, as a fallback, FASHN's API). `test/models/try_on_test.rb`. |
@@ -23,6 +24,48 @@ Files:
 | `fitting_room_controller.js` (`showCompare`, `acceptAi`, `rejectAi`) | The Compare view and the human gate. |
 
 ## Running the spike
+
+### One command, free, on Kaggle
+
+Kaggle gives a notebook a GPU (a T4 x2 or a P100, 30 hours a week) and the internet for nothing, and its
+CLI can push a script, wait, and pull the output, so the whole spike is one command on the Mac. Once:
+
+1. A Kaggle account (kaggle.com), **with the phone number verified** (Settings → Phone verification). Without
+   it Kaggle's notebook settings have no GPU and no Internet switch; a kernel that asks for them runs
+   without, and `spike.py` stops at its first step with "No GPU in this session" and that hint.
+2. An API token: Settings → API → Create New Token downloads `kaggle.json`; put it at `~/.kaggle/kaggle.json`
+   and `chmod 600` it. The script reads the username from it (`--kaggle-user` or `KAGGLE_USERNAME` override).
+3. The CLI, in the repo's venv: `tmp/venv/bin/pip install kaggle` (the script uses `tmp/venv/bin/kaggle` if
+   it's there, else `kaggle` on the PATH). Playwright, for the inputs: `npm i -g playwright`.
+
+Then, with the app running (`bin/dev`):
+
+```sh
+node script/spike/run.mjs https://kith.com/products/... [more links] [--models fashn|both] [--body men|women]
+#   --skip-inputs        reuse the last tmp/spike/spike.zip (no app, no Playwright)
+#   --kaggle-user NAME   when ~/.kaggle/kaggle.json isn't where the username should come from
+#   --branch main        which branch of github.com/ac7552/fitroom the kernel takes the engine from
+```
+
+It prints six numbered steps: the inputs (as `inputs.mjs` makes them); the account; the inputs as a
+private dataset `<user>/fitroom-spike-inputs` (created the first time, a new version after, waited for
+until Kaggle has unpacked it); the kernel `<user>/fitroom-tryon-spike` pushed from `script/spike/kaggle/`
+(the run's settings are written into `spike.py`'s `CONFIG` line, since `kernels push` uploads only the code
+file); `kaggle kernels status` every 30 seconds with the elapsed time; and `kaggle kernels output` into
+`tmp/spike/out/` (`sheet.png`, `results.json`, `NAME-fashn.png`, `NAME-leffa.png`, `log.txt` with the step
+timings, and Kaggle's own `fitroom-tryon-spike.log`). It ends with one line per picture from `results.json`
+and `open tmp/spike/out/sheet.png`. If the kernel fails, the log comes down anyway and its tail is printed
+with a guess at the cause (no GPU: phone verification; a pip failure; no inputs; the engine not on the
+branch). It waits 90 minutes at most; Kaggle's own cap is 12 hours per session and the push asks for 4.
+
+A first run is 20 to 30 minutes, most of it the ~10 GB of weights: a free Kaggle session starts from a
+clean disk, so the clone, the pip installs and the downloads happen every run (`spike.py` keeps them in
+scratch space outside `/kaggle/working`, which is the ~20 GB output folder that `kernels output` fetches,
+so the weights are not uploaded as output). Re-runs cache nothing. The follow-up that would cut a re-run
+to the painting itself: save the downloaded weights as a second private Kaggle dataset once (from inside
+the kernel, or `kaggle datasets create` on a copy) and add it to `dataset_sources`; `tryon_engine.download`
+then has nothing to fetch. Kaggle's image is built on Colab's runtime image (Python 3.13, torch with CUDA
+preinstalled), so `spike.py` installs the notebook's pins over it; `onnxruntime-gpu` is unpinned.
 
 ### Running on Google Colab (free)
 
@@ -127,7 +170,8 @@ clicks Add, waits for the fit and for the cloth to settle (up to 4 minutes a lin
 photo as the page holds it), `NAME-print.png` when the page read a print, and `NAME-category.txt` (`tops`
 for a top, jacket or coat; `bottoms` for pants). NAME is the garment's name as a slug (else the link's last
 part). Shoes, socks and belts are skipped with a note. It ends with `tmp/spike/spike.zip`, the one file the
-Colab notebook asks for, and prints the folder. If the app isn't running it says so and stops.
+Colab notebook asks for (and the one `run.mjs` uploads to Kaggle), and prints the folder. If the app isn't
+running it says so and stops. `run.mjs` runs the same code first (`makeInputs`, exported from `inputs.mjs`).
 
 The same by hand, as a fallback: open the page with an outfit on, wait for the cloth to settle, and in the
 browser console:
