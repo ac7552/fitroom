@@ -14,15 +14,37 @@ export function loaded(image) {
   })
 }
 
+// Where this server passes a shop's photo through when the shop's image server doesn't let a browser read
+// its pixels (see Api::V1::GarmentImportsController#image).
+export const IMAGE_PROXY = "/api/v1/garment_imports/image?url="
+
+// Loads an image whose pixels can be read back (a canvas drawn from another site's image is sealed unless
+// the image was asked for with CORS). A photo on another site that won't allow that is fetched through this
+// server instead. Rejects when it can't be loaded either way.
+export function loadImage(src) {
+  const load = address => new Promise((resolve, reject) => {
+    const image = new Image()
+    if (!/^(data|blob):/i.test(address)) image.crossOrigin = "anonymous"
+    image.addEventListener("load", () => resolve(image), { once: true })
+    image.addEventListener("error", reject, { once: true })
+    image.src = address
+  })
+  return load(src).catch(error => {
+    let elsewhere = false
+    try { elsewhere = /^https?:$/.test(new URL(src, location.href).protocol) && new URL(src, location.href).origin !== location.origin } catch {}
+    if (!elsewhere) throw error
+    return load(IMAGE_PROXY + encodeURIComponent(src))
+  })
+}
+
 // src: an image URL (a data: URL from the import, or a local blob). shape: the garment's length over its
 // front's width (from its chart), to find its hem when something else (trousers, a stand) shows below it.
 // Returns { color: "#rrggbb", print } or null when the photo can't be read. print is null, or { image (a
 // canvas: the front of the garment, collar to hem, with everything but the print transparent), coverage
 // (share of the front that's print) }.
 export async function readPhoto(src, { shape = null } = {}) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const read = (sx, sy, sw, sh) => {
     const scale = Math.min(1, PRINT_SIZE / Math.max(sw, sh))
     const w = Math.max(8, Math.round(sw * scale)), h = Math.max(8, Math.round(sh * scale))
@@ -241,8 +263,8 @@ export function findPrint(data, w, h, shape = null) {
 
 // The areas a print covers (0 to 1, soft at the edge): its marks joined up across small gaps (a closing:
 // grown by a few per cent of the front's width, then shrunk back), leaving out what's background (gap).
-// Specks far from any other mark stay specks, and are dropped.
-function printAreas(alpha, gap, w, h) {
+// Specks far from any other mark stay specks, and are dropped (a piece under `least` of the picture).
+function printAreas(alpha, gap, w, h, least = 0.002) {
   const r = Math.max(2, Math.round(Math.max(w, h) * 0.035))
   const marks = Float32Array.from(alpha, a => (a > 0.3 ? 1 : 0))
   const grown = boxBlur(marks, w, h, r).map(v => (v > 0.001 ? 1 : 0))
@@ -260,7 +282,7 @@ function printAreas(alpha, gap, w, h) {
         seen[j] = 1; stack.push(j); piece.push(j)
       }
     }
-    if (piece.length < w * h * 0.002) for (const k of piece) closed[k] = 0
+    if (piece.length < w * h * least) for (const k of piece) closed[k] = 0
   }
   for (let k = 0; k < w * h; k++) if (gap[k]) closed[k] = 0
   const soft = boxBlur(closed, w, h, Math.max(1, Math.round(r / 3)))
@@ -429,9 +451,8 @@ export function paintOut(data, w, h, mask, keep, bg, { most = 0.35 } = {}) {
 // A shoe's colours from its photo (a side view on a plain backdrop, as shops show them): its upper's (the
 // commonest colour above the sole) and its sole's (the bottom tenth of the shoe). Null when no shoe stands out.
 export async function readShoe(src) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -446,33 +467,54 @@ export function shoeColors(data, w, h) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
   const { mask } = cut.garment
+  const { lab } = cut
   let top = h, bottom = -1
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { top = Math.min(top, y); bottom = Math.max(bottom, y) }
   if (bottom <= top) return null
   const soleFrom = bottom - Math.max(2, Math.round((bottom - top) * 0.1))
-  const commonest = (y0, y1) => {
-    const bins = new Map()
-    for (let y = y0; y <= y1; y++) {
+  // How flat the photo is at each pixel: a panel of leather is flat; a seam, stitching, an edge in shadow
+  // and the grain of a lug sole aren't. Flat pixels say what colour a thing is.
+  const L = Float32Array.from({ length: w * h }, (_, i) => lab[3 * i])
+  const near = boxBlur(L, w, h, 2)
+  const flat = Float32Array.from(L, (l, i) => (mask[i] ? 1 - smooth(Math.abs(l - near[i]), 1.5, 6) : 0))
+  const hex = c => "#" + c.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")
+  // The colour of the largest even patch in a band of rows: the heaviest cell of a coarse Lab histogram
+  // (weighted by flatness), then the median colour of the pixels near that cell. Not the mean of the band:
+  // on a shoe shot at an angle, the shadowed side and the warm bounce light under it pull a tan mean to
+  // orange. Pixels like `not` (within apart) are left out when enough is left without them.
+  const patch = (y0, y1, { not = null, apart = 14 } = {}) => {
+    const cells = new Map(), picked = []
+    for (let y = Math.max(0, y0); y <= Math.min(h - 1, y1); y++) {
       for (let x = 0; x < w; x++) {
         const i = y * w + x
         if (!mask[i]) continue
-        const key = (data[4 * i] >> 4) << 8 | (data[4 * i + 1] >> 4) << 4 | (data[4 * i + 2] >> 4)
-        const bin = bins.get(key) ?? [0, 0, 0, 0]
-        bin[0] += data[4 * i]; bin[1] += data[4 * i + 1]; bin[2] += data[4 * i + 2]; bin[3]++
-        bins.set(key, bin)
+        if (not && Math.hypot(lab[3 * i] - not[0], lab[3 * i + 1] - not[1], lab[3 * i + 2] - not[2]) < apart) continue
+        picked.push(i)
+        const key = `${Math.round(lab[3 * i] / 8)},${Math.round(lab[3 * i + 1] / 8)},${Math.round(lab[3 * i + 2] / 8)}`
+        cells.set(key, (cells.get(key) ?? 0) + 0.15 + flat[i])
       }
     }
-    const best = [...bins.values()].sort((p, q) => q[3] - p[3])[0]
-    return best && "#" + best.slice(0, 3).map(v => Math.round(v / best[3]).toString(16).padStart(2, "0")).join("")
+    if (!picked.length) return null
+    const centre = [...cells.entries()].sort((p, q) => q[1] - p[1])[0][0].split(",").map(v => v * 8)
+    const inside = picked.filter(i => Math.hypot(lab[3 * i] - centre[0], lab[3 * i + 1] - centre[1], lab[3 * i + 2] - centre[2]) < 12)
+    const from = inside.length >= 8 ? inside : picked
+    const colour = [0, 1, 2].map(c => median(from.map(i => data[4 * i + c])))
+    return { hex: hex(colour), lab: [0, 1, 2].map(c => median(from.map(i => lab[3 * i + c]))), count: from.length, of: picked.length }
   }
-  // The band round the top (a boot's padded collar), when it's a different colour from the rest.
-  const color = commonest(top, soleFrom - 1)
-  const band = commonest(top, top + Math.max(1, Math.round((bottom - top) * 0.07)))
-  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
-  const apart = color && band ? Math.hypot(...rgb(color).map((v, i) => v - rgb(band)[i])) : 0
+  const upper = patch(top, soleFrom - 1)
+  if (!upper) return null
+  // The sole: the bottom band of the shoe, in a colour that isn't the upper's when it has one (a sole the
+  // same colour as the upper reads as the upper's).
+  const soleBand = [soleFrom, bottom]
+  let sole = patch(...soleBand, { not: upper.lab })
+  const all = patch(...soleBand)
+  if (!sole || sole.of < all.of * 0.2) sole = all
+  // The band round the top (a boot's padded collar), when it's mostly one colour that isn't the upper's.
+  const band = patch(top, top + Math.max(1, Math.round((bottom - top) * 0.07)))
+  const apart = band ? Math.hypot(...band.lab.map((v, i) => v - upper.lab[i])) : 0
   const side = shoeSide(data, w, h)
   if (side) delete side.mask
-  return { color, sole: commonest(soleFrom, bottom), collar: apart > 40 ? band : null, side }
+  return { color: upper.hex, sole: sole.hex, collar: apart > 16 && band.count >= band.of * 0.6 ? band.hex : null, side }
 }
 
 // A shoe's side photo made ready to wrap round the 3D shoe: the photo with the backdrop round the shoe filled in
@@ -481,9 +523,8 @@ export function shoeColors(data, w, h) {
 // photo's width and height (top and bottom: the outline's top and bottom edge, heel to toe, in SIDE_BINS steps).
 // Null when no shoe stands out.
 export async function shoeTexture(src, size = 1024) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -511,9 +552,8 @@ export async function shoeTexture(src, size = 1024) {
 // One of the shop's other photos of a shoe made ready to lay on it (see shoeView): the backdrop round the shoes
 // filled in from their edges. A canvas, or null.
 export async function viewTexture(src, size = 1024) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -641,9 +681,8 @@ function shoeColours(lab, mask, w, h, { left, right, high, low, toeRight, soleTh
 // view whether its toe is up. Shops photograph these square on, which is what's used.
 // The same for a photo's address (see shoeView), with the photo itself: { ...view, photo: src }, or null.
 export async function readShoeView(src, side) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -1149,9 +1188,8 @@ export function measureBottomMask(mask, w, h) {
 // copy (its colours and fading without the front's details, for the back, which isn't photographed).
 // src: an image URL. Returns { color, image (canvas), soft (canvas), layout } or null.
 export async function readBottomPhoto(src) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, PHOTO_SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -1265,6 +1303,20 @@ export function readBottom(data, w, h) {
     mask = Uint8Array.from(mask)
     for (const hole of pieces(backdrop, w, h)) if (hole.length < area * 0.01) for (const i of hole) mask[i] = 0
   }
+  // Something thin hanging below the hem (a drawcord's end, a tag, lettering running off the leg) isn't the
+  // garment: the rows at the bottom far narrower than the legs above them go.
+  {
+    const span = y => runs(y).reduce((sum, [a, b]) => sum + (b - a + 1), 0)
+    let widest = 0
+    for (let y = Math.round(bottom - (bottom - top) * 0.3); y <= bottom; y++) widest = Math.max(widest, span(y))
+    let y = bottom
+    while (y > top && span(y) < widest * 0.3) y--
+    if (y < bottom) {
+      mask = Uint8Array.from(mask)
+      mask.fill(0, (y + 1) * w)
+      ;[top, bottom] = extent()
+    }
+  }
   const shape = measureBottomMask(mask, w, h)
   if (!shape || shape.length < 0.4) return null
   const tall = bottom - top + 1
@@ -1294,11 +1346,61 @@ export function readBottom(data, w, h) {
   const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
   // Out to well past the garment too (in coarser colours), so cloth laid a little outside the photo's
   // outline (a hip rounder than it lay flat) never shows the backdrop.
-  const painted = fillAround(evenLight(data, inner, w, h), inner, w, h, Math.max(4, Math.round(w * 0.03)))
-  const reached = Uint8Array.from({ length: w * h }, (_, i) => (inner[i] || painted[4 * i + 3] === 254 ? 1 : 0))
-  const filled = fillAround(painted, reached, w, h, Math.max(8, Math.round(w * 0.12)))
-  const soft = blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
-  return { color, filled, soft, layout: { w, h, top, bottom, crotch, rows } }
+  const lit = evenLight(data, inner, w, h)
+  const fillIn = keep => {
+    const painted = fillAround(lit, keep, w, h, Math.max(4, Math.round(w * 0.03)))
+    const reached = Uint8Array.from({ length: w * h }, (_, i) => (keep[i] || painted[4 * i + 3] === 254 ? 1 : 0))
+    return fillAround(painted, reached, w, h, Math.max(8, Math.round(w * 0.12)))
+  }
+  const filled = fillIn(inner)
+  // The back isn't photographed, and takes the softened copy: a print on the front (lettering down a leg, a
+  // hip logo, a contrast pocket) would show on it as a mirrored smear, so it's painted over in the cloth
+  // round it there, like the backdrop is. The cloth's wash and fading, its seams and its bands stay.
+  const print = bottomsPrint(lab, clothLab, inner, w, h, runs)
+  const plain = print.some(Boolean) ? fillIn(Uint8Array.from(inner, (on, i) => (on && !print[i] ? 1 : 0))) : filled
+  const soft = blurPixels(plain, inner, w, h, Math.max(3, Math.round(w * 0.025)))
+  return { color, filled, soft, print, layout: { w, h, top, bottom, crotch, rows } }
+}
+
+// Where a print lies on a bottoms photo (1 per pixel): the garment's pixels far from the cloth's colour, in
+// solid areas joined up as a print is (see printAreas). Not a band running right across the garment or a
+// leg (a contrast waistband, a stripe round the hem: those go round the back too), nor a broad patch most
+// of a leg's size (a heavy fade, a two-tone cloth, which the back shares).
+function bottomsPrint(lab, cloth, mask, w, h, runs) {
+  const alpha = new Float32Array(w * h)
+  let area = 0
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue
+    area++
+    const dl = Math.abs(lab[3 * i] - cloth[0]), dc = Math.hypot(lab[3 * i + 1] - cloth[1], lab[3 * i + 2] - cloth[2])
+    alpha[i] = Math.min(1, Math.max(smooth(dl, 22, 34), smooth(dc, 16, 26)))
+  }
+  const solid = boxBlur(alpha, w, h, 2)
+  for (let i = 0; i < w * h; i++) alpha[i] *= smooth(solid[i], 0.3, 0.55)
+  const gap = Uint8Array.from(mask, on => (on ? 0 : 1))
+  const whole = printAreas(alpha, gap, w, h, 0.0004)
+  const print = Uint8Array.from(whole, v => (v > 0.5 ? 1 : 0))
+  for (const piece of pieces(print, w, h)) {
+    let drop = piece.length > area * 0.3
+    if (!drop) {
+      // A band: on most of its rows it spans nearly all of the stretch of garment it lies on.
+      const byRow = new Map()
+      for (const i of piece) {
+        const x = i % w, y = (i - x) / w
+        const span = byRow.get(y) ?? [x, x]
+        span[0] = Math.min(span[0], x); span[1] = Math.max(span[1], x)
+        byRow.set(y, span)
+      }
+      let banded = 0
+      for (const [y, [a, b]] of byRow) {
+        const run = runs(y).find(([p, q]) => a >= p - 2 && b <= q + 2)
+        if (run && b - a >= (run[1] - run[0]) * 0.85) banded++
+      }
+      drop = banded >= byRow.size * 0.6
+    }
+    if (drop) for (const i of piece) print[i] = 0
+  }
+  return print
 }
 
 // The photo's own creases and shadows, mostly taken out: on the 3D cloth they'd be painted on, as streaks
@@ -1359,9 +1461,8 @@ function blurPixels(data, mask, w, h, r) {
 }
 
 async function loadPixels(src) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -1439,22 +1540,22 @@ function largestPiece(mask, w, h) {
   return { mask: Uint8Array.from(label, l => (l === best ? 1 : 0)), count: bestCount }
 }
 
+// A box blur of radius r (the mean over the 2r+1 square, cut off at the picture's edge), as a running sum
+// along each row, then each column.
 function boxBlur(values, w, h, r) {
   const tmp = new Float32Array(w * h), out = new Float32Array(w * h)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0, n = 0
-      for (let k = -r; k <= r; k++) { const xx = x + k; if (xx >= 0 && xx < w) { s += values[y * w + xx]; n++ } }
-      tmp[y * w + x] = s / n
+  const run = (get, set, length, stride, start) => {
+    let s = 0
+    for (let k = 0; k <= Math.min(r, length - 1); k++) s += get(start + k * stride)
+    for (let i = 0; i < length; i++) {
+      const lo = Math.max(0, i - r), hi = Math.min(length - 1, i + r)
+      set(start + i * stride, s / (hi - lo + 1))
+      if (i + r + 1 < length) s += get(start + (i + r + 1) * stride)
+      if (i - r >= 0) s -= get(start + (i - r) * stride)
     }
   }
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0, n = 0
-      for (let k = -r; k <= r; k++) { const yy = y + k; if (yy >= 0 && yy < h) { s += tmp[yy * w + x]; n++ } }
-      out[y * w + x] = s / n
-    }
-  }
+  for (let y = 0; y < h; y++) run(i => values[i], (i, v) => { tmp[i] = v }, w, 1, y * w)
+  for (let x = 0; x < w; x++) run(i => tmp[i], (i, v) => { out[i] = v }, h, w, x)
   return out
 }
 

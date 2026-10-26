@@ -70,6 +70,10 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "shirt", top("Linen Shirt")[:style]
     assert_equal "sweatshirt", top("Heavyweight Crewneck Sweatshirt")[:style]
     assert_equal "hoodie", top("Pullover Hoodie")[:style]
+    # A hoodie that zips all the way down is drawn with a zip; a pullover or a half-zip isn't.
+    assert_equal true, top("Striped Zip-Up Hoodie")[:zip]
+    assert_nil top("Pullover Hoodie")[:zip]
+    assert_nil top("Half-Zip Hoodie")[:zip]
   end
 
   test "a chart's impossible numbers are left out, to be estimated" do

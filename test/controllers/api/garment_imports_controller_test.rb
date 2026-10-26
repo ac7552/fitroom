@@ -22,3 +22,47 @@ class Api::GarmentImportsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 end
+
+class Api::GarmentImportsImageProxyTest < ActionDispatch::IntegrationTest
+  PNG = "\x89PNG\r\n\x1A\n".b + ("\0" * 64).b
+
+  test "passes a shop's photo through, as an image the browser may cache for an hour" do
+    asked = nil
+    fetch = lambda do |url, max_bytes:, types:|
+      asked = [ url, max_bytes, types ]
+      [ PNG, "image/png" ]
+    end
+    GarmentImport::Fetcher.stub(:get_image, fetch) do
+      get image_api_v1_garment_imports_path, params: { url: "https://cdn.example.com/boot.png?width=1000" }
+    end
+
+    assert_response :success
+    assert_equal "image/png", response.media_type
+    assert_equal PNG, response.body.b
+    assert_equal "public, max-age=3600", response.headers["Cache-Control"]
+    assert_equal "https://cdn.example.com/boot.png?width=1000", asked[0]
+    assert_equal 8_000_000, asked[1]
+    assert_match asked[2], "image/webp"
+    assert_no_match asked[2], "image/svg+xml"
+    assert_no_match asked[2], "text/html"
+  end
+
+  test "turns away a private address without asking it" do
+    get image_api_v1_garment_imports_path, params: { url: "http://127.0.0.1/secret.png" }
+
+    assert_response :unprocessable_entity
+    assert_equal "fetch_failed", response.parsed_body["error"]
+  end
+
+  test "turns away what isn't a link, and what isn't a photo" do
+    get image_api_v1_garment_imports_path, params: { url: "not a link" }
+    assert_response :unprocessable_entity
+
+    not_photo = ->(*, **) { raise GarmentImport::Fetcher::Error, "That isn't a photo." }
+    GarmentImport::Fetcher.stub(:get_image, not_photo) do
+      get image_api_v1_garment_imports_path, params: { url: "https://shop.example.com/products/boot" }
+    end
+    assert_response :unprocessable_entity
+    assert_equal "That isn't a photo.", response.parsed_body["message"]
+  end
+end

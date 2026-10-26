@@ -18,7 +18,7 @@ export default async function (stage, parts = (new URL(import.meta.url).searchPa
     const read = await print.readPhoto("/fixtures/photos/striped-hoodie-front.jpg", { shape: null })
     details.hoodie = { color: read?.color, print: Boolean(read?.print), coverage: read?.print?.coverage }
     items.push({
-      kind: "top", style: "hoodie", fabric: "knit", color: read?.color ?? "#2a6b3f",
+      kind: "top", style: "hoodie", fabric: "knit", color: read?.color ?? "#2a6b3f", zip: true,
       size: { chest: 104, shoulders: 46, sleeve: 62, length: 58 },
       print: read?.print ?? null, photoSize: { chest: 104, length: 58 }
     })

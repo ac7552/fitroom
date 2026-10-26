@@ -119,6 +119,7 @@ export class Drape {
     const pts = this.cloth.points
     const edgeRest = new Map()   // "A,B" (simulated points) -> [sum of rest lengths, count, rib]
     const opposite = new Map()   // "a,b" (pattern points) -> the pattern point opposite it
+    const acrossSeam = new Map() // "A,B" (simulated points) -> [[pattern point opposite, its height over the edge, flat key], ...]
     const bends = []
     const tris = []
     for (const [a, b, c] of triangles) {
@@ -132,12 +133,25 @@ export class Drape {
         const e = edgeRest.get(key)
         if (e) { e[0] += rest; e[1]++ } else edgeRest.set(key, [rest, 1, this.isRib[i] && this.isRib[j]])
         // Bending: the two points either side of an edge of the flat pattern keep their flat distance apart.
-        // (Only edges of the pattern itself: across a seam there's no flat distance to keep.)
         const flatKey = i < j ? `${i},${j}` : `${j},${i}`
         const o = opposite.get(flatKey)
         if (o === undefined) opposite.set(flatKey, k)
         else if (map[o] !== map[k]) bends.push(map[o], map[k], Math.hypot(pts[o][0] - pts[k][0], pts[o][1] - pts[k][1]) / 100, this.hemStrip && this.isHem[o] && this.isHem[k])
+        // And across a seam (the same simulated edge, from two pattern pieces), once it's sewn: each side's
+        // height over the edge, as if the two lay flat side by side.
+        const ux = pts[j][0] - pts[i][0], uy = pts[j][1] - pts[i][1], len = Math.hypot(ux, uy) || 1
+        const height = Math.abs(ux * (pts[k][1] - pts[i][1]) - uy * (pts[k][0] - pts[i][0])) / len / 100
+        const list = acrossSeam.get(key)
+        if (list) list.push([k, height, flatKey]); else acrossSeam.set(key, [[k, height, flatKey]])
       }
+    }
+    // A sewn seam is a hinge otherwise: with nothing keeping it flat, a side seam folds into a zigzag of
+    // alternate triangles where the cloth turns round the leg. Its two sides keep their flat distance apart
+    // like any edge of the cloth (a seam is sewn flat and pressed).
+    for (const list of acrossSeam.values()) {
+      if (list.length !== 2 || list[0][2] === list[1][2]) continue
+      const [[o, ho], [k, hk]] = list
+      if (map[o] !== map[k]) bends.push(map[o], map[k], ho + hk, 0)
     }
     const count = edgeRest.size
     this.edges = new Int32Array(2 * count)

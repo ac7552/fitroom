@@ -98,10 +98,11 @@ export function draftTop(styleName, size, body, cut = null) {
   const necklines = [["back", "neck_R"], ["front", "neck_R"], ["front", "neck_L"], ["back", "neck_L"]]
   const neckLengths = necklines.map(([p, e]) => length(edge(panels[p].edges, e)))
   if (style.collar === "hood") {
-    // Each half sewn to its side of the neckline, from the centre front to the centre back.
+    // Each half sewn to its side of the neckline, from the centre front to the centre back. Worn down (lying
+    // on the back and shoulders), as a shop photo shows a hoodie, unless the style says up.
     for (const side of ["L", "R"]) {
       const frontHalf = length(edge(front, `neck_${side}`)), backHalf = length(edge(back, `neck_${side}`))
-      panels[`hood_${side}`] = { edges: hoodHalf(m, side, frontHalf, backHalf), place: { at: "head", side }, fabric: "main" }
+      panels[`hood_${side}`] = { edges: hoodHalf(m, side, frontHalf, backHalf), place: { at: "head", side, down: style.hoodUp !== true }, fabric: "main" }
     }
     seams.push(["front", "neck_L", "hood_L", "sewn_0"], ["back", "neck_L", "hood_L", "sewn_1"])
     seams.push(["back", "neck_R", "hood_R", "sewn_0"], ["front", "neck_R", "hood_R", "sewn_1"])
@@ -123,7 +124,8 @@ export function draftTop(styleName, size, body, cut = null) {
     seams.push(["waistband", "end_a", "waistband", "end_b"])
   }
 
-  return { panels, seams, style: styleName, closure: style.closure ?? null, fabric: style.fabric, measures: m }
+  // (A hoodie that zips down the front says so in its cut.)
+  return { panels, seams, style: styleName, closure: cut?.closure ?? style.closure ?? null, fabric: style.fabric, measures: m }
 }
 
 // The finished measurements to cut to: the chart's, and what it doesn't give from the body and the style.

@@ -310,11 +310,16 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           float x = abs( vPattern.x ), y = vPattern.y;
           bool placket = y < -uNeckDepth + 0.5;
           if ( uClosure == 1 && placket ) {
-            // A zip: its tape, then the teeth down the middle.
+            // A zip: its tape, then the teeth down the middle, and the slider with its pull at the top.
             shadow = max( shadow, lineAt( x, 0.0, 0.55 ) * 0.35 );
             float teeth = lineAt( x, 0.0, 0.32 ) * step( 0.35, fract( y / 0.32 ) );
             metal = max( metal, teeth );
             stitch = max( stitch, lineAt( x, 1.1, 0.05 ) * dashes( vPattern ) );
+            float slider = step( x, 0.55 ) * step( -uNeckDepth - 1.6, y ) * step( y, -uNeckDepth + 0.3 );
+            float pull = step( x, 0.28 ) * step( -uNeckDepth - 4.6, y ) * step( y, -uNeckDepth - 1.6 );
+            float eye = smoothstep( 0.2, 0.1, length( vec2( x, y + uNeckDepth + 3.9 ) ) );
+            metal = max( metal, max( slider, pull * ( 1.0 - eye ) ) );
+            shadow = max( shadow, ( step( x, 0.75 ) * step( -uNeckDepth - 1.8, y ) * step( y, -uNeckDepth + 0.5 ) - slider ) * 0.6 + pull * eye * 0.6 );
           }
           // A polo's short placket: three buttons, 13 cm down from the neck.
           if ( uClosure == 3 ) placket = placket && y > -uNeckDepth - 13.0;
