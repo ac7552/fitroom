@@ -760,7 +760,7 @@ export class FittingStage {
     // Shoes and socks are worn under everything: pants lie on them.
     for (const mesh of this.feet.meshes) over.push(meshSnapshot(mesh))
     if (slot) for (const d of this.under(slot)) if (d.top.done) over.push(clothSnapshot(d.top.drape.x, d.top, body))
-    return { body, over, egg: this.eggShape() }
+    return { body, over, egg: coverHead(this.eggShape(), body) }
   }
 
   // The egg head as an ellipsoid in world space.
@@ -1482,6 +1482,27 @@ function applyInfluences(mesh, influences) {
     if (index !== undefined) mesh.morphTargetInfluences[index] = value
   }
 }
+
+// The egg head grown, when it must be, to hold the head as it stands (body: a snapshot), with a
+// little room: a hood drapes over the egg, so any of the head outside it (the crown of the women's
+// mannequin, a head made bigger with the body) would show through the hood.
+function coverHead(egg, body) {
+  if (!egg) return egg
+  const frame = bodyFrame(body)
+  const p = body.positions, n = p.length / 3, above = frame.joints.head?.[1] ?? -Infinity
+  let reach = 0
+  for (let i = 0; i < n; i++) {
+    if (frame.part[i] !== 3 || p[3 * i + 1] < above) continue
+    // The crown, the sides and the back, which a hood covers; not the face (the nose, the chin).
+    if (p[3 * i + 2] > egg.centre[2] + egg.radii[2] * 0.3 || p[3 * i + 1] < egg.centre[1] - egg.radii[1] * 0.4) continue
+    let sum = 0
+    for (let c = 0; c < 3; c++) sum += ((p[3 * i + c] - egg.centre[c]) / egg.radii[c]) ** 2
+    reach = Math.max(reach, Math.sqrt(sum))
+  }
+  const grow = reach * HEAD_ROOM
+  return grow > 1 ? { centre: egg.centre, radii: egg.radii.map(r => r * grow) } : egg
+}
+const HEAD_ROOM = 1.04
 
 // Matte white fibreglass, like a shop's display mannequin. The body is hidden wherever a worn garment
 // covers it (the build marks those parts), since clothes fit too close for it not to show through, and

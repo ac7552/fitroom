@@ -1254,6 +1254,17 @@ export function readBottom(data, w, h) {
     mask = belowHangerBar(mask, w, h, lab, clothLab, top, bottom)
     ;[top, bottom] = extent()
   }
+  // The backdrop seen through the garment (inside a drawcord's loop, between a pocket and the leg) isn't
+  // cloth: small backdrop-coloured holes are painted over like the backdrop round it, rather than laid on
+  // the 3D cloth as white specks. Not a white print's: one far from the backdrop's colour stays.
+  {
+    const backdrop = new Uint8Array(w * h)
+    for (let i = 0; i < w * h; i++) backdrop[i] = mask[i] && Math.hypot(lab[3 * i] - bg[0], lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) < Math.max(4, apart * 0.25) ? 1 : 0
+    let area = 0
+    for (let i = 0; i < w * h; i++) area += mask[i]
+    mask = Uint8Array.from(mask)
+    for (const hole of pieces(backdrop, w, h)) if (hole.length < area * 0.01) for (const i of hole) mask[i] = 0
+  }
   const shape = measureBottomMask(mask, w, h)
   if (!shape || shape.length < 0.4) return null
   const tall = bottom - top + 1
@@ -1281,7 +1292,11 @@ export function readBottom(data, w, h) {
   // pixels go too: half backdrop, they'd leave a light rim round it.
   const rim = Math.max(1, Math.round(w * 0.003))
   const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
-  const filled = fillAround(evenLight(data, inner, w, h), inner, w, h, Math.max(4, Math.round(w * 0.03)))
+  // Out to well past the garment too (in coarser colours), so cloth laid a little outside the photo's
+  // outline (a hip rounder than it lay flat) never shows the backdrop.
+  const painted = fillAround(evenLight(data, inner, w, h), inner, w, h, Math.max(4, Math.round(w * 0.03)))
+  const reached = Uint8Array.from({ length: w * h }, (_, i) => (inner[i] || painted[4 * i + 3] === 254 ? 1 : 0))
+  const filled = fillAround(painted, reached, w, h, Math.max(8, Math.round(w * 0.12)))
   const soft = blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
   return { color, filled, soft, layout: { w, h, top, bottom, crotch, rows } }
 }
@@ -1325,6 +1340,8 @@ function fillAround(data, mask, w, h, reach) {
   for (let i = 0; i < w * h; i++) {
     if (mask[i] || weight[i] < 1e-4) continue
     for (let c = 0; c < 3; c++) out[4 * i + c] = sums[c][i] / weight[i]
+    // (Marked as painted, for a second, wider pass.)
+    out[4 * i + 3] = 254
   }
   return out
 }
