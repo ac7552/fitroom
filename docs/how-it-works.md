@@ -137,12 +137,26 @@ it shapes the mannequin and refits the suit to it, sizes each garment, poses the
 cloth simulation (each layer colliding with the ones under it), and path-traces the result with Cycles.
 It takes about 30 seconds on an Apple M2.
 
-With **Exact item (AI)** ticked and a `FASHN_API_KEY` on the server, a second image follows: the shops' own
-photos of the garments (or your photos) painted onto that measured drape by [FASHN](https://fashn.ai)'s
-virtual try-on (`app/models/try_on.rb`), so it shows the exact item, collar, pockets and wash. The fit stays
-the measured one. Images go to FASHN inline and come back inline: FASHN deletes inline inputs when the
-request finishes, expires inline outputs after an hour, and doesn't train on them. Without a key, or with
-the box unticked, nothing leaves the server.
+With **Exact item (AI)** ticked and a try-on service set up, a second image follows: the shops' own photos
+of the garments (or your photos) painted onto that measured drape by virtual try-on (`app/models/try_on.rb`),
+so it shows the exact item, collar, pockets and wash. The fit stays the measured one. Two services can do it:
+
+- **Fitroom's own**, when `FITROOM_TRYON_URL`, `_KEY` and `_SECRET` are set: open-source try-on models
+  (FASHN VTON 1.5, Apache-2.0; Leffa, MIT) on Fitroom's GPU service on Modal (`script/modal/tryon_spike.py`).
+  Before anything comes back, three checks run on the service (`script/modal/validate.py`): the figure's
+  outline is the render's (**shape**, IoU ≥ 0.85), the garment looks like the shop's (**identity**: DINOv2
+  likeness ≥ 0.80 and colour difference ΔE ≤ 12) and its print survived (**print**, SSIM ≥ 0.45 over the
+  print region). A picture that fails isn't returned; the page keeps its own render and shows which check
+  said no. Only the mannequin's render and the shop's photo go, in memory, and nothing is written or logged.
+  `docs/ai-spike.md` has the setup and the comparison of the two models.
+- **FASHN's hosted API**, when only `FASHN_API_KEY` is set: images go to FASHN inline and come back inline.
+  FASHN deletes inline inputs when the request finishes, expires inline outputs after an hour, and doesn't
+  train on them. It runs no checks.
+
+Without either, or with the box unticked, nothing leaves the server. In the photo overlay, **Compare** shows
+the store photo, our fit and the AI's finish side by side, with the checks in plain words under the AI's,
+and two buttons: **Looks right** keeps it, **Not quite** drops it on the page and goes back to our fit. That
+answer stays on the device; nothing is sent or saved.
 
 Renders run one at a time, in memory: the job file is deleted when Blender finishes, the image when it's
 fetched (`GET /api/v1/studio_photos/:id/image` works once), and anything unfetched after 10 minutes. The
