@@ -12,7 +12,9 @@ Files:
 
 | File | What it is |
 |---|---|
-| `script/modal/tryon_spike.py` | The Modal app: FASHN VTON 1.5 and Leffa, the validator, a contact sheet, and the `tryon` endpoint for the server. |
+| `script/modal/tryon_engine.py` | The engine, no Modal in it: loads and runs FASHN VTON 1.5 and Leffa, the validator, the sheet (`run_sheet`). Picks cuda+bf16, cuda+fp16 (T4) or fp32 by the hardware. `python3 -m unittest script/modal/test_tryon_engine.py` for its pure parts. |
+| `script/modal/tryon_spike.py` | The Modal app round the engine: the image, the container, the `tryon` endpoint for the server, `modal run`. |
+| `script/colab/fitroom_tryon_spike.ipynb` | The same engine in a Google Colab notebook on a free T4, see "Running on Google Colab". |
 | `script/modal/validate.py` | The three gates (shape, identity, print). Runs on a CPU; `python3 -m unittest script/modal/test_validate.py`. |
 | `script/modal/tryon_prep.py` | Pose conversion, letterboxing, the sheet. `python3 -m unittest script/modal/test_tryon_prep.py`. |
 | `app/models/try_on.rb` | Talks to the service (or, as a fallback, FASHN's API). `test/models/try_on_test.rb`. |
@@ -21,7 +23,35 @@ Files:
 
 ## Running the spike
 
-Once, with a Modal account (`pip install modal && modal setup`). Then, from the repo's root on the Mac:
+### Running on Google Colab (free)
+
+Modal will not start a GPU function until the account has a payment method on file, even inside the free
+credit. Without a card, run the spike on Google Colab's free T4 instead; it is the same engine
+(`tryon_engine.py`) with fp16 in place of bf16.
+
+1. Open the notebook: `https://colab.research.google.com/github/ac7552/fitroom/blob/main/script/colab/fitroom_tryon_spike.ipynb`
+   (once this branch is on GitHub `main`; until then, in Colab, File → Upload notebook and pick
+   `script/colab/fitroom_tryon_spike.ipynb` from the checkout).
+2. Runtime → Change runtime type → **T4 GPU** → Save.
+3. Runtime → Run all. The install takes about 10 minutes (the weights, around 10 GB, download into the
+   session). The notebook stops once to ask for your files: pick every `NAME-person.png`, `NAME-garment.jpg`,
+   `NAME-category.txt` (and the optional ones, below) in one go.
+4. Step 4's form picks the models (`both`, `fashn`, `leffa`) and whether FASHN's research-only parser is on
+   (off by default; the garment photos are then read as flat-lay product shots). 30 to 90 seconds per picture
+   per model.
+5. The sheet shows inline; the last cell downloads a zip of the folder (`sheet.png`, `results.json`,
+   `NAME-fashn.png`, `NAME-leffa.png`, your inputs).
+
+What to know about a free Colab session: it ends after about 90 minutes idle and 12 hours at most, and the
+disk goes with it, so the weights download again each new session (the zip is how the results survive). The
+T4 has 15 GB, so the notebook loads one model at a time, runs every picture through it, frees it, and loads
+the next. Colab's own `torch` is used as shipped; the other libraries are pinned as the Modal image pins them.
+
+### Running on Modal
+
+Once, with a Modal account (`pip install modal && modal setup`) **and a payment method on the account**
+(Settings → Billing; Modal refuses GPU functions without one, free credit or not). Then, from the repo's root
+on the Mac:
 
 ```sh
 # A folder of inputs (see below) -> NAME-fashn.png, NAME-leffa.png, sheet.png, results.json next to them
@@ -109,7 +139,7 @@ joint is there and 0 when it isn't (eyes and ears: 0). `tryon_prep.dwpose_from_o
 the dict FASHN's `DWposeDetector.__call__` returns (`src/fashn_vton/dwpose/dwpose.py`): `bodies.candidate`
 as fractions of width and height, `bodies.subset` with each seen joint's index.
 
-FASHN's pipeline has no way to pass a pose in, so `tryon_spike.GivenPose` stands in for `pipeline.pose_model`
+FASHN's pipeline has no way to pass a pose in, so `tryon_engine.GivenPose` stands in for `pipeline.pose_model`
 for one call: `TryOnPipeline.__call__` (`src/fashn_vton/pipeline.py`) asks for the person's pose first and
 the garment's second, so the first call gets the given keypoints and the rest go to DWPose.
 
@@ -242,8 +272,20 @@ Run the sheet on ten outfits (plain tops, a printed hoodie, jeans, chinos, a coa
   is imported first (`load_fashn`). If the CUDA provider still fails to load, pose detection falls to the CPU
   or the session refuses to start; the error will name `CUDAExecutionProvider`.
 - **Weight downloads are unpinned by revision** (`fashn-ai/fashn-vton-1.5`, `franciszzj/Leffa`); pin
-  `revision=` after the first build. `stable-diffusion-inpainting/*` may pull duplicate fp32/fp16 files;
-  tighten `allow_patterns` once the listing is known.
+  `revision=` after the first build. Of `stable-diffusion-inpainting/` only the `*.json` configs are fetched
+  (`tryon_engine.LEFFA_PATTERNS`): `leffa/model.py` builds the VAE and UNets `from_config` and loads every
+  weight from `virtual_tryon.pth`, so the base model's own weights would be dead download. Untested against
+  the live listing; if a load complains of a missing file, widen the pattern.
+- **Colab's T4 runs fp16, not bf16.** FASHN's pipeline would pick bf16 by itself there
+  (`torch.cuda.is_bf16_supported()` is true by emulation on a T4, which is very slow), so the engine sets the
+  dtype before the weights are cast. Its MMDiT keeps RMSNorm, RoPE and the timestep embedding in fp32 and the
+  rest in the chosen dtype; fp16 is a plausible fit (Flux-style blocks run in fp16 elsewhere) but was never
+  run by FASHN. Leffa is fp16 by its own `app.py`. If either comes back black or speckled, that is an
+  fp16 overflow: try fewer steps, or an Ampere runtime (Colab Pro's A100/L4 get bf16 automatically).
+- **Colab's 12 GB of RAM against `virtual_tryon.pth`.** It holds the fp32 VAE and both UNets (some GB);
+  `LeffaModel` would build fp32 modules and `torch.load` the whole file beside them. The engine builds the
+  model, halves it, then memory-maps the checkpoint (`torch.load(mmap=True)`) and copies in, which halves
+  the peak. If the runtime still dies while "loading leffa", run `fashn` alone first.
 - **Both models were trained on people.** A white matte faceless mannequin is out of distribution for both;
   expect skin and hair painted onto hands and head on some seeds. The gates don't check that; the compare
   panel's "Not quite" does.

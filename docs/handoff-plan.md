@@ -31,6 +31,7 @@ _Updated 23 Oct 2026: section 3 checks, Phase 2 leftovers and Phase 4 are done (
 | 3D stage | `app/javascript/lib/stage.js` | Three.js scene, mannequin, poses, skin tones. Draped **layers** and what each is sewn over: normally pants → top → casual jacket (`OVER`); tucked, the top and the pants each on the body, the jacket over both (`TUCKED_OVER`). Suit jackets and coats are still drawn from the model's meshes and hide the top (`hiddenTop`). |
 | Patterns | `lib/garments/pattern.js` (tops, dresses), `lib/garments/pants.js` (pants, jeans, joggers, leggings, shorts, skirts) | Flat pattern pieces in cm from one size's chart. A jogger's chart inseam includes its cuff. |
 | Cloth | `cloth.js`, `place.js`, `drape.js` (XPBD), `dress.js` (`DrapedTop`, `waistband`, `TUCKABLE`), `body.js` (frame, foot outlines with `lowest()`), `fabric.js` (looks; `matte` for nylon pants), `print.js` | |
+| AI try-on spike | `script/modal/tryon_engine.py` (the models and the validator, no Modal), `script/modal/tryon_spike.py` (the Modal app), `script/colab/fitroom_tryon_spike.ipynb` (the same on Colab's free T4, since Modal wants a card for GPUs) | FASHN VTON 1.5 and Leffa paint the shop photo onto the render; three gates in `validate.py` decide. `docs/ai-spike.md`. |
 
 Draping order: sew in a rest pose with the thighs slightly apart, then skin the cloth into the pose shown and settle it again.
 
