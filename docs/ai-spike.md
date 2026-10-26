@@ -155,6 +155,19 @@ the mannequin), but two lessons:
   render's own likeness to the shop photo less 0.05, never under 0.35 (`validate.py`: RELATIVE_SLACK,
   IDENTITY_FLOOR). The sheet prints the baseline next to the score.
 
+### The decision (26 Oct, Kaggle T4, both Kith items from the front)
+
+| Item | Shape | Look (render) | Colour dE | Time | |
+|---|---|---|---|---|---|
+| Parra Sporte sweatpant | 0.94 | 0.66 (0.49) | 4.4 | 64 s | PASS: the leg print, hip patch, drawcord and cuffs as photographed |
+| Adley striped zip hoodie | 0.96 | 0.64 (0.36) | 4.0 | 72 s | PASS: continuous stripes in the shop's order, zip, collar; the hood is lost (folded behind in the flat-lay) |
+
+No skin, hair or face on the mannequin in either. **FASHN VTON 1.5 is the model**: Apache-2.0, maskless, and
+it reads the egg-head mannequin without any pose help. Leffa never produced a picture on the free GPUs
+(detectron2's `av` import, then its 7 GB checkpoint against Colab's RAM) and isn't needed. Two follow-ups:
+the inputs script should wait for the page to finish reading the shop photo (the "our render" column came
+out plain), and the hood wants an on-model photo from the listing, or the compare panel's "Not quite".
+
 ### Making the inputs from the running app
 
 One command on the Mac, with the app running (`bin/dev`, http://localhost:3000) and Playwright installed
