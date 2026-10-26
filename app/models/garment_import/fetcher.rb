@@ -33,11 +33,17 @@ class GarmentImport
     def self.get(url) = new.get(url)
 
     # A product photo, with the same checks as a page: public addresses only, size and time limited.
-    # Returns [bytes, content type].
-    def self.get_image(url) = new.get(url, image: true)
+    # Returns [bytes, content type]. max_bytes and types (a pattern for the content type) can be widened,
+    # as the image proxy does.
+    def self.get_image(url, max_bytes: MAX_IMAGE_BYTES, types: IMAGE_TYPES) = new(image_bytes: max_bytes, image_types: types).get(url, image: true)
 
     # A JSON API that a shop's page loads its size chart from (see Page#kiwi_sizing), parsed.
     def self.get_json(url) = JSON.parse(new.get(url, json: true))
+
+    def initialize(image_bytes: MAX_IMAGE_BYTES, image_types: IMAGE_TYPES)
+      @image_bytes = image_bytes
+      @image_types = image_types
+    end
 
     def get(url, redirects = 0, image: false, json: false)
       @deadline ||= Process.clock_gettime(Process::CLOCK_MONOTONIC) + DEADLINE
@@ -134,12 +140,12 @@ class GarmentImport
 
     def read_image(response)
       type = response["content-type"].to_s.split(";").first.to_s.strip
-      raise Error, "That isn't a photo." unless type.match?(IMAGE_TYPES)
+      raise Error, "That isn't a photo." unless type.match?(@image_types)
 
       bytes = +"".b
       response.read_body do |chunk|
         bytes << chunk
-        raise Error, "That photo is too big." if bytes.bytesize > MAX_IMAGE_BYTES
+        raise Error, "That photo is too big." if bytes.bytesize > @image_bytes
       end
       [ bytes, type ]
     end

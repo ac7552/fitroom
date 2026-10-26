@@ -7,7 +7,7 @@
 // by the browser after that). The photo itself never leaves the page. Anything that goes wrong (no
 // network, an old browser, a mask that doesn't look like the garment) leaves the photo as it was.
 
-import { keepInside, paintOut, pickMask, promptPoints } from "lib/garments/print"
+import { keepInside, loadImage, paintOut, pickMask, promptPoints } from "lib/garments/print"
 
 const LIBRARY = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1"
 const MODEL = "Xenova/slimsam-77-uniform"
@@ -41,9 +41,7 @@ export async function cleanPhoto(src, kind = "top", { timeout = 25000 } = {}) {
 }
 
 async function clean(src, kind) {
-  const image = new Image()
-  image.src = src
-  await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject })
+  const image = await loadImage(src)
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.round(image.naturalWidth * scale), h = Math.round(image.naturalHeight * scale)
   const canvas = document.createElement("canvas")

@@ -5,7 +5,9 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       resource :fit_guide, only: :show
-      resources :garment_imports, only: :create
+      resources :garment_imports, only: :create do
+        get :image, on: :collection
+      end
       resources :fits, only: :create
       resources :studio_looks, only: :create
       resources :studio_photos, only: %i[create show] do

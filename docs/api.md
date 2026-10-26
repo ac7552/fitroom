@@ -62,6 +62,14 @@ shop has one, is its main product photo, fetched by the server.
 Errors (`422`): `fetch_failed` (couldn't load the page, or it points to a private address), `no_size_chart`,
 `not_supported` (not a jacket or blazer), `invalid`.
 
+## GET /api/v1/garment_imports/image?url=...
+
+A shop's product photo passed through the server, so the page can read its pixels when the shop's image
+server doesn't allow a browser to (the 3D view reads shoe photos this way when it has to). Public web
+addresses only, raster images only (`image/*`, not SVG), at most 8 MB, with the same time limits as reading
+a page. The answer is the image itself with `Cache-Control: public, max-age=3600`; the server keeps it for an
+hour too. Errors (`422`): `fetch_failed`.
+
 ## POST /api/v1/fits
 
 Like the chart fits below, but with the sizes in the request, such as an imported garment's

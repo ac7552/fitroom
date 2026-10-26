@@ -14,15 +14,37 @@ export function loaded(image) {
   })
 }
 
+// Where this server passes a shop's photo through when the shop's image server doesn't let a browser read
+// its pixels (see Api::V1::GarmentImportsController#image).
+export const IMAGE_PROXY = "/api/v1/garment_imports/image?url="
+
+// Loads an image whose pixels can be read back (a canvas drawn from another site's image is sealed unless
+// the image was asked for with CORS). A photo on another site that won't allow that is fetched through this
+// server instead. Rejects when it can't be loaded either way.
+export function loadImage(src) {
+  const load = address => new Promise((resolve, reject) => {
+    const image = new Image()
+    if (!/^(data|blob):/i.test(address)) image.crossOrigin = "anonymous"
+    image.addEventListener("load", () => resolve(image), { once: true })
+    image.addEventListener("error", reject, { once: true })
+    image.src = address
+  })
+  return load(src).catch(error => {
+    let elsewhere = false
+    try { elsewhere = /^https?:$/.test(new URL(src, location.href).protocol) && new URL(src, location.href).origin !== location.origin } catch {}
+    if (!elsewhere) throw error
+    return load(IMAGE_PROXY + encodeURIComponent(src))
+  })
+}
+
 // src: an image URL (a data: URL from the import, or a local blob). shape: the garment's length over its
 // front's width (from its chart), to find its hem when something else (trousers, a stand) shows below it.
 // Returns { color: "#rrggbb", print } or null when the photo can't be read. print is null, or { image (a
 // canvas: the front of the garment, collar to hem, with everything but the print transparent), coverage
 // (share of the front that's print) }.
 export async function readPhoto(src, { shape = null } = {}) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const read = (sx, sy, sw, sh) => {
     const scale = Math.min(1, PRINT_SIZE / Math.max(sw, sh))
     const w = Math.max(8, Math.round(sw * scale)), h = Math.max(8, Math.round(sh * scale))
@@ -429,9 +451,8 @@ export function paintOut(data, w, h, mask, keep, bg, { most = 0.35 } = {}) {
 // A shoe's colours from its photo (a side view on a plain backdrop, as shops show them): its upper's (the
 // commonest colour above the sole) and its sole's (the bottom tenth of the shoe). Null when no shoe stands out.
 export async function readShoe(src) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -481,9 +502,8 @@ export function shoeColors(data, w, h) {
 // photo's width and height (top and bottom: the outline's top and bottom edge, heel to toe, in SIDE_BINS steps).
 // Null when no shoe stands out.
 export async function shoeTexture(src, size = 1024) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -511,9 +531,8 @@ export async function shoeTexture(src, size = 1024) {
 // One of the shop's other photos of a shoe made ready to lay on it (see shoeView): the backdrop round the shoes
 // filled in from their edges. A canvas, or null.
 export async function viewTexture(src, size = 1024) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -641,9 +660,8 @@ function shoeColours(lab, mask, w, h, { left, right, high, low, toeRight, soleTh
 // view whether its toe is up. Shops photograph these square on, which is what's used.
 // The same for a photo's address (see shoeView), with the photo itself: { ...view, photo: src }, or null.
 export async function readShoeView(src, side) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -1149,9 +1167,8 @@ export function measureBottomMask(mask, w, h) {
 // copy (its colours and fading without the front's details, for the back, which isn't photographed).
 // src: an image URL. Returns { color, image (canvas), soft (canvas), layout } or null.
 export async function readBottomPhoto(src) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, PHOTO_SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")
@@ -1423,9 +1440,8 @@ function blurPixels(data, mask, w, h, r) {
 }
 
 async function loadPixels(src) {
-  const image = new Image()
-  image.src = src
-  try { await loaded(image) } catch { return null }
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
   const scale = Math.min(1, SIZE / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
   const canvas = document.createElement("canvas")

@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded } from "lib/garments/print"
+import { readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
 
@@ -1038,9 +1038,7 @@ function frontShape(chart) {
 // The item's colour from a photo: the average of the middle of the picture, leaving out the near-white
 // and near-grey background most product photos sit on.
 async function clothColor(url) {
-  const image = new Image()
-  image.src = url
-  await loaded(image)
+  const image = await loadImage(url)
   const canvas = document.createElement("canvas")
   canvas.width = canvas.height = 48
   const context = canvas.getContext("2d", { willReadFrequently: true })
