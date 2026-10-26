@@ -15,6 +15,7 @@ Files:
 | `script/modal/tryon_engine.py` | The engine, no Modal in it: loads and runs FASHN VTON 1.5 and Leffa, the validator, the sheet (`run_sheet`). Picks cuda+bf16, cuda+fp16 (T4) or fp32 by the hardware. `python3 -m unittest script/modal/test_tryon_engine.py` for its pure parts. |
 | `script/modal/tryon_spike.py` | The Modal app round the engine: the image, the container, the `tryon` endpoint for the server, `modal run`. |
 | `script/colab/fitroom_tryon_spike.ipynb` | The same engine in a Google Colab notebook on a free T4, see "Running on Google Colab". |
+| `script/spike/inputs.mjs` | On the Mac, against the running app: store links in, `tmp/spike/spike.zip` of the sheet's inputs out, see "Making the inputs". Its pure parts (`script/spike/lib.mjs`): `node --test test/javascript/spike_inputs.test.mjs`. |
 | `script/modal/validate.py` | The three gates (shape, identity, print). Runs on a CPU; `python3 -m unittest script/modal/test_validate.py`. |
 | `script/modal/tryon_prep.py` | Pose conversion, letterboxing, the sheet. `python3 -m unittest script/modal/test_tryon_prep.py`. |
 | `app/models/try_on.rb` | Talks to the service (or, as a fallback, FASHN's API). `test/models/try_on_test.rb`. |
@@ -34,8 +35,12 @@ credit. Without a card, run the spike on Google Colab's free T4 instead; it is t
    `script/colab/fitroom_tryon_spike.ipynb` from the checkout).
 2. Runtime → Change runtime type → **T4 GPU** → Save.
 3. Runtime → Run all. The install takes about 10 minutes (the weights, around 10 GB, download into the
-   session). The notebook stops once to ask for your files: pick every `NAME-person.png`, `NAME-garment.jpg`,
-   `NAME-category.txt` (and the optional ones, below) in one go.
+   session). The notebook stops once to ask for your files: pick the one `tmp/spike/spike.zip` that
+   `node script/spike/inputs.mjs` made on the Mac ("Making the inputs", below). Loose files work too
+   (every `NAME-person.png`, `NAME-garment.jpg`, `NAME-category.txt` and the optional ones, in one go).
+   Running it all again later in the same session is safe: the upload cell empties its folder first (and
+   takes Colab's ` (1)` off a re-uploaded name), and the run cell pulls the latest engine from GitHub
+   before it runs.
 4. Step 4's form picks the models (`both`, `fashn`, `leffa`) and whether FASHN's research-only parser is on
    (off by default; the garment photos are then read as flat-lay product shots). 30 to 90 seconds per picture
    per model.
@@ -109,7 +114,23 @@ the mannequin), but two lessons:
 
 ### Making the inputs from the running app
 
-Open the page with an outfit on, wait for the cloth to settle, and in the browser console:
+One command on the Mac, with the app running (`bin/dev`, http://localhost:3000) and Playwright installed
+once (`npm i -g playwright`; it drives the Chrome already on the Mac, no browser download):
+
+```sh
+node script/spike/inputs.mjs https://kith.com/products/... https://zara.com/... [--base http://localhost:3000] [--out tmp/spike] [--body men|women]
+```
+
+For each link it opens the page in a headless Chrome, pastes the link into "Paste a link from a store",
+clicks Add, waits for the fit and for the cloth to settle (up to 4 minutes a link), then saves
+`NAME-person.png` and `NAME-outline.png` (`photoPasses`, from the front), `NAME-garment.jpg` (the shop's
+photo as the page holds it), `NAME-print.png` when the page read a print, and `NAME-category.txt` (`tops`
+for a top, jacket or coat; `bottoms` for pants). NAME is the garment's name as a slug (else the link's last
+part). Shoes, socks and belts are skipped with a note. It ends with `tmp/spike/spike.zip`, the one file the
+Colab notebook asks for, and prints the folder. If the app isn't running it says so and stops.
+
+The same by hand, as a fallback: open the page with an outfit on, wait for the cloth to settle, and in the
+browser console:
 
 ```js
 const c = Stimulus.getControllerForElementAndIdentifier(document.querySelector('[data-controller=fitting-room]'), 'fitting-room')
