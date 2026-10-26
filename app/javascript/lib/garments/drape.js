@@ -30,6 +30,8 @@ const HEM_BEND = 0.08      // its bending compliance, as a share of the cloth's
 const HEM_WEIGHT = 1.6     // its mass, as a share of the cloth's
 
 const FRAME = 1 / 60
+const CUFF_PAST_WRIST = 0.03   // m: how far over the hand a cuff can sit, at the most
+const HAND_REACH = 0.12        // m: cloth further from the arm's line than this isn't on the arm
 const SUBSTEPS = 10
 const GRAVITY = -9.81
 const MAX_SEW_STEP = 0.0025   // metres a seam closes in one small step, at most
@@ -54,10 +56,15 @@ export class Drape {
   // outline, gathered as a waistband holds them.
   // hemStrip: false keeps a hem's edge in a smooth line without stiffening the strip above it. Round a pant
   // leg, a stiff, heavy strip hinged on softer cloth rolls outwards like a turned-up cuff.
-  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, tuck = null, hemStrip = true } = {}) {
+  // arms: bodyFrame's arms, for a top: a sleeve's cuff can't slip further down the arm than the base of the
+  // hand (see stayOnArms); a sleeve longer than the arm gathers above its cuff.
+  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, tuck = null, hemStrip = true, arms = null } = {}) {
     this.hemStrip = hemStrip
     this.snug = snug
     this.tuck = tuck
+    this.arms = arms
+    // Which arm each pattern point's piece goes on (a top's sleeves and their cuffs): 1 the left, -1 the right.
+    this.armSide = Int8Array.from(cloth.panel, p => { const m = /^(?:sleeve|cuff)_([LR])$/.exec(cloth.panels[p]); return m ? (m[1] === "L" ? 1 : -1) : 0 })
     // The pieces a tuck gathers: the body's own, not the sleeves (in some poses the hands hang lower).
     this.tucks = Uint8Array.from(cloth.panel, p => (/^(front|back|waistband)/.test(cloth.panels[p]) ? 1 : 0))
     this.envelope = envelope
@@ -314,6 +321,7 @@ export class Drape {
     if (this.envelope) this.stayOutside()
     if (this.tuck) this.stayTucked()
     if (this.feet) this.stayOffFeet()
+    if (this.arms) this.stayOnArms()
     if (this.floor !== null) {
       // On the floor, cloth stays put rather than sliding (it rests on it).
       for (let i = 0; i < n; i++) {
@@ -425,6 +433,34 @@ export class Drape {
     }
   }
 
+  // A sleeve's cuff stops at the base of the hand: a cuff is narrower than the hand is wide, so a sleeve
+  // longer than the arm gathers above it (as a long knit sleeve scrunches) instead of sliding on over the
+  // hand. Sleeve and cuff points past the wrist by more than CUFF_PAST_WRIST come back up the arm to there,
+  // and stay put, as a hem does on the floor.
+  stayOnArms() {
+    const { p, x } = this
+    const map = this.map
+    if (map && !this.simArmSide) {
+      this.simArmSide = new Int8Array(this.x.length / 3)
+      for (let i = 0; i < map.length; i++) if (this.armSide[i]) this.simArmSide[map[i]] = this.armSide[i]
+    }
+    const side = map ? this.simArmSide : this.armSide
+    const n = p.length / 3
+    for (let i = 0; i < n; i++) {
+      if (!side[i]) continue
+      const arm = side[i] > 0 ? this.arms.L : this.arms.R
+      const limit = arm.lengths[2] + CUFF_PAST_WRIST
+      const { t, distance } = arm.locate([p[3 * i], p[3 * i + 1], p[3 * i + 2]])
+      if (t <= limit || distance > HAND_REACH) continue
+      const { direction } = arm.along(limit)
+      const back = t - limit
+      p[3 * i] -= direction[0] * back; p[3 * i + 1] -= direction[1] * back; p[3 * i + 2] -= direction[2] * back
+      p[3 * i] = x[3 * i] + (p[3 * i] - x[3 * i]) * 0.3
+      p[3 * i + 1] = x[3 * i + 1] + (p[3 * i + 1] - x[3 * i + 1]) * 0.3
+      p[3 * i + 2] = x[3 * i + 2] + (p[3 * i + 2] - x[3 * i + 2]) * 0.3
+    }
+  }
+
   // Whether a point is below the tuck's top (which rises towards the middle of the back).
   underTuck(x, y, z) {
     const { table, top, raise = 0 } = this.tuck
@@ -487,12 +523,14 @@ export class Drape {
   // Moves the finished cloth (its joined points, see closeSeams) to new positions on a new body: the same
   // garment skinned into another pose, to settle there.
   // envelope: the new body's (see the constructor), to keep a skirt round both legs there too, or null.
-  repose(positions, field, envelope = null, feet = null) {
+  // arms: the new body's arms, when the sleeves' cuffs are held above the hands (see stayOnArms).
+  repose(positions, field, envelope = null, feet = null, arms = null) {
     this.x.set(positions)
     this.v.fill(0)
     this.field = field
     this.envelope = envelope
     this.feet = feet
+    this.arms = arms
   }
 
   // Settles it where it is, a frame at a time (see phases), calming it at the end.

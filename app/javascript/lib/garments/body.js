@@ -79,10 +79,18 @@ export function bodyFrame({ positions, normals, index, skinIndex, skinWeight, bo
   const neck = neckRound(positions, part, joints.neck)
   // What the pattern needs to know, in cm: round the neck, armpit below the high point of the shoulder, and
   // round the upper arm, the wrist and the head (from how far each reaches from its middle).
+  // The arm's real girth along it (its slices' convex outlines), for the sleeve: the most round the upper arm
+  // is from the armpit down to the elbow (upperArm), and round the forearm just below the elbow (forearm),
+  // and how far down the arm the elbow is (elbow). (bicep is a rounder guess, kept for the room a loose
+  // sleeve adds.)
+  const girths = armGirths(positions, index, part, 1, arms.L, armpitY)
   const measures = {
     neck: neck * 100,
     armpit: (hps[1] - armpitY) * 100,
     bicep: 2 * Math.PI * arms.L.reachAt(arms.L.lengths[1] * 0.65) * 0.78 * 100,
+    upperArm: girths.upperArm * 100,
+    forearm: girths.forearm * 100,
+    elbow: arms.L.lengths[1] * 100,
     wrist: 2 * Math.PI * arms.L.reachAt(arms.L.lengths[2] - 0.03) * 0.75 * 100,
     head: Math.PI * (head.rx + head.rz * 0.85) * 100
   }
@@ -288,6 +296,48 @@ function armReach(positions, part, which, joints, side) {
       const u = (t - lengths[k - 1]) / span
       return { point: add3(a, scale(sub(b, a), u)), direction: normalize(sub(b, a)) }
     }
+  }
+}
+
+// How far round an arm is (m) along its length: each slice is the convex outline the triangles of that arm
+// cut on a plane across it, every centimetre. upperArm: the most round it is between the armpit (the
+// sleeve's underarm sits there) and the elbow; forearm: the most round the forearm is in the 12 cm below the
+// elbow (a slim sleeve tapers past it). From the arm's reach when the mesh gives no slices.
+function armGirths(positions, index, part, which, arm, armpitY) {
+  const [shoulder, elbow] = [arm.lengths[1], arm.lengths[2]]
+  const upper = [], lower = []
+  const round = t => 2 * Math.PI * arm.reachAt(t) * 0.78
+  // The arm's own triangles.
+  const tris = []
+  for (let k = 0; k < index.length; k += 3) {
+    if (part[index[k]] === which && part[index[k + 1]] === which && part[index[k + 2]] === which) tris.push(index[k], index[k + 1], index[k + 2])
+  }
+  for (let t = 0.03; t < elbow - 0.01; t += 0.01) {
+    const { point, direction } = arm.along(t)
+    const isUpper = t <= shoulder
+    if (isUpper && point[1] > armpitY) continue
+    if (!isUpper && t > shoulder + 0.12) break
+    // Two axes across the arm, and each triangle edge that crosses the plane, projected onto them.
+    const u = normalize(Math.abs(direction[1]) < 0.9 ? cross(direction, [0, 1, 0]) : cross(direction, [1, 0, 0]))
+    const v = cross(direction, u)
+    const pts = []
+    const side = i => (positions[3 * i] - point[0]) * direction[0] + (positions[3 * i + 1] - point[1]) * direction[1] + (positions[3 * i + 2] - point[2]) * direction[2]
+    for (let k = 0; k < tris.length; k += 3) {
+      const a = tris[k], b = tris[k + 1], c = tris[k + 2]
+      for (const [i, j] of [[a, b], [b, c], [c, a]]) {
+        const di = side(i), dj = side(j)
+        if ((di > 0) === (dj > 0)) continue
+        const w = di / (di - dj)
+        const q = [positions[3 * i] + (positions[3 * j] - positions[3 * i]) * w - point[0], positions[3 * i + 1] + (positions[3 * j + 1] - positions[3 * i + 1]) * w - point[1], positions[3 * i + 2] + (positions[3 * j + 2] - positions[3 * i + 2]) * w - point[2]]
+        pts.push([dot(q, u), dot(q, v)])
+      }
+    }
+    const girth = pts.length >= 6 ? hullPerimeter(pts) : round(t)
+    ;(isUpper ? upper : lower).push(girth)
+  }
+  return {
+    upperArm: upper.length ? Math.max(...upper) : round(shoulder * 0.65),
+    forearm: lower.length ? Math.max(...lower) : round(shoulder + 0.05)
   }
 }
 

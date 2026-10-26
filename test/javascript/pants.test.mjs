@@ -55,3 +55,28 @@ test("a jogger's inseam runs to the bottom of its cuff, so the leg pieces stop w
   assert.ok(Math.abs(legOf(trousers) - 76) < 0.01)
   assert.ok(Math.abs(legOf(joggers) + joggers.measures.cuff - 76) < 0.01, `leg ${legOf(joggers)} + cuff ${joggers.measures.cuff}`)
 })
+
+test("a sleeve is never cut narrower than the arm it goes on, at the underarm or the elbow", () => {
+  // The women's example body with its arm measured off the mesh (body.js): the upper arm 23 cm round below
+  // the armpit, the forearm 22 cm just under the elbow, 29.7 cm down.
+  const body = { chest: 91.5, waist: 74, shoulders: 39.5, arm: 58, height: 165, neck: 27, armpit: 20.8, bicep: 22.3, upperArm: 23, forearm: 22, elbow: 29.7, wrist: 11.2 }
+  const size = { chest: 86.36, shoulders: 38.1, sleeve: 65.72, length: 52.71 }
+  const fitted = draftTop("hoodie", size, body, { fit: "fitted", stretch: true })
+  const m = fitted.measures
+  assert.ok(m.bicep >= 23 * 1.06, `bicep ${m.bicep}`)
+  // Its hem (where the cuff is sewn on) is wide enough that the straight taper from the underarm still
+  // clears the forearm at the elbow.
+  const underarm = 20.8 - 4.4 + 1.5, elbow = 29.7 + 1.5
+  const share = (elbow - underarm) / (m.sleeve - underarm)
+  const atElbow = m.bicep * (1 - share) + m.opening * share
+  assert.ok(atElbow >= 22 * 1.06 - 0.01, `at the elbow ${atElbow}`)
+  assert.ok(m.opening < m.bicep, "it still tapers")
+  // A thick arm in a fitted knit: the arm's real girth wins over the chart's share of the chest.
+  const thick = draftTop("hoodie", size, { ...body, bicep: 30, upperArm: 34, forearm: 30 }, { fit: "fitted", stretch: true }).measures
+  assert.ok(thick.bicep >= 34 * 1.06, `bicep ${thick.bicep}`)
+  // A loose sleeve has more room still, and a body measured without the arm's girths drafts as before.
+  const loose = draftTop("hoodie", size, body).measures
+  assert.ok(loose.bicep >= 23 * 1.1 && loose.bicep > m.bicep)
+  const plain = draftTop("hoodie", size, { chest: 91.5, waist: 74, shoulders: 39.5, arm: 58, height: 165 }).measures
+  assert.ok(plain.bicep > 0 && plain.opening > 0)
+})

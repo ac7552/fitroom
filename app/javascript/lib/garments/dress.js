@@ -98,8 +98,9 @@ function normalizeAll(normals) {
 }
 
 // What the cloth collides with: the body from the ankles up (where it's cut off, the open edge confuses the
-// collision field around it, so it's kept well below any hem), without the hands (sleeves end at the wrist),
-// and the display mannequin's egg in place of the head.
+// collision field around it, so it's kept well below any hem), without the hands past their heel (a cuff
+// sits at the most that far over the hand, see Drape#stayOnArms; the fingers would catch the cloth), and the
+// display mannequin's egg in place of the head.
 // bodyCount: how many of the vertices are the body's own (the rest, garments under the cloth, all count).
 // arms: false for pants (hands rest on the outside of them; an arm coming down into a pose would trap the
 // cloth against the hips).
@@ -112,6 +113,7 @@ function nearHand(frame, p, at) {
   return false
 }
 const HAND_CLEAR = 0.07
+const HAND_HEEL = 0.06   // m past the wrist: the heel of the hand, which a cuff can rest on
 
 export function collisionBody(body, frame, egg, bodyCount = body.positions.length / 3, { arms = true } = {}) {
   const n = body.positions.length / 3
@@ -132,7 +134,7 @@ export function collisionBody(body, frame, egg, bodyCount = body.positions.lengt
     if (part === 1 || part === 2) {
       if (!arms) continue
       const arm = frame.arms[part === 1 ? "L" : "R"]
-      if (arm.locate([p[3 * i], p[3 * i + 1], p[3 * i + 2]]).t > arm.lengths[2] + 0.02) continue
+      if (arm.locate([p[3 * i], p[3 * i + 1], p[3 * i + 2]]).t > arm.lengths[2] + HAND_HEEL) continue
     }
     keep[i] = 1
   }
@@ -393,7 +395,9 @@ export class DrapedTop {
       tuck,
       // A long hem (pants, skirts, dresses) keeps a smooth edge, but the strip above it is no stiffer than
       // the rest: stiffened, it rolls out like a cuff and flicks up at the side seams.
-      hemStrip: !this.bottoms && item.style !== "dress"
+      hemStrip: !this.bottoms && item.style !== "dress",
+      // A top's sleeves stop at the hands (a sleeve longer than the arm gathers above its cuff).
+      arms: this.bottoms ? null : frame.arms
     })
     // A long garment (a dress, pants) has further to fall, so it settles for longer.
     const long = this.pattern.style === "dress" || this.pattern.measures.length > 85
