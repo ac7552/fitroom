@@ -170,7 +170,7 @@ const EXPECTED = [
   [/hoodie|hooded/i, ["top", "jacket"], ["hoodie", "zip"]],
   [/\bpolos?\b/i, ["top"], ["polo"]],
   [/\btanks?\b|camisole|\bcami\b|singlet|bralette|\bbra\b/i, ["top"], ["tank"]],
-  [/sweater|jumper|\bknit\b|knitted|cashmere|merino/i, ["top"], ["sweater", "cardigan"]],
+  [/sweater|jumper|\bknit\b|knitted|cashmere|merino/i, ["top"], ["sweater", "shortknit", "cardigan"]],
   [/sweatshirt|crew ?neck|pullover|fleece/i, ["top"], ["sweatshirt", "hoodie", "sweater"]],
   [/long[- ]?sleeve.*\b(?:t[- ]?shirt|tee)s?\b|\b(?:t[- ]?shirt|tee)s?\b.*long[- ]?sleeve|\bl\/s\b.*\btee\b/i, ["top"], ["longsleeve", "tee"]],
   [/\bt[- ]?shirts?\b|\btees?\b/i, ["top"], ["tee", "longsleeve"]],
@@ -206,8 +206,11 @@ export function flagsFor(item) {
     flags.push(item.unsupported ? `not tried on: ${item.importError}` : `import failed: ${item.importError}`)
     return flags
   }
-  if (item.guessed) flags.push(`sizes guessed (${item.chart?.kind ?? "?"} chart)`)
-  if (item.chart?.missing?.length) flags.push(`chart missing: ${item.chart.missing.join(", ")}`)
+  // Guessed sizes and chart gaps are common and the page says so itself: they go in the notes (notesFor), not
+  // the flags, unless the chart is missing what the fit is judged on.
+  const missing = item.chart?.missing ?? []
+  const vital = missing.filter(m => (item.kind === "trousers" ? ["waist", "inseam"] : ["chest", "length"]).includes(m))
+  if (vital.length) flags.push(`chart missing: ${vital.join(", ")}`)
   if (!kindMatches(item.name, item.kind, item.style)) {
     const expected = expectedFrom(item.name)
     flags.push(`kind looks wrong: name says ${expected.kinds.join("/")}${expected.styles.length ? ` (${expected.styles.join("/")})` : ""}, got ${item.kind}${item.style ? ` (${item.style})` : ""}`)
@@ -228,6 +231,14 @@ export function flagsFor(item) {
   if (item.replaced) flags.push(`replaced the ${item.replaced} already on`)
   if (item.bodyFlipped) flags.push("the page switched the mannequin (a women's piece); switched back")
   return flags
+}
+
+// What's worth knowing but isn't wrong: guessed sizes and the chart's gaps (grey on the sheet).
+export function notesFor(item) {
+  const notes = []
+  if (item.guessed) notes.push(`sizes guessed (${item.chart?.kind ?? "?"} chart)`)
+  if (item.chart?.missing?.length) notes.push(`chart has no ${item.chart.missing.join(", ")}`)
+  return notes
 }
 
 // The verdicts in short words for the sheet's text panel: "chest fits · waist tight −3 · length long +14".
@@ -259,6 +270,7 @@ export function sheetHtml({ number, outfitName, body, items, pictures, flags }) 
           <p class="verdicts">${html(verdictWords(item.checks))}</p>
           <p class="meta">${html([item.importMs != null ? `import ${(item.importMs / 1000).toFixed(1)} s` : null, item.drapeMs != null ? `drape ${(item.drapeMs / 1000).toFixed(1)} s` : null, item.printRead ? "print read" : null, item.photoMapRead ? "photo laid on" : null, item.shoeSideRead ? "shoe side read" : null].filter(Boolean).join(" · "))}</p>
           ${(item.warnings ?? []).map(w => `<p class="meta">${html(w)}</p>`).join("")}`}
+          ${notesFor(item).map(n => `<p class="meta">· ${html(n)}</p>`).join("")}
           ${itemFlags.map(f => `<p class="flag">⚑ ${html(f)}</p>`).join("")}
         </div>
       </section>`

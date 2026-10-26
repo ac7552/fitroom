@@ -275,6 +275,10 @@ export async function audit(options, say = console.log) {
         const began = Date.now()
         const result = { name, number, outfitName: outfit.name, body: bodyType, when: new Date().toISOString(), items: [], pictures: {}, settled: null, error: null }
         try {
+          // A fresh page per outfit: an import that gave up in the outfit before may still answer, and must not
+          // land on this one's mannequin.
+          if (page && !page.isClosed()) await page.close().catch(() => {})
+          page = null
           await ensurePage()
           await setBody(bodyType)
           for (const [i, handle] of handles.entries()) {
@@ -284,9 +288,11 @@ export async function audit(options, say = console.log) {
             try {
               await ensurePage()
               let added = await addLink(link)
-              if (added.error && NETWORK_ERROR.test(added.error)) {
-                say(`  ${handle}: ${added.error} — trying once more`)
-                await sleep(RETRY_WAIT)
+              // Kith answers a burst of imports with "too many requests" for a while: wait it out, longer each time.
+              for (let attempt = 1; attempt <= 3 && added.error && NETWORK_ERROR.test(added.error); attempt++) {
+                const wait = RETRY_WAIT * attempt * attempt
+                say(`  ${handle}: ${added.error} — waiting ${Math.round(wait / 1000)} s, then trying again (${attempt}/3)`)
+                await sleep(wait)
                 added = await addLink(link)
               }
               Object.assign(item, { kind: added.kind, importMs: added.importMs, drapeMs: added.drapeMs ?? null, settled: added.settled ?? null, replaced: added.replaced ?? null })

@@ -4,7 +4,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
-import { auditName, expectedFrom, flagsFor, indexHtml, kindMatches, parseAuditArgs, parseRange, sheetHtml, summaryLines, verdictWords } from "../../script/spike/lib.mjs"
+import { auditName, expectedFrom, flagsFor, notesFor, indexHtml, kindMatches, parseAuditArgs, parseRange, sheetHtml, summaryLines, verdictWords } from "../../script/spike/lib.mjs"
 
 test("--outfits takes a range, a list, or both; the default is all 37", () => {
   assert.deepEqual(parseRange("1-37").length, 37)
@@ -45,7 +45,7 @@ test("what a listing's name says it should be", () => {
   const expect = (name, kinds, styles = []) => assert.deepEqual(expectedFrom(name), { kinds, styles }, name)
   expect("Kith Williams III Hoodie - Navy", ["top", "jacket"], ["hoodie", "zip"])
   expect("Kith Lax Cardigan", ["top", "jacket"], ["cardigan"])
-  expect("Kith Cable Knit Sweater", ["top"], ["sweater", "cardigan"])
+  expect("Kith Cable Knit Sweater", ["top"], ["sweater", "shortknit", "cardigan"])
   expect("Kith Nelson Crewneck", ["top"], ["sweatshirt", "hoodie", "sweater"])
   expect("Kith Sutton Polo", ["top"], ["polo"])
   expect("Kith Women Long Sleeve Tee", ["top"], ["longsleeve", "tee"])
@@ -111,8 +111,12 @@ test("an import that failed is one flag, and nothing else is judged", () => {
 })
 
 test("guessed sizes and a chart with parts missing", () => {
-  assert.deepEqual(flagsFor({ ...good, guessed: true, chart: { kind: "sizes", missing: ["length", "sleeve"], sizes: ["S", "M", "L"] } }),
-    ["sizes guessed (sizes chart)", "chart missing: length, sleeve"])
+  // Guessed sizes and chart gaps are notes; only a gap in what the fit is judged on (chest/length for tops,
+  // waist/inseam for pants) is a flag.
+  const gappy = { ...good, guessed: true, chart: { kind: "sizes", missing: ["length", "sleeve"], sizes: ["S", "M", "L"] } }
+  assert.deepEqual(flagsFor(gappy), ["chart missing: length"])
+  assert.deepEqual(notesFor(gappy), ["sizes guessed (sizes chart)", "chart has no length, sleeve"])
+  assert.deepEqual(flagsFor({ ...good, chart: { kind: "sizes", missing: ["waist"], sizes: ["S", "M", "L"] } }), [])
 })
 
 test("a kind that doesn't match the name", () => {
