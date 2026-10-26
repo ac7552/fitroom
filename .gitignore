@@ -37,3 +37,4 @@
 # Python bytecode from the Blender scripts.
 __pycache__/
 *.bundle
+/tmp/shots/

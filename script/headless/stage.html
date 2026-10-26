@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fitroom headless stage</title>
+<style>
+  html, body { margin: 0; background: #111; }
+  .stage { width: 900px; height: 1200px; position: relative; }
+  canvas { width: 100%; height: 100%; display: block; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three.js",
+    "three/addons/environments/RoomEnvironment.js": "/vendor/three-addons/RoomEnvironment.js",
+    "three/addons/controls/OrbitControls.js": "/vendor/three-addons/OrbitControls.js",
+    "three/addons/loaders/GLTFLoader.js": "/vendor/three-addons/GLTFLoader.js",
+    "three/addons/utils/BufferGeometryUtils.js": "/vendor/three-addons/BufferGeometryUtils.js",
+    "three/addons/loaders/RGBELoader.js": "/vendor/three-addons/RGBELoader.js",
+    "n8ao": "/vendor/n8ao.js",
+    "postprocessing": "/vendor/postprocessing-shim.js",
+    "three/examples/jsm/postprocessing/Pass.js": "/vendor/three-addons/Pass.js",
+    "three/addons/postprocessing/EffectComposer.js": "/vendor/three-addons/EffectComposer.js",
+    "three/addons/postprocessing/OutputPass.js": "/vendor/three-addons/OutputPass.js",
+    "three/addons/postprocessing/SMAAPass.js": "/vendor/three-addons/SMAAPass.js",
+    "three/addons/postprocessing/ShaderPass.js": "/vendor/three-addons/ShaderPass.js",
+    "three/addons/postprocessing/MaskPass.js": "/vendor/three-addons/MaskPass.js",
+    "three/addons/postprocessing/Pass.js": "/vendor/three-addons/Pass.js",
+    "three/addons/shaders/CopyShader.js": "/vendor/three-addons/CopyShader.js",
+    "three/addons/shaders/OutputShader.js": "/vendor/three-addons/OutputShader.js",
+    "three/addons/shaders/SMAAShader.js": "/vendor/three-addons/SMAAShader.js",
+    "lib/": "/lib/",
+    "controllers/": "/controllers/"
+  }
+}
+</script>
+</head>
+<body>
+<div class="stage"><canvas id="c"></canvas></div>
+<script type="module">
+  import { FittingStage } from "lib/stage"
+  import * as print from "lib/garments/print"
+  const stage = new FittingStage(document.getElementById("c"))
+  window.stage = stage
+  window.print = print
+  window.THREE = await import("three")
+  await stage.ready
+  window.stageReady = true
+</script>
+</body>
+</html>
