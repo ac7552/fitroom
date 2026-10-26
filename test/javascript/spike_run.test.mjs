@@ -149,3 +149,8 @@ test("elapsed time in words", () => {
   assert.equal(elapsedWords(65), "1 m 05 s")
   assert.equal(elapsedWords(1800), "30 m 00 s")
 })
+
+test("the username can come from `kaggle config view` (an access-token login)", () => {
+  assert.equal(resolveKaggleUser({ configView: "Configuration values from /x\n- username: acampbe2\n- auth_method: ACCESS_TOKEN\n" }), "acampbe2")
+  assert.equal(resolveKaggleUser({ configView: "- username: None\n" }), null)
+})

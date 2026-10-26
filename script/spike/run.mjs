@@ -109,7 +109,12 @@ say("\n2/6  Kaggle account")
 const tokenFile = path.join(process.env.KAGGLE_CONFIG_DIR || path.join(os.homedir(), ".kaggle"), "kaggle.json")
 let tokenJson = null
 try { tokenJson = fs.readFileSync(tokenFile, "utf8") } catch {}
-const user = resolveKaggleUser({ flag: options.kaggleUser, env: process.env, json: tokenJson })
+let user = resolveKaggleUser({ flag: options.kaggleUser, env: process.env, json: tokenJson })
+if (!user) {
+  // A newer login (an access token) keeps no username in kaggle.json; the CLI still knows it.
+  const view = kaggle(["config", "view"], { quiet: true })
+  user = resolveKaggleUser({ configView: view.text })
+}
 if (!user) {
   fail(`No Kaggle username. Either --kaggle-user NAME, or KAGGLE_USERNAME in the env, or a token file at ${tokenFile} (kaggle.com/settings -> API -> Create New Token; it holds {"username": ..., "key": ...}).`)
 }
@@ -230,7 +235,14 @@ let final = null
 say("\n6/6  Output")
 fs.rmSync(outDir, { recursive: true, force: true })
 fs.mkdirSync(outDir, { recursive: true })
-const fetched = kaggle(["kernels", "output", versionId, "-p", outDir, "-o", "-q"])
+// Kaggle's file server answers 502 now and then right after a run: try a few times, a little apart.
+let fetched = null
+for (let attempt = 1; attempt <= 5; attempt++) {
+  fetched = kaggle(["kernels", "output", versionId, "-p", outDir, "-o", "-q"])
+  if (fetched.status === 0 && !/50\d Server Error/.test(fetched.text)) break
+  say(`  (kaggle kernels output, try ${attempt}: ${fetched.text.trim().split("\n")[0]})`)
+  if (attempt < 5) await sleep(20000)
+}
 if (fetched.status !== 0) say(`  (kaggle kernels output: ${fetched.text.trim().split("\n")[0]})`)
 // Should the kernel have written into a subfolder, bring the files up beside the log.
 for (const sub of ["out", "working"]) {
