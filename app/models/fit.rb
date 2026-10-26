@@ -121,6 +121,14 @@ module Fit
   }.freeze
   SNUG_SHORT = 10   # and may end this much higher than a women's top usually does
   SNUG_SHOULDER_EASE = -5..3   # its shoulder seams sit a little in from the shoulder
+  # A fitted knit (a "shrunken" sweater hoodie, a ribbed top): made a little smaller than the body, and
+  # stretches on. Its chest as a share of the body's, by how close it's worn (regular: about -8 to +2 cm on
+  # a 90 cm chest, aiming at about -4); the size nearest the aim wins a tie. Its shoulder seams sit on the
+  # bone or up to 2 cm inside it; it may end at the waist (see SNUG_SHORT).
+  FITTED_KNIT_SHARE = { "slim" => -0.12..-0.02, "regular" => -0.09..0.02, "classic" => -0.05..0.05 }.freeze
+  FITTED_KNIT_AIM = { "slim" => -0.08, "regular" => -0.05, "classic" => -0.01 }.freeze
+  FITTED_KNIT_SHOULDER_EASE = -2..2
+  FITTED_KNIT_TIE = 0.2   # penalty per cm from the aim
   TOP_SHOULDER_EASE = -1..5
   TOP_LENGTH_PER_HEIGHT = 0.41
   TOP_LENGTH_TOLERANCE = 4
@@ -270,20 +278,31 @@ module Fit
 
   # A T-shirt, shirt, sweatshirt or other top. Short sleeves end on the upper arm, so they aren't checked
   # against the arm. design: how its sizes are cut (see design).
-  # details: { "women" => a women's top (it ends higher), "cropped" => made to end above the waist }.
+  # details: { "women" => a women's top (it ends higher), "cropped" => made to end above the waist,
+  # "snug" => a baby tee (see SNUG_TOP_CUTS), "fit" => "fitted" with "stretch" => true: a fitted knit, made
+  # the size of the body or smaller (see FITTED_KNIT_SHARE) }.
   def check_top(body, size, cut = "regular", design = {}, style: nil, details: {})
     women = details["women"] == true || details["women"].to_s == "true"
     cropped = details["cropped"] == true || details["cropped"].to_s == "true"
     snug = details["snug"] == true || details["snug"].to_s == "true"
+    knit = details["fit"].to_s == "fitted" && (details["stretch"] == true || details["stretch"].to_s == "true")
+    snug ||= knit
     ranges = (style == "dress" ? DRESS_CUTS : snug ? SNUG_TOP_CUTS : women ? WOMEN_TOP_CUTS : TOP_CUTS).fetch(cut)
     roomy, dropped = design.values_at(:roomy, :dropped)
     checks = [
       given(size, "shoulders", "Shoulders") do |shoulders|
         next check(:shoulders, "Shoulders", shoulders - body["shoulders"], "good").with(note: "The shoulder seam is made to sit down the arm.") if dropped
 
-        range_check(:shoulders, "Shoulders", shoulders - body["shoulders"], snug ? SNUG_SHOULDER_EASE : TOP_SHOULDER_EASE)
+        range_check(:shoulders, "Shoulders", shoulders - body["shoulders"], knit ? FITTED_KNIT_SHOULDER_EASE : snug ? SNUG_SHOULDER_EASE : TOP_SHOULDER_EASE)
       end,
       given(size, "chest", "Chest") do |chest|
+        if knit
+          # A fitted knit stretches on: its chest a share of the body's, the size nearest the aim first.
+          share = FITTED_KNIT_SHARE.fetch(cut)
+          found = range_check(:chest, "Chest", chest - body["chest"], (body["chest"] * share.min)..(body["chest"] * share.max))
+          found = found.with(penalty: (found.penalty + (chest - body["chest"] * (1 + FITTED_KNIT_AIM.fetch(cut))).abs * FITTED_KNIT_TIE).round(2))
+          next found.status == "good" && chest < body["chest"] ? found.with(note: "A fitted knit: it stretches to fit close to the body.") : found
+        end
         next range_check(:chest, "Chest", chest - body["chest"], ranges[:chest]) unless roomy
 
         aim = roomy + ROOMY_CUT.fetch(cut)
@@ -305,7 +324,7 @@ module Fit
         diff = length - body["height"] * (women ? WOMEN_TOP_LENGTH_PER_HEIGHT : TOP_LENGTH_PER_HEIGHT)
         next check(:length, "Length", diff, "good").with(note: "Cropped. It's made to end above your waist.") if cropped
         if snug && diff.between?(-SNUG_SHORT, TOP_LENGTH_TOLERANCE)
-          next check(:length, "Length", diff, "good").with(note: "A baby tee: made short, to end near your waist.")
+          next check(:length, "Length", diff, "good").with(note: knit ? "Made short, to end near your waist." : "A baby tee: made short, to end near your waist.")
         end
         next check(:length, "Length", diff, "good") if diff.abs <= TOP_LENGTH_TOLERANCE
         if (roomy || dropped) && diff.negative? && diff >= -BOXY_SHORT

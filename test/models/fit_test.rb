@@ -89,6 +89,39 @@ class FitTest < ActiveSupport::TestCase
     assert_match(/baby tee/, snug.first.checks.find { it.part == "length" }.note)
   end
 
+  test "a fitted knit hoodie stretches on: it's picked a little smaller than the body, not a size with a jacket's room" do
+    # Kith's Adley Shrunken Multi Sweater Hoodie (women's), its chart in cm, on the women's example body.
+    body = { "chest" => 91.5, "waist" => 74, "shoulders" => 39.5, "arm" => 58, "height" => 165 }
+    sizes = [ [ "XS", 76.2, 35.56, 63.82, 48.9 ], [ "S", 81.28, 36.83, 64.77, 50.8 ], [ "M", 86.36, 38.1, 65.72, 52.71 ],
+              [ "L", 91.44, 39.37, 66.68, 54.61 ], [ "XL", 99.06, 41.28, 67.95, 56.52 ], [ "XXL", 106.68, 43.18, 69.22, 58.42 ] ].map do |name, chest, shoulders, sleeve, length|
+      { "name" => name, "chest" => chest, "waist" => nil, "shoulders" => shoulders, "sleeve" => sleeve, "length" => length }
+    end
+    knit = { "women" => true, "fit" => "fitted", "stretch" => true }
+
+    # Read as a jacket, it wanted a jacket's room: XL. As an ordinary women's top it still wants some: XL.
+    assert_equal "XL", Fit.rank(body, sizes, "regular", "jacket").first.size
+    assert_equal "XL", Fit.rank(body, sizes, "regular", "top", style: "hoodie", details: { "women" => true }).first.size
+    ranked = Fit.rank(body, sizes, "regular", "top", style: "hoodie", details: knit)
+    assert_includes %w[S M], ranked.first.size
+    best = ranked.first
+    chest = best.checks.find { it.part == "chest" }
+    assert_equal "good", chest.status
+    assert_operator chest.ease, :<, 0
+    assert_match(/stretches/, chest.note)
+    # Its shoulder seam sits a little inside the shoulder bone; a shrunken knit ends at the waist.
+    assert_equal "good", best.checks.find { it.part == "shoulders" }.status
+    assert_equal "good", best.checks.find { it.part == "length" }.status
+    assert_match(/waist/, best.checks.find { it.part == "length" }.note)
+    # Slim and classic move at most one size either way; none of them picks XL.
+    assert_includes %w[S M], Fit.rank(body, sizes, "slim", "top", style: "hoodie", details: knit).first.size
+    assert_includes %w[M L], Fit.rank(body, sizes, "classic", "top", style: "hoodie", details: knit).first.size
+    # Much smaller than the body is too tight, and a size with a jacket's room is loose.
+    assert_equal "tight", ranked.find { it.size == "XS" }.checks.find { it.part == "chest" }.status
+    assert_equal "loose", ranked.find { it.size == "XL" }.checks.find { it.part == "chest" }.status
+    # A fitted top in a cloth that doesn't stretch is judged as any other top.
+    assert_equal "XL", Fit.rank(body, sizes, "regular", "top", style: "hoodie", details: { "women" => true, "fit" => "fitted", "stretch" => false }).first.size
+  end
+
   test "a tee whose photo shows dropped shoulders is meant to be wide there and boxy" do
     body = { "chest" => 101.6, "waist" => 86.4, "shoulders" => 45.5, "arm" => 65.5, "height" => 178 }
     sizes = [ { "name" => "S", "chest" => 110.5, "waist" => nil, "shoulders" => 50.8, "sleeve" => 19.4, "length" => 68.6 } ]
