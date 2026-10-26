@@ -41,7 +41,10 @@ export function loadImage(src) {
 // front's width (from its chart), to find its hem when something else (trousers, a stand) shows below it.
 // Returns { color: "#rrggbb", print } or null when the photo can't be read. print is null, or { image (a
 // canvas: the front of the garment, collar to hem, with everything but the print transparent), coverage
-// (share of the front that's print) }.
+// (share of the front that's print), tile (an all-over print's cloth, see allOverTile), stripes (true for
+// horizontal stripes right across the front), strip (then a canvas a few pixels wide: the cloth's colour at
+// each row from the shoulders to the hem and on down any sleeves hanging below it, laid on the sleeves and
+// back by height), stripSpan (the strip's height over the front's, 1 or more) }.
 export async function readPhoto(src, { shape = null } = {}) {
   const image = await loadImage(src).catch(() => null)
   if (!image) return null
@@ -74,9 +77,21 @@ export async function readPhoto(src, { shape = null } = {}) {
     out.width = found.print.width
     out.height = found.print.height
     out.getContext("2d").putImageData(new ImageData(found.print.data, found.print.width, found.print.height), 0, 0)
-    print = { image: out, coverage: found.print.coverage, tile: found.print.allOver ? allOverTile(found.print) : null }
+    print = { image: out, coverage: found.print.coverage, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes, strip: found.print.strip ? stripCanvas(found.print.strip) : null, stripSpan: found.print.strip?.span ?? 1 }
   }
   return { color: found.color, print }
+}
+
+// A striped front's colours row by row, as a texture a few pixels wide (the same column repeated).
+function stripCanvas(strip) {
+  const columns = 4
+  const canvas = document.createElement("canvas")
+  canvas.width = columns
+  canvas.height = strip.height
+  const pixels = new ImageData(columns, strip.height)
+  for (let y = 0; y < strip.height; y++) for (let x = 0; x < columns; x++) pixels.data.set(strip.data.subarray(4 * y, 4 * y + 4), 4 * (y * columns + x))
+  canvas.getContext("2d").putImageData(pixels, 0, 0)
+  return canvas
 }
 
 // An all-over print's cloth: a piece of the front clear of the collar, the buttons down the middle, the
@@ -100,34 +115,22 @@ function allOverTile(print) {
 }
 
 // The same on raw RGBA pixels (so it can be tested without a browser). Returns { color, print: { data,
-// width, height, coverage } | null } or null when no garment stands out from the background.
+// width, height, coverage, allOver, stripes, strip } | null } or null when no garment stands out from the
+// background. stripes: the front is horizontal stripes right across; strip is then one column of pixels, the
+// cloth's colour at each row from the shoulders to the hem (to lay on the sleeves and back by height, so
+// the stripes meet at the seams).
 export function findPrint(data, w, h, shape = null) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
   const { lab, bg, garment, far } = cut
 
-  // Its rows from the collar to the hem, and the torso: as wide as the garment is near its hem (the sleeves
-  // stick out higher up), centred where it is there.
-  let top = h, bottom = -1, widest = 0
-  const rowMin = new Int32Array(h).fill(w), rowMax = new Int32Array(h).fill(-1)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!garment.mask[y * w + x]) continue
-      rowMin[y] = Math.min(rowMin[y], x); rowMax[y] = Math.max(rowMax[y], x)
-      bottom = Math.max(bottom, y)
-    }
-    widest = Math.max(widest, rowMax[y] - rowMin[y])
-  }
-  // The shoulders: the first row nearly as wide as the garment gets (above it, a hanger, a stand's neck or
-  // a mannequin's head).
-  for (let y = 0; y < h && top === h; y++) if (rowMax[y] - rowMin[y] >= widest * 0.45) top = y
+  // Its rows from the shoulders to the hem (not a hood standing up above them, nor sleeves hanging below
+  // it), and the torso: as wide as the garment is near its hem (the sleeves stick out higher up), centred
+  // where it is there.
+  const rows = garmentRows(garment.mask, w, h)
+  if (!rows) return null
+  let { top, bottom, widest, rowMin, rowMax, centre, hood } = rows
   let tall = bottom - top + 1
-  // The torso: at chest height, the stretch of garment through the middle of the collar (sleeves sticking
-  // out are part of it only where they touch; the median over many rows leaves them out).
-  const collar = []
-  for (let y = top; y <= top + tall * 0.05; y++) if (rowMax[y] >= rowMin[y]) collar.push((rowMin[y] + rowMax[y]) / 2)
-  if (!collar.length) return null
-  const centre = Math.round(median(collar))
   const runs = []
   for (let y = Math.round(top + widest * 0.3); y <= Math.min(bottom, top + widest * 0.6); y++) {
     // Small gaps (a zip's shine, a button) don't end the stretch.
@@ -214,6 +217,15 @@ export function findPrint(data, w, h, shape = null) {
   const grown = boxBlur(Float32Array.from(gap), pw, ph, 2)
   const hem = ph - Math.max(2, Math.round(ph * 0.03))
   for (let k = 0; k < pw * ph; k++) if (grown[k] > 0 || k >= hem * pw) { alpha[k] = 0; gap[k] = 1 }
+  // Under a hood standing up in the photo, the neck opening: the hood's inside and its drawcords show there,
+  // not the front's cloth. Nothing of it goes on the body.
+  if (hood) {
+    const halfWide = Math.min(hood.width / 2, pw * 0.3), deep = halfWide * 0.7, cx = centre - x0
+    for (let y = 0; y < Math.ceil(deep); y++) {
+      const reach = halfWide * Math.sqrt(Math.max(0, 1 - (y / deep) ** 2))
+      for (let x = Math.max(0, Math.floor(cx - reach)); x <= Math.min(pw - 1, Math.ceil(cx + reach)); x++) { alpha[y * pw + x] = 0; gap[y * pw + x] = 1 }
+    }
+  }
 
   // Keep only solid areas: specks and the photo's own seams and folds are thin.
   // Marks running off the front's sides or hem are its edge in the light (a sleeve's rim, the hem's fold),
@@ -257,8 +269,115 @@ export function findPrint(data, w, h, shape = null) {
   if (coverage > 0.25) {
     for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   }
-  const print = coverage > 0.01 ? { data: out, width: pw, height: ph, coverage, allOver: coverage > 0.25 } : null
+  const strip = coverage > 0.25 ? stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last) : null
+  const print = coverage > 0.01 ? { data: out, width: pw, height: ph, coverage, allOver: coverage > 0.25, stripes: Boolean(strip), strip } : null
   return { color, print, rect: [x0, top, x1, bottom] }
+}
+
+// A top's rows in a photo, from its outline (mask): { top: the shoulder line, bottom: the hem, centre (x),
+// widest (the widest row), rowMin, rowMax, hood: { bottom, width } when a hood (or a stand's neck) stands up
+// above the shoulders, else null }. Null when there's no garment.
+// The shoulders are the first row nearly as wide as the garment gets (above it, a hanger's hook). A hood
+// worn up is wider than a hook, about half the body, for a good way above the shoulders, in one piece (a
+// dress's two straps aren't): the shoulder line is then where the body reaches its full width below it.
+// The hem is where the body (the middle of the garment) ends; sleeves may hang on below it.
+export function garmentRows(mask, w, h) {
+  let first = -1, last = -1, widest = 0
+  const rowMin = new Int32Array(h).fill(w), rowMax = new Int32Array(h).fill(-1)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) if (mask[y * w + x]) { rowMin[y] = Math.min(rowMin[y], x); rowMax[y] = Math.max(rowMax[y], x) }
+    if (rowMax[y] >= 0) { if (first < 0) first = y; last = y }
+    widest = Math.max(widest, rowMax[y] - rowMin[y])
+  }
+  if (first < 0) return null
+  const width = y => rowMax[y] - rowMin[y]
+  let top = first
+  while (top < last && width(top) < widest * 0.45) top++
+  // The body's full width: what the garment holds for a while below the shoulders.
+  const held = []
+  for (let y = Math.round(top + (last - top) * 0.1); y <= Math.round(top + (last - top) * 0.35); y++) held.push(width(y))
+  const full = held.length ? median(held) : widest
+  // Below whatever stands above the shoulders: the first row of the body's full width.
+  let shoulders = top
+  if (width(top) < full * 0.8) while (shoulders < last && width(shoulders) < full * 0.88) shoulders++
+  // A hood (or a stand's neck) above the shoulders: wider than a hook, narrower than the body, in one piece,
+  // for a good way up. Then the neck opening below it isn't the front's cloth.
+  let hood = null
+  const above = []
+  for (let y = first; y < shoulders; y++) if (width(y) > 0) above.push(y)
+  const middle = above.slice(Math.round(above.length * 0.2), Math.round(above.length * 0.8))
+  const onePiece = y => {
+    let gaps = 0, on = false
+    for (let x = rowMin[y]; x <= rowMax[y]; x++) { const here = mask[y * w + x] === 1; if (here && !on && x > rowMin[y]) gaps++; on = here }
+    return gaps === 0
+  }
+  const wide = middle.filter(y => width(y) > full * 0.22 && width(y) < full * 0.8 && onePiece(y)).length
+  if (above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6) hood = { bottom: shoulders - 1, width: median(middle.map(width)) }
+  if (hood) top = shoulders
+  // The middle of the collar.
+  const collar = []
+  for (let y = top; y <= Math.min(last, top + (last - top) * 0.05); y++) if (rowMax[y] >= rowMin[y]) collar.push((rowMin[y] + rowMax[y]) / 2)
+  const centre = Math.round(median(collar))
+  // The hem: the last row with cloth across the middle of the body.
+  const half = Math.max(2, Math.round(full * 0.12))
+  let bottom = top
+  for (let y = top; y <= last; y++) {
+    let on = 0
+    for (let x = Math.max(0, centre - half); x <= Math.min(w - 1, centre + half); x++) on += mask[y * w + x]
+    if (on >= half) bottom = y
+  }
+  if (bottom - top < (last - top) * 0.3) bottom = last
+  return { top, bottom, last, widest, rowMin, rowMax, centre, hood }
+}
+
+// Horizontal stripes right across a front: each row is much the same colour along it, and the rows differ
+// a lot from one another. Returns one column of pixels (the cloth's colour row by row, from the shoulders to
+// the hem, and on down the sleeves where they hang below it, to `last`) when the front is striped, else
+// null; its `span` is its height over the body's (shoulders to hem). x0..x1: the middle of the body; the
+// zip, a drawcord or a small logo in a row is left out by taking each row's middle value.
+export function stripeStrip(data, lab, mask, w, x0, x1, top, bottom, last = bottom) {
+  const ph = bottom - top + 1, tall = Math.max(ph, last - top + 1)
+  const rowsLab = [], within = [], strip = new Uint8ClampedArray(4 * tall), filled = new Uint8Array(tall)
+  for (let y = 0; y < tall; y++) {
+    const L = [], A = [], B = [], R = [], G = [], Bl = []
+    // Below the hem, whatever cloth there is on the row (the sleeves).
+    const from = y < ph ? x0 : 0, to = y < ph ? x1 : w - 1
+    for (let x = from; x <= to; x++) {
+      const i = (top + y) * w + x
+      if (!mask[i]) continue
+      L.push(lab[3 * i]); A.push(lab[3 * i + 1]); B.push(lab[3 * i + 2])
+      R.push(data[4 * i]); G.push(data[4 * i + 1]); Bl.push(data[4 * i + 2])
+    }
+    if (L.length < (y < ph ? (x1 - x0) * 0.4 : 4)) continue
+    const row = [median(L), median(A), median(B)]
+    strip.set([Math.round(median(R)), Math.round(median(G)), Math.round(median(Bl)), 255], 4 * y)
+    filled[y] = 1
+    if (y >= ph) continue
+    rowsLab.push(row)
+    within.push(median(L.map((l, k) => Math.abs(l - row[0]) + 0.6 * Math.hypot(A[k] - row[1], B[k] - row[2]))))
+  }
+  if (rowsLab.length < 12) return null
+  // How much the rows differ: each from the row a little way below it.
+  const step = Math.max(1, Math.round(ph * 0.01))
+  const between = []
+  for (let k = 0; k + step < rowsLab.length; k++) {
+    const a = rowsLab[k], b = rowsLab[k + step]
+    between.push(Math.abs(a[0] - b[0]) + 0.6 * Math.hypot(a[1] - b[1], a[2] - b[2]))
+  }
+  between.sort((p, q) => p - q)
+  const changes = between[Math.round((between.length - 1) * 0.8)]   // the rows at a stripe's edge
+  const spread = median(within)
+  if (!(changes > 10 && changes > 2.5 * spread)) return null
+  // Rows with no cloth across the middle (none, or the neck opening) take the nearest row's colour.
+  let lastFilled = -1
+  for (let y = 0; y < tall; y++) {
+    if (filled[y]) { lastFilled = y; continue }
+    let next = y
+    while (next < tall && !filled[next]) next++
+    const from = next < tall && (lastFilled < 0 || next - y < y - lastFilled) ? next : lastFilled
+    if (from >= 0) strip.set(strip.subarray(4 * from, 4 * from + 4), 4 * y)
+  }
+  return { data: strip, width: 1, height: tall, span: tall / ph }
 }
 
 // The areas a print covers (0 to 1, soft at the edge): its marks joined up across small gaps (a closing:
@@ -1014,18 +1133,11 @@ export function measureTop(data, w, h) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
   const on = (x, y) => cut.garment.mask[y * w + x] === 1
-  let top = -1, bottom = -1, widest = 0
-  const rowMin = new Int32Array(h).fill(w), rowMax = new Int32Array(h).fill(-1)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) if (on(x, y)) { rowMin[y] = Math.min(rowMin[y], x); rowMax[y] = Math.max(rowMax[y], x) }
-    if (rowMax[y] >= 0) { if (top < 0) top = y; bottom = y }
-    widest = Math.max(widest, rowMax[y] - rowMin[y])
-  }
-  if (top < 0) return null
-  let shoulders = top
-  while (shoulders < bottom && rowMax[shoulders] - rowMin[shoulders] < widest * 0.45) shoulders++
+  const rows = garmentRows(cut.garment.mask, w, h)
+  if (!rows) return null
+  // From the shoulder line (below a hood worn up) to the hem (sleeves may hang on below it).
+  const { top: shoulders, bottom, rowMin, rowMax, centre } = rows
   const body = bottom - shoulders + 1
-  const centre = Math.round(median(Array.from({ length: Math.max(1, Math.round(body * 0.05)) }, (_, k) => (rowMin[shoulders + k] + rowMax[shoulders + k]) / 2)))
   // The front's width through the middle at a height: it stops at a gap, so a sleeve hanging apart from
   // the body is left out (one sewn on beside it, a tee's, isn't).
   const across = y => {
@@ -1051,7 +1163,7 @@ export function measureTop(data, w, h) {
   // A sleeve: the last row (down from the shoulders) wider than the chest, and how far out it reaches.
   const full = y => rowMax[y] - rowMin[y]
   let cuff = -1, outer = 0
-  for (let y = shoulders; y <= bottom; y++) if (full(y) > chest * 1.08) { cuff = y; outer = Math.max(outer, (full(y) - chest) / 2) }
+  for (let y = shoulders; y < h; y++) if (full(y) > chest * 1.08) { cuff = y; outer = Math.max(outer, (full(y) - chest) / 2) }
   const drop = cuff < 0 ? 0 : cuff - shoulders
   const at = f => across(row(f)) / chest
   return {
@@ -1341,8 +1453,9 @@ export function readBottom(data, w, h) {
   }
 
   // The backdrop painted over in the garment's nearby colours, and a softened copy. The garment's outermost
-  // pixels go too: half backdrop, they'd leave a light rim round it.
-  const rim = Math.max(1, Math.round(w * 0.003))
+  // pixels go too: half backdrop, and lit along the cloth's rounded edge as it lies flat, they'd leave a light
+  // rim round it, which on the draped cloth runs down the side seams as a pale band.
+  const rim = Math.max(1, Math.round(w * 0.012))
   const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
   // Out to well past the garment too (in coarser colours), so cloth laid a little outside the photo's
   // outline (a hip rounder than it lay flat) never shows the backdrop.
@@ -1394,7 +1507,12 @@ function bottomsPrint(lab, cloth, mask, w, h, runs) {
       let banded = 0
       for (const [y, [a, b]] of byRow) {
         const run = runs(y).find(([p, q]) => a >= p - 2 && b <= q + 2)
-        if (run && b - a >= (run[1] - run[0]) * 0.85) banded++
+        if (!run) continue
+        // The stretch as far as the garment's pixels go (its rim is left out of mask).
+        let p = run[0], q = run[1]
+        while (p < q && !mask[y * w + p]) p++
+        while (q > p && !mask[y * w + q]) q--
+        if (b - a >= (q - p) * 0.85) banded++
       }
       drop = banded >= byRow.size * 0.6
     }

@@ -150,3 +150,22 @@ function xAt(points, y) {
   const first = points[0], last = points[points.length - 1]
   return Math.abs(y - first[1]) < Math.abs(y - last[1]) ? first[0] : last[0]
 }
+
+// How far down a top each cloth point is, as its shop photo shows it laid flat: cm below the shoulders, per
+// point. The body pieces from their high shoulder point; a sleeve from the shoulder point it's sewn to (its cap
+// meets the body shoulderDrop below the high point), and its cuff on below it; the hem band below the body;
+// a hood worn down takes the top of the front, mirrored up it. A striped print is laid by this (see
+// DrapedTop#setPrint), so the stripes meet at the seams.
+export function heightsDown(cloth, pattern) {
+  const m = pattern.measures
+  const sleeveTop = m.shoulderDrop ?? 0
+  return Float32Array.from(cloth.points, ([, y], i) => {
+    const name = cloth.panels[cloth.panel[i]]
+    if (name === "front" || name === "back") return -y
+    if (name.startsWith("sleeve")) return sleeveTop - y
+    if (name.startsWith("cuff")) return sleeveTop + m.sleeve - y
+    if (name === "waistband") return m.length - y
+    if (name.startsWith("hood")) return Math.max(0, y) * 0.5
+    return Math.max(0, -y)
+  })
+}

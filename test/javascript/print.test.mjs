@@ -273,3 +273,93 @@ test("a shoe shot at an angle keeps its upper's colour, not its shadows', and it
   assert.ok(rgb(read.sole).every((v, c) => Math.abs(v - [222, 214, 190][c]) <= 10), `sole ${read.sole}`)
   assert.equal(read.collar, null, "the shaded half of the top isn't a collar")
 })
+
+// A striped zip hoodie laid flat with its hood standing up (as shops photograph one): a cream body with green,
+// black and brown stripes right across body and sleeves, a dark zip down the middle, the sleeves hanging
+// straight down beside the body and on past the hem, and the hood above the shoulders showing its dark inside.
+function stripedHoodie({ hood = true } = {}) {
+  const w = 300, h = 360, data = new Uint8ClampedArray(4 * w * h)
+  const shoulders = 110, hem = 270, cuffs = 320, x0 = 100, x1 = 200, sleeve = 30
+  const stripes = [[0, 12, [235, 230, 210]], [12, 20, [40, 120, 70]], [20, 26, [235, 230, 210]], [26, 36, [30, 30, 34]], [36, 48, [120, 90, 40]]]
+  const stripeAt = y => { const k = (y - shoulders) % 48; return stripes.find(([a, b]) => k >= a && k < b)[2] }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = [236, 236, 236]
+      const body = x >= x0 && x < x1 && y >= shoulders && y < hem
+      const sleeves = ((x >= x0 - sleeve && x < x0) || (x >= x1 && x < x1 + sleeve)) && y >= shoulders && y < cuffs
+      if (body || sleeves) c = stripeAt(y)
+      if (body && Math.abs(x - 150) < 2) c = [50, 50, 55]   // the zip
+      if (hood) {
+        const dx = (x - 150) / 34, dy = (y - 70) / 44
+        if (dx * dx + dy * dy < 1) c = dx * dx * 1.6 + dy * dy * 1.6 < 1 && y < 108 ? [28, 28, 30] : [40, 120, 70]
+      }
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h, shoulders, hem, x0, x1, stripeAt }
+}
+
+test("a hoodie's print starts at the shoulders below the hood and ends at the hem, with the hood's inside left out", () => {
+  const { data, w, h, shoulders, hem, x0, x1 } = stripedHoodie()
+  const found = findPrint(data, w, h)
+  const [, top, , bottom] = found.rect
+  assert.ok(top >= shoulders - 2 && top <= shoulders + 8, `top ${top} (shoulders at ${shoulders})`)
+  assert.ok(Math.abs(bottom - (hem - 1)) <= 3, `bottom ${bottom} (hem at ${hem})`)
+  assert.ok(found.print.allOver, "an all-over print")
+  // Nothing of the hood's dark inside ends up on the front.
+  const { data: pixels, width, height } = found.print
+  let dark = 0
+  for (let k = 0; k < width * height; k++) if (pixels[4 * k + 3] > 0 && pixels[4 * k] === 28 && pixels[4 * k + 1] === 28 && pixels[4 * k + 2] === 30) dark++
+  assert.equal(dark, 0, `${dark} hood pixels in the print`)
+  assert.equal(pixels[4 * (2 * width + Math.round(width / 2)) + 3], 0, "the neck opening is clear")
+  assert.ok(found.rect[0] <= x0 && found.rect[2] >= x1 - 1)
+})
+
+test("a striped front is read as stripes: a column of its colours by height, with no hood or zip in it", () => {
+  const { data, w, h, shoulders, hem, stripeAt } = stripedHoodie()
+  const found = findPrint(data, w, h)
+  assert.equal(found.print.stripes, true)
+  const { strip } = found.print
+  // It runs from the shoulders to the hem, and on down the sleeves hanging below the hem (to the cuffs).
+  const top = found.rect[1]
+  assert.ok(strip.height >= found.rect[3] - top + 1 && Math.abs(strip.height - (320 - top)) <= 2, `strip height ${strip.height}`)
+  assert.ok(Math.abs(strip.span - strip.height / (found.rect[3] - top + 1)) < 1e-6)
+  for (const y of [shoulders + 30, shoulders + 65, shoulders + 100, hem - 10, hem + 30]) {
+    const want = stripeAt(y), got = [...strip.data.slice(4 * (y - top), 4 * (y - top) + 3)]
+    assert.ok(got.every((v, c) => Math.abs(v - want[c]) <= 6), `row ${y}: ${got} for ${want}`)
+  }
+  // A plain tee with a chest print isn't striped.
+  const plain = photo()
+  assert.equal(findPrint(plain.data, plain.w, plain.h).print.stripes, false)
+})
+
+test("measures a hooded top from its shoulders, not from the top of its hood", () => {
+  const up = stripedHoodie(), down = stripedHoodie({ hood: false })
+  const a = measureTop(up.data, up.w, up.h), b = measureTop(down.data, down.w, down.h)
+  assert.ok(Math.abs(a.length - b.length) < 0.05, `length ${a.length} with the hood up, ${b.length} without`)
+  assert.ok(Math.abs(a.length - 160 / 160) < 0.08, `length ${a.length}`)
+})
+
+test("stripes are laid by height, so a sleeve's meet the body's at the shoulder seam and the cuff carries on below the sleeve", async () => {
+  const { draftTop } = await import("lib/garments/pattern")
+  const { buildCloth } = await import("lib/garments/cloth")
+  const { heightsDown } = await import("lib/garments/photo_map")
+  const pattern = draftTop("hoodie", { chest: 86, shoulders: 38, sleeve: 60, length: 52 }, { chest: 91, waist: 74, shoulders: 39.5, arm: 58, height: 165, armpit: 18, bicep: 28, wrist: 15, neck: 36, head: 55 }, { fit: "fitted", stretch: true, closure: "zip" })
+  const cloth = buildCloth(pattern, 1.6)
+  const down = heightsDown(cloth, pattern)
+  const m = pattern.measures
+  const points = name => cloth.points.map((_, i) => i).filter(i => cloth.panels[cloth.panel[i]] === name)
+  const topOf = name => Math.min(...points(name).map(i => down[i]))
+  // The front's shoulder point and the sleeve's cap top are at the same height.
+  assert.ok(Math.abs(topOf("sleeve_L") - m.shoulderDrop) < 0.5, `sleeve top at ${topOf("sleeve_L")}`)
+  const frontShoulder = points("front").filter(i => Math.abs(Math.abs(cloth.points[i][0]) - m.shoulders / 2) < 1)
+  assert.ok(frontShoulder.some(i => Math.abs(down[i] - m.shoulderDrop) < 1.2), "the front's shoulder point")
+  // The cuff starts where the sleeve ends, the hem band where the body ends.
+  assert.ok(Math.abs(topOf("cuff_L") - (m.shoulderDrop + m.sleeve)) < 0.5, `cuff top at ${topOf("cuff_L")}`)
+  assert.ok(Math.abs(topOf("waistband") - m.length) < 0.5, `waistband top at ${topOf("waistband")}`)
+  // A fitted knit is cut without the usual room, and draped as a knit that gives.
+  assert.equal(pattern.fabric, "rib")
+  const loose = draftTop("hoodie", { chest: 86, shoulders: 38, sleeve: 60, length: 52 }, { chest: 91, waist: 74, shoulders: 39.5, arm: 58, height: 165, armpit: 18, bicep: 28, wrist: 15, neck: 36, head: 55 }, { closure: "zip" })
+  assert.ok(m.bicep < loose.measures.bicep - 3 && m.opening < loose.measures.opening - 2 && m.armhole < loose.measures.armhole, "closer sleeves and armholes")
+  assert.equal(m.chest, 86)
+})
