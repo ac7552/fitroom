@@ -470,8 +470,10 @@ a { color: inherit; }
 .fitting-room .stage .segmented span:hover { color: #e9ebef; }
 .fitting-room .stage .segmented input:checked + span { background: rgb(233 235 239 / 0.12); color: #e9ebef; box-shadow: inset 0 0 0 1px rgb(233 235 239 / 0.28); }
 
-/* Bottom right, clear of the controls above however they wrap, and of the size rows below. */
+/* The shop photos beside the figure, on a phone only: on a wide screen the rail (step 1) already shows them,
+   and the strip would cover the stage's note and the tone picker. */
 .stage-photos { position: absolute; right: 16px; bottom: calc(var(--rows, 84px) + 12px); display: grid; gap: 8px; }
+@media (min-width: 721px) { .stage-photos { display: none; } }
 .stage-photo {
   width: clamp(72px, 14%, 120px);
   aspect-ratio: 3 / 4;
