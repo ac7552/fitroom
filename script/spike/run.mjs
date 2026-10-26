@@ -109,7 +109,12 @@ say("\n2/6  Kaggle account")
 const tokenFile = path.join(process.env.KAGGLE_CONFIG_DIR || path.join(os.homedir(), ".kaggle"), "kaggle.json")
 let tokenJson = null
 try { tokenJson = fs.readFileSync(tokenFile, "utf8") } catch {}
-const user = resolveKaggleUser({ flag: options.kaggleUser, env: process.env, json: tokenJson })
+let user = resolveKaggleUser({ flag: options.kaggleUser, env: process.env, json: tokenJson })
+if (!user) {
+  // A newer login (an access token) keeps no username in kaggle.json; the CLI still knows it.
+  const view = kaggle(["config", "view"], { quiet: true })
+  user = resolveKaggleUser({ configView: view.text })
+}
 if (!user) {
   fail(`No Kaggle username. Either --kaggle-user NAME, or KAGGLE_USERNAME in the env, or a token file at ${tokenFile} (kaggle.com/settings -> API -> Create New Token; it holds {"username": ..., "key": ...}).`)
 }

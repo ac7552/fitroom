@@ -131,9 +131,12 @@ export function parseRunArgs(argv) {
 
 // The Kaggle username: the --kaggle-user flag, else KAGGLE_USERNAME in the env, else ~/.kaggle/kaggle.json's
 // "username" (its text is given). Null when none of them has it.
-export function resolveKaggleUser({ flag, env, json } = {}) {
+export function resolveKaggleUser({ flag, env, json, configView } = {}) {
   if (flag) return String(flag).trim()
   if (env?.KAGGLE_USERNAME) return String(env.KAGGLE_USERNAME).trim()
+  // `kaggle config view` prints "- username: NAME" whatever way the person signed in.
+  const viewed = configView && /^-\s*username:\s*(\S+)/m.exec(configView)
+  if (viewed && viewed[1] !== "None") return viewed[1]
   if (json) {
     try {
       const parsed = JSON.parse(json)
