@@ -19,6 +19,7 @@ import base64
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -438,31 +439,59 @@ def pair_up(filenames):
     return pairs, lonely
 
 
+COPY_SUFFIX = re.compile(r" \(\d+\)(?=\.\w+$)")
+
+
+def plain_name(filename):
+    """A file name without the " (n)" a browser or Colab adds to a second upload of the same name:
+    "tee-person (1).png" -> "tee-person.png". Pure."""
+    return COPY_SUFFIX.sub("", filename)
+
+
+def files_in(folder):
+    """The folder's files by their plain name -> path. When a name is there more than once ("tee-person.png"
+    and "tee-person (1).png"), the newest by mtime wins, so a re-upload replaces the first."""
+    folder = pathlib.Path(folder)
+    chosen = {}
+    for p in folder.iterdir():
+        if not p.is_file():
+            continue
+        name = plain_name(p.name)
+        if name not in chosen or p.stat().st_mtime > chosen[name].stat().st_mtime:
+            chosen[name] = p
+    return chosen
+
+
 def shots_in(folder, say=print):
     """The sheet's inputs: NAME-person.png, NAME-garment.(jpg|png|webp), NAME-category.txt, and optional
     NAME-mask.png (the garment in the render), NAME-outline.png (the figure), NAME-print.png (the print
-    region in the shop photo, or the page's print.image), NAME-pose.json (keypoints for FASHN)."""
-    folder = pathlib.Path(folder)
-    pairs, lonely = pair_up(p.name for p in folder.iterdir() if p.is_file())
+    region in the shop photo, or the page's print.image), NAME-pose.json (keypoints for FASHN).
+    A " (n)" copy suffix on a name is ignored (the newest copy is read)."""
+    files = files_in(folder)
+    pairs, lonely = pair_up(files)
     for name in lonely:
         say(f"{name}: no {name}-garment.jpg, skipped")
+
+    def path_of(filename):
+        return str(files[filename]) if filename in files else None
+
     shots = []
     for name, garment in pairs:
-        category_file = folder / f"{name}-category.txt"
-        pose_file = folder / f"{name}-pose.json"
+        category_file = files.get(f"{name}-category.txt")
+        pose_file = files.get(f"{name}-pose.json")
         shots.append({
             "name": name,
             "request": {
-                "person": read_b64(str(folder / f"{name}-person.png")),
-                "garment": read_b64(str(folder / garment)),
-                "category": category_file.read_text().strip() if category_file.exists() else "tops",
-                "mask": read_b64(str(folder / f"{name}-mask.png")),
-                "outline": read_b64(str(folder / f"{name}-outline.png")),
-                "print": read_b64(str(folder / f"{name}-print.png")),
-                "pose": json.loads(pose_file.read_text()) if pose_file.exists() else None,
+                "person": read_b64(path_of(f"{name}-person.png")),
+                "garment": read_b64(path_of(garment)),
+                "category": category_file.read_text().strip() if category_file else "tops",
+                "mask": read_b64(path_of(f"{name}-mask.png")),
+                "outline": read_b64(path_of(f"{name}-outline.png")),
+                "print": read_b64(path_of(f"{name}-print.png")),
+                "pose": json.loads(pose_file.read_text()) if pose_file else None,
             },
-            "garment_path": str(folder / garment),
-            "person_path": str(folder / f"{name}-person.png"),
+            "garment_path": path_of(garment),
+            "person_path": path_of(f"{name}-person.png"),
         })
     return shots
 

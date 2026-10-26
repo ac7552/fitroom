@@ -1,0 +1,15 @@
+{
+  "id": "<KAGGLE_USERNAME>/fitroom-tryon-spike",
+  "title": "fitroom-tryon-spike",
+  "code_file": "spike.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["<KAGGLE_USERNAME>/fitroom-spike-inputs"],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

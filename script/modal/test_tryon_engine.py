@@ -91,6 +91,31 @@ class SheetFolderTest(unittest.TestCase):
             self.assertEqual(shots[0]["garment_path"], str(folder / "hoodie-garment.png"))
             self.assertEqual(said, ["alone: no alone-garment.jpg, skipped"])
 
+    def test_copy_suffixed_names_count_and_the_newest_copy_wins(self):
+        self.assertEqual(engine.plain_name("tee-person (1).png"), "tee-person.png")
+        self.assertEqual(engine.plain_name("tee-garment (12).jpg"), "tee-garment.jpg")
+        self.assertEqual(engine.plain_name("tee (1)-person.png"), "tee (1)-person.png")
+        self.assertEqual(engine.plain_name("tee-person.png"), "tee-person.png")
+        with tempfile.TemporaryDirectory() as folder:
+            folder = pathlib.Path(folder)
+            (folder / "tee-person (1).png").write_bytes(png())
+            (folder / "tee-garment.jpg").write_bytes(png(colour=(1, 2, 3)))
+            (folder / "tee-garment (1).jpg").write_bytes(png(colour=(200, 20, 20)))
+            (folder / "tee-category (2).txt").write_text("bottoms")
+            os.utime(folder / "tee-garment.jpg", (1_000_000, 1_000_000))
+            os.utime(folder / "tee-garment (1).jpg", (2_000_000, 2_000_000))
+            shots = engine.shots_in(folder, say=lambda *_: None)
+            self.assertEqual([s["name"] for s in shots], ["tee"])
+            request = shots[0]["request"]
+            self.assertEqual(base64.b64decode(request["garment"]), png(colour=(200, 20, 20)))
+            self.assertEqual(request["category"], "bottoms")
+            self.assertEqual(shots[0]["garment_path"], str(folder / "tee-garment (1).jpg"))
+            self.assertEqual(shots[0]["person_path"], str(folder / "tee-person (1).png"))
+            self.assertEqual(base64.b64decode(request["person"]), png())
+            # The older copy, made newer, wins instead.
+            os.utime(folder / "tee-garment.jpg", (3_000_000, 3_000_000))
+            self.assertEqual(engine.shots_in(folder, say=lambda *_: None)[0]["garment_path"], str(folder / "tee-garment.jpg"))
+
     def test_one_shot_names_itself_after_the_person_file(self):
         with tempfile.TemporaryDirectory() as folder:
             person, garment = os.path.join(folder, "render.png"), os.path.join(folder, "shop.png")
