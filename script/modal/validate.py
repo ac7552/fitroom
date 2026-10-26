@@ -29,6 +29,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from silhouette import iou, mask_of  # noqa: E402
 
 THRESHOLDS = {"shape": 0.85, "identity": 0.80, "colour": 12.0, "print": 0.45}
+# With the render given (validate(..., render=)), the identity gate is relative: a flat-lay shop photo and a
+# garment worn on a body never embed alike (0.4-0.6 is usual), so the finish must look at least as much like
+# the shop photo as Fitroom's own render did, less a little slack, and never less than a floor.
+RELATIVE_SLACK = 0.05
+IDENTITY_FLOOR = 0.35
 PAD = 0.05  # how much the garment's box is padded for the crops
 
 DINO = "facebook/dinov2-small"   # Apache-2.0
@@ -289,12 +294,14 @@ def print_score(shop_photo, shop_box, result, result_box, print_mask):
 
 # The gates ----------------------------------------------------------------------------------------------
 
-def validate(render_mask, result, shop_photo, garment_mask_in_result, shop_garment_mask, print_mask=None, cutout=None, embed=None, thresholds=THRESHOLDS):
+def validate(render_mask, result, shop_photo, garment_mask_in_result, shop_garment_mask, print_mask=None, cutout=None, embed=None, thresholds=THRESHOLDS, render=None):
     """render_mask: the figure's outline from the page (white on black), any size. result: the try-on
     picture (PIL). shop_photo: the shop's picture of the garment (PIL). garment_mask_in_result and
     shop_garment_mask: where the garment is in each (mask pictures or boolean arrays). print_mask: see
     print_score, or None for a plain garment. cutout(picture) -> greyscale PIL of the figure; embed(picture)
-    -> vector. Returns {shape, identity, print, ok}, each gate with its score, threshold and pass."""
+    -> vector. render: Fitroom's own picture the result was made from (PIL), which makes the identity gate
+    relative (see RELATIVE_SLACK). Returns {shape, identity, print, ok}, each gate with its score, threshold
+    and pass."""
     cutout = cutout or cutout_default
     embed = embed or embed_default
     result = result.convert("RGB")
@@ -313,14 +320,20 @@ def validate(render_mask, result, shop_photo, garment_mask_in_result, shop_garme
     if result_box is None or shop_box is None:
         identity = {"score": 0.0, "colour": None, "threshold": thresholds["identity"], "colour_threshold": thresholds["colour"], "pass": False}
     else:
-        likeness = cosine(embed(crop(shop_photo, shop_box)), embed(crop(result, result_box)))
+        shop_vector = embed(crop(shop_photo, shop_box))
+        likeness = cosine(shop_vector, embed(crop(result, result_box)))
         distance = colour_distance(shop_photo, ours, result, theirs)
+        threshold, baseline = thresholds["identity"], None
+        if render is not None:
+            baseline = cosine(shop_vector, embed(crop(render.convert("RGB"), result_box)))
+            threshold = max(IDENTITY_FLOOR, baseline - RELATIVE_SLACK)
         identity = {
             "score": round(likeness, 3),
             "colour": None if math.isinf(distance) else round(distance, 1),
-            "threshold": thresholds["identity"],
+            "threshold": round(threshold, 3),
+            "baseline": None if baseline is None else round(baseline, 3),
             "colour_threshold": thresholds["colour"],
-            "pass": likeness >= thresholds["identity"] and distance <= thresholds["colour"],
+            "pass": likeness >= threshold and distance <= thresholds["colour"],
         }
 
     # 3. Print

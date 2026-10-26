@@ -93,6 +93,20 @@ For each NAME:
 `sheet.png` has a row per NAME: store photo | our render | FASHN | Leffa, with each gate's score, the time and
 PASS/REFUSED under the AI columns. `results.json` has the same as numbers.
 
+### What the first run showed (26 Oct, free T4)
+
+The Kith Adley striped hoodie, FASHN VTON 1.5, 66 s: shape 0.95 (pass), colour dE 6.5 (pass), look 0.43. The
+picture was good (continuous knit in the shop's stripe order, a real collar and cuffs, no skin or hair on
+the mannequin), but two lessons:
+
+- **Photograph from the front.** The page's reveal turn was mid-way, so the render was a side view, and
+  the model invented a placket where the zip was hidden and lost the hood. `photoPasses({ front: true })`
+  now turns the camera to the front for the picture and back after.
+- **The identity gate is relative now.** A flat shop photo and a garment worn on a body never embed alike
+  (0.4-0.6 is usual), so a fixed 0.80 refused a good picture. With the render given, the bar is the
+  render's own likeness to the shop photo less 0.05, never under 0.35 (`validate.py`: RELATIVE_SLACK,
+  IDENTITY_FLOOR). The sheet prints the baseline next to the score.
+
 ### Making the inputs from the running app
 
 Open the page with an outfit on, wait for the cloth to settle, and in the browser console:
@@ -103,7 +117,7 @@ const save = (blob, name) => { const a = document.createElement('a'); a.href = U
 
 // The render and, from the same camera, the figure's outline (and a depth picture we don't need here).
 // This is the pass the cloud studio look already uses (cloudStudioLook -> stage.photoPasses with guides).
-const passes = await c.stage.photoPasses({ width: 1024, height: 1536, guides: true })
+const passes = await c.stage.photoPasses({ width: 1024, height: 1536, guides: true, front: true })  // front: the zip, print and hood face the camera
 save(passes.image, 'hoodie-person.png')
 save(passes.mask, 'hoodie-outline.png')
 

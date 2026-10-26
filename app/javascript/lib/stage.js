@@ -103,6 +103,9 @@ const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
 const TUCKED_LAYERS = ["top", "bottom", "outer"]
 const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
 
+// The camera's angle for a "front" photo: a touch off straight on, as lookbooks shoot.
+const FRONT_ANGLE = 0.12
+
 export class FittingStage {
   constructor(canvas) {
     this.canvas = canvas
@@ -1209,12 +1212,34 @@ export class FittingStage {
   // The photo, and with `guides` two more pictures from the same camera for an image model to keep to:
   // depth (nearest white, farthest black, the figure only) and the figure's outline (white on black).
   // Returns { image, depth, mask } as PNG Blobs (depth and mask null without guides).
-  async photoPasses({ width = 1600, height = 2000, guides = true } = {}) {
+  async photoPasses({ width = 1600, height = 2000, guides = true, front = false } = {}) {
     this.wearBelt()
     this.wearScarf()
     this.wearCollars()
     this.hideCovered()
     this.finishMoves()
+    // `front`: from in front, whichever way the figure is turned on screen (an image model wants the
+    // zip, the print and the hood where a shop photo shows them). The camera goes back after.
+    const facing = front ? this.faceFront() : null
+    try {
+      return await this.photoPassesNow({ width, height, guides })
+    } finally {
+      if (facing) { this.camera.position.copy(facing.position); this.controls.update() }
+    }
+  }
+
+  // Turns the camera to just off straight in front of the figure (a lookbook's slight angle), at the
+  // same distance and height; stops a reveal turn. Returns the camera's position before, to put back.
+  faceFront() {
+    const position = this.camera.position.clone()
+    if (this.turn) { this.turn = null; this.idle.later?.() }
+    const offset = this.camera.position.clone().sub(this.controls.target)
+    this.turnCamera(Math.atan2(offset.x, offset.z) - FRONT_ANGLE)
+    this.controls.update()
+    return { position }
+  }
+
+  async photoPassesNow({ width, height, guides }) {
     const renderer = this.renderer, camera = this.camera
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
     const { aspect, fov, near, far } = camera

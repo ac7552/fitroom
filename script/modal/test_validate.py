@@ -142,7 +142,7 @@ class ValidateTest(unittest.TestCase):
 
     def run_gates(self, result, **extra):
         return v.validate(self.masks["figure"], result, self.pictures["shop"], self.masks["top"], self.masks["shop_top"],
-                          extra.pop("print_mask", self.masks["print"]), cutout=extra.pop("cutout", v.fake_cutout), embed=extra.pop("embed", v.fake_embed))
+                          extra.pop("print_mask", self.masks["print"]), cutout=extra.pop("cutout", v.fake_cutout), embed=extra.pop("embed", v.fake_embed), **extra)
 
     def test_the_render_itself_passes_every_gate(self):
         checks = self.run_gates(self.pictures["render"])
@@ -162,6 +162,21 @@ class ValidateTest(unittest.TestCase):
         self.assertFalse(checks["shape"]["pass"])
         self.assertTrue(checks["identity"]["pass"])
         self.assertFalse(checks["ok"])
+
+    def test_with_the_render_the_identity_gate_is_relative(self):
+        # A flat shop photo and a worn garment never embed alike: with the render given, the bar is the
+        # render's own likeness less a little slack, never under the floor, and the render itself passes.
+        checks = self.run_gates(self.pictures["render"], render=self.pictures["render"])
+        self.assertTrue(checks["identity"]["pass"], checks["identity"])
+        self.assertEqual(checks["identity"]["baseline"], checks["identity"]["score"])
+        self.assertAlmostEqual(checks["identity"]["threshold"], max(v.IDENTITY_FLOOR, checks["identity"]["baseline"] - v.RELATIVE_SLACK), places=3)
+        # A result embedding far below the render's likeness fails, even though its colour is fine.
+        # The gate embeds the shop crop, then the result's, then the render's: the result alone is unlike.
+        calls = iter([np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), np.array([1.0, 0.0, 0.0])])
+        far = lambda picture: next(calls)
+        checks = v.validate(self.masks["figure"], self.pictures["render"], self.pictures["shop"], self.masks["top"], self.masks["shop_top"],
+                            None, cutout=v.fake_cutout, embed=far, render=self.pictures["render"])
+        self.assertFalse(checks["identity"]["pass"])
 
     def test_another_colour_fails_identity(self):
         blue = np.asarray(self.pictures["render"]).copy()
