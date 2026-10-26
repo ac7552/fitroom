@@ -63,6 +63,68 @@ class Api::StudioPhotosControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  CHECKS = {
+    "shape" => { "score" => 0.93, "threshold" => 0.85, "pass" => true },
+    "identity" => { "score" => 0.88, "colour" => 3.1, "threshold" => 0.8, "colour_threshold" => 12.0, "pass" => true },
+    "print" => { "skipped" => true, "score" => nil, "threshold" => 0.45, "pass" => true },
+    "ok" => true
+  }.freeze
+
+  def wait_for_exact(id)
+    50.times do
+      get api_v1_studio_photo_path(id), as: :json
+      return response.parsed_body if %w[done failed refused].include?(response.parsed_body["exact"])
+      sleep 0.02
+    end
+    flunk "the exact image never finished"
+  end
+
+  test "with Fitroom's own try-on, the checks ride along with the status, one entry per garment" do
+    StudioPhoto.try_on = ->(_png, _photo, kind) { TryOn::Result.new("exact:#{kind}".b, CHECKS.merge("kind" => kind)) }
+    photo = "data:image/jpeg;base64,#{Base64.strict_encode64('photo')}"
+    items = SNAPSHOT[:items].map { it.merge(photo:) }
+    post api_v1_studio_photos_path, params: SNAPSHOT.merge(exact: true, items:), as: :json
+    id = response.parsed_body["id"]
+
+    status = wait_for_exact(id)
+    assert_equal "done", status["exact"]
+    assert_equal %w[jacket trousers], status["exact_checks"].keys.sort
+    assert_equal 0.93, status["exact_checks"].dig("jacket", "shape", "score")
+
+    get image_api_v1_studio_photo_path(id, variant: "exact")
+    assert_equal "exact:trousers", response.body, "the trousers are painted onto the jacket's result"
+  end
+
+  test "when every garment is refused, there's no exact image, the checks say why, and the draped one stays" do
+    refused = CHECKS.merge("shape" => { "score" => 0.62, "threshold" => 0.85, "pass" => false }, "ok" => false)
+    StudioPhoto.try_on = ->(_png, _photo, _kind) { TryOn::Result.new(nil, refused) }
+    photo = "data:image/jpeg;base64,#{Base64.strict_encode64('photo')}"
+    post api_v1_studio_photos_path, params: SNAPSHOT.merge(exact: true, items: [ SNAPSHOT[:items].first.merge(photo:) ]), as: :json
+    id = response.parsed_body["id"]
+
+    status = wait_for_exact(id)
+    assert_equal "refused", status["exact"]
+    assert_equal false, status["exact_checks"].dig("jacket", "shape", "pass")
+
+    get image_api_v1_studio_photo_path(id, variant: "exact")
+    assert_response :not_found
+    get image_api_v1_studio_photo_path(id)
+    assert_equal PNG, response.body
+  end
+
+  test "one refused garment leaves that garment as rendered and paints the rest" do
+    StudioPhoto.try_on = lambda do |png, _photo, kind|
+      kind == "jacket" ? TryOn::Result.new(nil, CHECKS.merge("ok" => false)) : TryOn::Result.new("#{png}+#{kind}".b, CHECKS)
+    end
+    photo = "data:image/jpeg;base64,#{Base64.strict_encode64('photo')}"
+    post api_v1_studio_photos_path, params: SNAPSHOT.merge(exact: true, items: SNAPSHOT[:items].map { it.merge(photo:) }), as: :json
+    id = response.parsed_body["id"]
+
+    assert_equal "done", wait_for_exact(id)["exact"]
+    get image_api_v1_studio_photo_path(id, variant: "exact")
+    assert_equal "#{PNG}+trousers".b, response.body
+  end
+
   test "renders a snapshot, then hands the image over once" do
     post api_v1_studio_photos_path, params: SNAPSHOT, as: :json
     assert_response :accepted

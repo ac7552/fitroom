@@ -3,8 +3,10 @@ require "open3"
 # Photoreal renders of one outfit on one body, made by Blender on request (script/render/studio.py): the
 # clothes are draped by cloth simulation and path-traced, which the page's real-time view can only imitate.
 #
-# With the person's say-so and a FASHN key on the server, a second image follows: the shops' own photos of
-# the garments painted onto that render by AI try-on (see TryOn), so it shows the exact items.
+# With the person's say-so and a try-on service set up (see TryOn), a second image follows: the shops' own
+# photos of the garments painted onto that render by AI try-on, so it shows the exact items. Fitroom's own
+# service checks each painted garment (shape, identity, print) and refuses what fails; the checks travel
+# with the job's status as `exact_checks`, one entry per garment, so the page can show them.
 #
 # Renders run one at a time in a background thread. Everything about a render lives in this process's
 # memory and a temporary folder: the job file is deleted when Blender is done, the image when it's
@@ -63,7 +65,7 @@ class StudioPhoto
       return unless job
 
       ahead = @registry.synchronize { @jobs.count { |_, j| j[:status] == "queued" && j[:created_at] < job[:created_at] } }
-      { status: job[:status], ahead: (ahead if job[:status] == "queued"), exact: job[:exact] }.compact
+      { status: job[:status], ahead: (ahead if job[:status] == "queued"), exact: job[:exact], exact_checks: job[:exact_checks] }.compact
     end
 
     # A finished PNG ("draped", or "exact" for the try-on), once each. The job is gone once both are taken.
@@ -115,19 +117,34 @@ class StudioPhoto
       update(id, status: "failed")
     end
 
-    # The outer top (a coat over a jacket) first, then the trousers, each painted onto the last result.
+    # The outer top (a coat over a jacket) first, then the trousers, each painted onto the last result. A
+    # garment the service refuses (a check failed) is left as rendered; when every one is refused there's
+    # no exact image, only the checks that say why. `try_on` may answer PNG bytes (FASHN's API, the tests)
+    # or a TryOn::Result.
     def dress_exactly(id, dir, image, photos)
       picture = File.binread(image)
+      checks = {}
+      painted = false
       %w[coat jacket trousers].each do |kind|
         next unless photos[kind]
         next if kind == "jacket" && photos["coat"]
 
-        picture = try_on.call(picture, photos[kind], kind)
+        answer = try_on.call(picture, photos[kind], kind)
+        answer = TryOn::Result.new(answer, nil) if answer.is_a?(String)
+        checks[kind] = answer.checks if answer.checks
+        next unless answer.ok?
+
+        picture = answer.image
+        painted = true
+      end
+      unless painted
+        update(id, status: "done", exact: "refused", exact_checks: checks.presence)
+        return
       end
       exact = File.join(dir, "exact.png")
       File.binwrite(exact, picture)
       @registry.synchronize { @jobs[id]&.then { it[:images]["exact"] = exact } }
-      update(id, status: "done", exact: "done")
+      update(id, status: "done", exact: "done", exact_checks: checks.presence)
     rescue StandardError => e
       Rails.logger.error("[studio photo] try-on #{e.class}")
       update(id, status: "done", exact: "failed")

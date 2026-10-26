@@ -90,9 +90,23 @@ Like the chart fits below, but with the sizes in the request, such as an importe
 ```
 
 Add `"exact": true` and an item `photo` (a PNG, JPEG or WebP `data:` URL under 3 MB) to also get the exact
-items painted on by AI try-on, when the server has a `FASHN_API_KEY`; the response says whether it will
-(`exact`) and gives `exact_image_url`. Status then also reports `"exact": "pending" | "done" | "failed"`,
-and `"styling"` while the try-on runs (the draped image can already be fetched then).
+items painted on by AI try-on, when the server has a try-on service (`FITROOM_TRYON_URL/_KEY/_SECRET`, or a
+`FASHN_API_KEY`); the response says whether it will (`exact`) and gives `exact_image_url`. Status then also
+reports `"exact": "pending" | "done" | "refused" | "failed"`, and `"styling"` while the try-on runs (the
+draped image can already be fetched then). With Fitroom's own service, status carries its checks too, one
+entry per garment kind:
+
+```json
+{ "status": "done", "exact": "refused",
+  "exact_checks": { "jacket": {
+    "shape":    { "score": 0.71, "threshold": 0.85, "pass": false },
+    "identity": { "score": 0.86, "colour": 4.2, "threshold": 0.8, "colour_threshold": 12.0, "pass": true },
+    "print":    { "skipped": true, "score": null, "threshold": 0.45, "pass": true },
+    "ok": false } } }
+```
+
+`"refused"` means the service painted it but a check failed, so there's no exact image: the page keeps the
+draped one and shows the checks. `"failed"` means the service couldn't be reached or crashed.
 
 `body` keys are shape keys from `public/models/mannequin.json` (`targets`), weights 0–2; `ease` keys are
 from its `ease_check`, in cm (−30 to 30); a jacket's `style` is one of the import's styles (default
