@@ -235,7 +235,14 @@ let final = null
 say("\n6/6  Output")
 fs.rmSync(outDir, { recursive: true, force: true })
 fs.mkdirSync(outDir, { recursive: true })
-const fetched = kaggle(["kernels", "output", versionId, "-p", outDir, "-o", "-q"])
+// Kaggle's file server answers 502 now and then right after a run: try a few times, a little apart.
+let fetched = null
+for (let attempt = 1; attempt <= 5; attempt++) {
+  fetched = kaggle(["kernels", "output", versionId, "-p", outDir, "-o", "-q"])
+  if (fetched.status === 0 && !/50\d Server Error/.test(fetched.text)) break
+  say(`  (kaggle kernels output, try ${attempt}: ${fetched.text.trim().split("\n")[0]})`)
+  if (attempt < 5) await sleep(20000)
+}
 if (fetched.status !== 0) say(`  (kaggle kernels output: ${fetched.text.trim().split("\n")[0]})`)
 // Should the kernel have written into a subfolder, bring the files up beside the log.
 for (const sub of ["out", "working"]) {
