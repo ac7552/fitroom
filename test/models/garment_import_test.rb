@@ -324,6 +324,39 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_nil import.from_shopify("https://shop.example/products/other-tee", given:), "details for another product are ignored"
   end
 
+  test "a shrunken sweater hoodie with a two-way zip is a fitted knit top, not a zip jacket" do
+    # Kith's "Adley Shrunken Multi Sweater Hoodie" (women's), as the browser reads it: a cotton-viscose knit
+    # in the women's hoodies collection. Its "two-way zipper" used to make it outerwear, like a down hoodie.
+    cell = ->(value) { { "type" => "single", "value" => value } }
+    sizing = { "sizings" => [ { "tables" => { "a" => { "data" => [
+      [ "Size", "Chest", "Shoulders", "Sleeve Length", "Body Length" ], [ "XS", "30", "14", "25.125", "19.25" ], [ "S", "32", "14.5", "25.5", "20" ],
+      [ "M", "34", "15", "25.875", "20.75" ], [ "L", "36", "15.5", "26.25", "21.5" ], [ "XL", "39", "16.25", "26.75", "22.25" ]
+    ].map { it.map(&cell) } } } } ] }
+    given = { "shop" => "kithnyc.myshopify.com", "sizing" => sizing, "product" => {
+      "id" => 9, "handle" => "khwsw0106-265", "title" => "Kith Women Adley Shrunken Multi Sweater Hoodie - Legacy", "vendor" => "Kith Women",
+      "product_type" => "Hoodies", "tags" => "hoodies, sweaters, Tops, wmns",
+      "body_html" => "<p>Cotton blend with a fixed hood, a Kith-branded two-way zipper on the front, Kith embroidery at the chest, and ribbed sleeve cuffs, sides, and hem.</p><p>Material: 60% Cotton / 40% Viscose</p>",
+      "images" => [ { "src" => "//cdn.shopify.com/adley.jpg" } ], "options" => [ { "name" => "Size", "values" => %w[XS S M L XL] } ] } }
+    import = GarmentImport.new(fetch_json: ->(_) { raise "the browser's answers are used" })
+    garment = import.from_shopify("https://kith.com/collections/womens-apparel-hoodies/products/khwsw0106-265", given:)
+
+    assert_equal [ "top", "hoodie", "knit", true, true ], garment.values_at(:garment, :style, :fabric, :zip, :women)
+    assert_equal({ fit: "fitted", stretch: true }, garment[:cut])
+    assert_nil garment[:cropped]
+    assert_equal "garment", garment[:chart][:kind]
+    assert_in_delta 34 * 2.54, garment[:chart][:sizes].find { it["name"] == "M" }["chest"], 0.01
+    # The same hoodie, insulated, is still a jacket; so is a knit zip-up with no hood (see kind_of).
+    down = given.merge("product" => given["product"].merge("title" => "Lodge Hoodie - Black", "body_html" => "<p>Nylon, downproof. Two-way zipper closure.</p>"))
+    assert_equal [ "jacket", "zip" ], import.from_shopify("https://kith.com/products/khwsw0106-265", given: down).values_at(:garment, :style)
+    # A plain fleece hoodie isn't fitted ("ribbed fitted cuffs" don't count), and its fleece isn't a knit.
+    fleece = given.merge("product" => given["product"].merge("title" => "Kith Williams III Hoodie - Black", "body_html" => "<p>Cotton fleece. Kangaroo pocket. Ribbed fitted cuffs and hem.</p>"))
+    plain = import.from_shopify("https://kith.com/products/khwsw0106-265", given: fleece)
+    assert_equal [ "top", "hoodie", "cotton", nil ], plain.values_at(:garment, :style, :fabric, :cut)
+    # A sweater is a knit whatever its fibre; a slim-fit woven shirt is fitted but doesn't stretch.
+    assert_equal "knit", import.send(:fabric_of, { name: "Merino Crewneck Sweater", fabric: "100% Merino Wool" }, "top")
+    assert_equal({ fit: "fitted", stretch: false }, import.send(:top_cut, { name: "Slim Fit Oxford Shirt", description: "Cotton poplin." }))
+  end
+
   test "a site that turns away every app says so at once, without asking it" do
     error = assert_raises(GarmentImport::Error) { GarmentImport.from_url("https://www.therealreal.com/products/men/clothing/shirts/a-shirt-x1") }
     assert_match(/therealreal\.com doesn't let apps read its pages.*just its size/, error.message)

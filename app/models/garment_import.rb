@@ -54,8 +54,15 @@ class GarmentImport
   # Worn over tailoring and cut long; fitted with more room and no "right" length.
   COATS = /overcoat|topcoat|top coat|car coat|trench|peacoat|pea coat|parka|duffle|\bcoat\b/i
   NOT_COATS = /sport ?coat|suit|blazer|tuxedo/i
-  # A "hoodie" that's insulated or zips up with a hood is outerwear (Canada Goose calls jackets hoodies).
-  HOODED_OUTERWEAR = /\bdown\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell|zip(?:per)? closure|two-way zip/i
+  # A "hoodie" that's insulated is outerwear (Canada Goose calls jackets hoodies), and so is one that zips up
+  # with a hood, unless it's knitwear (a sweater hoodie with a zip is a knit top, worn as a hoodie is).
+  INSULATED = /\bdown\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell/i
+  HOODED_OUTERWEAR = Regexp.union(INSULATED, /zip(?:per)? closure|two-way zip/i)
+  # Knitwear: a sweater, a cardigan, anything knitted. Drawn as a knit (ribbed, matte) whatever its fibre.
+  KNITWEAR = /sweater|jumper|cardigan|\bknit(?:ted|wear)?\b|crochet|cable[- ]knit|rib[- ]?knit|merino|cashmere/i
+  # A top made to sit close: a shrunken or baby fit, a fitted or slim cut. (Not "fitted cuffs" or a
+  # "fitted hem", which most sweatshirts have.)
+  FITTED_TOP = /shrunken|\bbaby (?:tee|t-?shirt|rib|fit)|\bslim\b|\bfitted\b(?!\s*(?:cuffs?|hems?|waist(?:band)?|sleeves?|neck))|body[- ]?con|second[- ]skin|form[- ]fitting|skin[- ]?tight/i
   # Kiwi Sizing's chart API, which many Shopify shops load their size charts from (see Page#kiwi_sizing).
   KIWI_SIZING = "https://app.kiwisizing.com/api/getSizingChart"
 
@@ -138,7 +145,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 25
+  FORMAT = 26
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -749,7 +756,10 @@ class GarmentImport
     # Pants named for their cloth ("Suiting Trouser") are pants, not a suit's jacket.
     return "trousers" if product[:name].to_s.match?(/\b(?:trousers?|pants?|jeans?|shorts?(?![- ]?sleeve)|skirts?)\s*(?:[-–].*)?\z/i) || product[:category].to_s.match?(TROUSERS)
     return "jacket" if words.match?(JACKETS)
-    return "jacket" if words.match?(/hoodie|hooded/i) && product[:description].to_s.match?(HOODED_OUTERWEAR)
+    if words.match?(/hoodie|hooded/i) && product[:description].to_s.match?(HOODED_OUTERWEAR)
+      # A knit hoodie that zips is still a knit top; an insulated one is a jacket whatever it's made of.
+      return "jacket" if product[:description].to_s.match?(INSULATED) || !knitwear?(product)
+    end
     return "trousers" if words.match?(TROUSERS)
     return "top" if words.match?(TOPS)
     # A shop's page that names nothing else is most often a jacket (a "Hudson"); a Shopify listing says what it is.
@@ -810,6 +820,8 @@ class GarmentImport
       chart = chart.with(missing: chart.missing - DressCut.not_needed(cut))
       return dress_garment(product, chart, cut, source_url)
     end
+    # A top's cut, when its listing says it sits close (see top_cut).
+    fit_cut = kind == "top" ? top_cut(product) : nil
     {
       name: product[:name].presence || "Jacket",
       brand: product[:brand],
@@ -824,11 +836,25 @@ class GarmentImport
       **(product[:women] ? { women: true } : {}),
       **(kind == "top" && product.values_at(:name, :description).join(" ").match?(/crop(?:ped)?\b/i) ? { cropped: true } : {}),
       **(kind == "top" && chart.kind == "sizes" && baby_tee?(product) ? { snug: true } : {}),
-      **(skirt_cut ? { cut: skirt_cut } : {}),
+      **(skirt_cut ? { cut: skirt_cut } : fit_cut ? { cut: fit_cut } : {}),
       **(kind == "top" && product[:shape] && sleeves_sewn(product[:shape]) == :low ? { dropped: true } : {}),
       **(style == "hoodie" && zipped?(product) ? { zip: true } : {}),
       chart: chart.as_json
     }
+  end
+
+  # Whether a listing is knitwear (a sweater, a cardigan, a knit hoodie), by its name, category and description.
+  def knitwear?(product) = product.values_at(:name, :category, :description).join(" ").match?(KNITWEAR)
+
+  # How a top is cut, when its listing says it sits close: { fit: "fitted", stretch: true/false }. stretch: the
+  # cloth gives (a knit, a rib, elastane), so the top is made about the size of the body, or smaller, and
+  # stretches on; the fit engine then allows it no room (see Fit#check_top), and the 3D view cuts it close.
+  # Nil for a top that says nothing about its fit (the usual).
+  def top_cut(product)
+    words = product.values_at(:name, :description).join(" ")
+    return unless words.match?(FITTED_TOP)
+
+    { fit: "fitted", stretch: knitwear?(product) || words.match?(DressCut::STRETCH) }
   end
 
   # A hoodie that zips all the way down the front (drawn with a zip; a half-zip pullover isn't).
@@ -857,6 +883,9 @@ class GarmentImport
     fabric = FABRICS.find { |_, pattern| found.to_s.match?(pattern) }&.first || (kind == "top" ? "cotton" : "wool")
     # Denim is a cotton cloth: a "Denim Jacket" made of "100% Cotton" is denim.
     return "denim" if fabric == "cotton" && [ name, product[:category] ].join(" ").match?(FABRICS.to_h.fetch("denim"))
+    # Knitwear is a knit whatever it's spun from (a cotton sweater hoodie, a wool cardigan): ribbed and matte,
+    # never a woven cloth or a shell. Silk and leather keep their look.
+    return "knit" if kind != "trousers" && knitwear?(product) && !%w[silk leather].include?(fabric)
 
     fabric
   end
