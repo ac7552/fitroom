@@ -356,6 +356,15 @@ a { color: inherit; }
 .photo-pick--big { justify-content: center; min-height: 64px; font-size: 16px; font-weight: 600; }
 .more-way-title--or { margin: 26px 0 4px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
 
+/* Measuring from two photos of the person (step 2) */
+.photo-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.photo-pair .photo-pick { justify-content: center; min-height: 56px; text-align: center; font-weight: 600; font-size: 15px; }
+.photo-status { margin: 10px 0 0; color: var(--muted); }
+.photo-status:empty { display: none; }
+.photo-result { margin-top: 10px; padding: 10px 12px; border-left: 2px solid var(--ink); color: var(--ink); }
+.field-help-from { font: 500 10px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+@media (max-width: 480px) { .photo-pair { grid-template-columns: 1fr; } }
+
 .own-sizes { display: grid; gap: 8px; margin-top: 12px; }
 .own-size { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .own-size label { display: grid; gap: 4px; font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }

@@ -16,7 +16,7 @@ _Updated 23 Oct 2026: section 3 checks, Phase 2 leftovers and Phase 4 are done (
 - **Commits.** Author `ac7552 <aaron.campbell2590@gmail.com>` (the email the history already uses; the owner chose it). Never commit secrets (`config/master.key` and `.env*` are already in `.gitignore`). Keep a real commit history. The README follows the style of `github.com/ac7552/localpilot`, with a GIF demo in `docs/images/demo.gif`.
 - **Tests must pass:**
   - `bin/rails test` (Ruby: models, import and fit). Needs Ruby 3.4 (the code uses `it`).
-  - `node --test test/javascript/*.test.mjs` (JS: patterns, prints, body fit; 31 pass)
+  - `node --test test/javascript/*.test.mjs` (JS: patterns, prints, body fit, photo measuring; 54 pass)
 
 ---
 
@@ -27,6 +27,7 @@ _Updated 23 Oct 2026: section 3 checks, Phase 2 leftovers and Phase 4 are done (
 | Import a link | `app/models/garment_import.rb`, `garment_import/page.rb`, `chart_reader.rb`, `dress_cut.rb`, `fetcher.rb` | Works out what the item is (top, jacket, coat, trousers, dress; plus style) and its size chart. Shopify shops are read as JSON, mostly by the user's browser (`shop_data`) because Kith throttles servers. Kiwi Sizing charts come from Kiwi's API. With no chart, it uses the sizes the page lists (`Page#size_names`) plus usual measurements, marked as guessed. Bump `FORMAT` when the shape of an import changes. |
 | Fit verdicts | `app/models/fit.rb`, `app/controllers/api/v1/fits_controller.rb` | Compares body and garment measurements per part and size. Joggers' elastic waist stretches (`ELASTIC_WAIST_EASE`) and can't be let out. |
 | Page | `app/views/pages/home.html.erb`, `app/javascript/controllers/fitting_room_controller.js`, `app/assets/stylesheets/application.css` | Step 1 pick clothes, 2 measure yourself, 3 see it on (3D view, switches, size rows). The "Not tucked / Tucked in" switch shows when `stage.canTuck()`. |
+| Measure from photos | `app/javascript/lib/measure_photo.js` | Step 2's "Or use two photos": a front and a side photo plus the typed height become the other six numbers, in the tab. MediaPipe Pose Landmarker (`@mediapipe/tasks-vision@1.1.1`, loaded from jsDelivr by a dynamic `import()` only on click, GPU then CPU) gives 33 points and a person mask per photo; `landmarksToMeasurements()` is pure maths (scale from nose-to-heel vs height, ellipse girths from front width × side depth) with tests on synthetic bodies. Photos are never uploaded. |
 | 3D stage | `app/javascript/lib/stage.js` | Three.js scene, mannequin, poses, skin tones. Draped **layers** and what each is sewn over: normally pants → top → casual jacket (`OVER`); tucked, the top and the pants each on the body, the jacket over both (`TUCKED_OVER`). Suit jackets and coats are still drawn from the model's meshes and hide the top (`hiddenTop`). |
 | Patterns | `lib/garments/pattern.js` (tops, dresses), `lib/garments/pants.js` (pants, jeans, joggers, leggings, shorts, skirts) | Flat pattern pieces in cm from one size's chart. A jogger's chart inseam includes its cuff. |
 | Cloth | `cloth.js`, `place.js`, `drape.js` (XPBD), `dress.js` (`DrapedTop`, `waistband`, `TUCKABLE`), `body.js` (frame, foot outlines with `lowest()`), `fabric.js` (looks; `matte` for nylon pants), `print.js` | |
