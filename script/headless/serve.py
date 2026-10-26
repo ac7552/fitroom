@@ -1,6 +1,7 @@
 """Serves the repo for the headless 3D harness (render.mjs), with the page's import-map paths:
 /lib/* -> app/javascript/lib/*, /vendor/* -> vendor/javascript/*, /models/* -> public/models/*,
-/samples/* -> public/samples/*, /harness/* -> script/headless/*, and /fixtures/* -> test/fixtures/files/*.
+/samples/* -> public/samples/*, /harness/* -> script/headless/*, /fixtures/* -> test/fixtures/files/*, and
+/kith/* -> tmp/kith/* (real shop photos kept out of the repo, for kith.mjs).
 
     python3 script/headless/serve.py 8787
 """
@@ -18,6 +19,7 @@ MAP = {
     "/samples/": ROOT / "public/samples",
     "/harness/": ROOT / "script/headless",
     "/fixtures/": ROOT / "test/fixtures/files",
+    "/kith/": ROOT / "tmp/kith",
 }
 
 
