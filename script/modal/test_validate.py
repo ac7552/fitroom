@@ -169,7 +169,7 @@ class ValidateTest(unittest.TestCase):
         checks = self.run_gates(self.pictures["render"], render=self.pictures["render"])
         self.assertTrue(checks["identity"]["pass"], checks["identity"])
         self.assertEqual(checks["identity"]["baseline"], checks["identity"]["score"])
-        self.assertAlmostEqual(checks["identity"]["threshold"], max(v.IDENTITY_FLOOR, checks["identity"]["baseline"] - v.RELATIVE_SLACK), places=3)
+        self.assertAlmostEqual(checks["identity"]["threshold"], max(v.IDENTITY_FLOOR, min(v.IDENTITY_CAP, checks["identity"]["baseline"] - v.RELATIVE_SLACK)), places=3)
         # A result embedding far below the render's likeness fails, even though its colour is fine.
         # The gate embeds the shop crop, then the result's, then the render's: the result alone is unlike.
         calls = iter([np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]), np.array([1.0, 0.0, 0.0])])

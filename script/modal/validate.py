@@ -34,6 +34,9 @@ THRESHOLDS = {"shape": 0.85, "identity": 0.80, "colour": 12.0, "print": 0.45}
 # the shop photo as Fitroom's own render did, less a little slack, and never less than a floor.
 RELATIVE_SLACK = 0.05
 IDENTITY_FLOOR = 0.35
+# ... and never above this: when the page's own render already matches the shop photo closely (a mapped print),
+# baseline - slack would ask the AI to beat it, and a good picture is refused on the AI's run-to-run variation.
+IDENTITY_CAP = 0.55
 PAD = 0.05  # how much the garment's box is padded for the crops
 
 DINO = "facebook/dinov2-small"   # Apache-2.0
@@ -326,7 +329,7 @@ def validate(render_mask, result, shop_photo, garment_mask_in_result, shop_garme
         threshold, baseline = thresholds["identity"], None
         if render is not None:
             baseline = cosine(shop_vector, embed(crop(render.convert("RGB"), result_box)))
-            threshold = max(IDENTITY_FLOOR, baseline - RELATIVE_SLACK)
+            threshold = max(IDENTITY_FLOOR, min(IDENTITY_CAP, baseline - RELATIVE_SLACK))
         identity = {
             "score": round(likeness, 3),
             "colour": None if math.isinf(distance) else round(distance, 1),
