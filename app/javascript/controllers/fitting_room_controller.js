@@ -60,7 +60,7 @@ export default class extends Controller {
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
-    "loading", "loadingLabel", "loadingBar", "scene", "stage", "aiButton", "stageToast",
+    "loading", "loadingLabel", "loadingBar", "scene", "stage", "aiButton", "stageToast", "seeIn3d",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
     "bodyPhotoFront", "bodyPhotoSide", "bodyPhotoFrontLabel", "bodyPhotoSideLabel", "bodyPhotoButton", "bodyPhotoStatus", "bodyPhotoResult"
   ]
@@ -962,6 +962,11 @@ export default class extends Controller {
         this.studioSwitchTarget.querySelector('input[value="exact"]').checked = true
         this.offerCompare()
         this.showStudioImage("exact")
+        // The AI's picture goes onto the 3D clothes too, from the camera that took the photo, so the figure can
+        // be turned with it on (see seeIn3D and FittingStage#wearPhoto). The stage takes it off when the outfit,
+        // a size, the body or the pose changes.
+        this.stage.wearPhoto?.(painted)
+        if (this.hasSeeIn3dTarget) this.seeIn3dTarget.hidden = false
         // The picture opens over the 3D view, where the person is looking: the veil fades as the panel fades in.
         this.openStudio()
         this.hideVeil()
@@ -981,6 +986,16 @@ export default class extends Controller {
       if (this.hasAiButtonTarget) this.aiButtonTarget.disabled = false
       if (this.studioTarget.hidden) this.uncoverStage()
     }
+  }
+
+  // "See it in 3D": the panel closes and the AI's picture stays on the turning figure (on the front, from the
+  // camera that took it; the page's own cloth round the back), with a note saying so until it comes off.
+  seeIn3D() {
+    this.keepWorn = true
+    try { this.closeStudio() } finally { this.keepWorn = false }
+    if (!this.stage.worn || !this.hasStageNoteTarget) return
+    this.stage.onWearPhoto = on => { if (!on) this.renderStageNote() }
+    this.stageNoteTarget.textContent = "AI picture on the front. Turn it round to see our fit."
   }
 
   // The veil over the 3D view while the AI paints: the stage's loader, as a blurred, tinted cover with the
@@ -1261,6 +1276,9 @@ export default class extends Controller {
     this.studioImages = {}
     this.studioChecks = null
     this.uncoverStage()
+    // The AI's picture on the 3D clothes stays only when the person asked to see it there (seeIn3D).
+    if (!this.keepWorn) this.stage?.wearPhoto?.(null)
+    if (this.hasSeeIn3dTarget) this.seeIn3dTarget.hidden = true
     if (!this.hasStudioTarget) return
     this.studioTarget.hidden = true
     this.studioTarget.classList.remove("is-shown")
