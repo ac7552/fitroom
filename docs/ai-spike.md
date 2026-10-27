@@ -17,6 +17,7 @@ Files:
 | `script/colab/fitroom_tryon_spike.ipynb` | The same engine in a Google Colab notebook on a free T4, see "Running on Google Colab". |
 | `script/spike/inputs.mjs` | On the Mac, against the running app: store links in, `tmp/spike/spike.zip` of the sheet's inputs out, see "Making the inputs". Its pure parts (`script/spike/lib.mjs`): `node --test test/javascript/spike_inputs.test.mjs`. |
 | `script/spike/run.mjs`, `script/spike/kaggle/` | The one command: the inputs, then the whole sheet on a free Kaggle GPU and the results back in `tmp/spike/out/`, see "One command, free, on Kaggle". `kaggle/spike.py` is the kernel (the notebook's cells as one script), `kernel-metadata.json` its settings. Pure parts in `lib.mjs`: `node --test test/javascript/spike_run.test.mjs`. |
+| `script/spike/mac/` | FASHN on this Mac's own GPU at fewer steps and lower precision, timed, gated and compared with full quality on one sheet, see "On the Mac: steps x precision". `setup.sh` once, then `run.py`; the torch side is `precision.py`, the pure parts `plan.py`: `python3 -m unittest script/spike/mac/test_plan.py`. |
 | `script/modal/validate.py` | The three gates (shape, identity, print). Runs on a CPU; `python3 -m unittest script/modal/test_validate.py`. |
 | `script/modal/tryon_prep.py` | Pose conversion, letterboxing, the sheet. `python3 -m unittest script/modal/test_tryon_prep.py`. |
 | `app/models/try_on.rb` | Talks to the service (or, as a fallback, FASHN's API). `test/models/try_on_test.rb`. |
@@ -123,6 +124,71 @@ the gates, `wall_seconds` end to end).
 
 To run FASHN without its human parser (see the licence table): `FASHN_PARSER=off modal run ...` at build time.
 This bakes into the image; rebuild to change it.
+
+### On the Mac: steps x precision
+
+Whether the try-on can run on the Mac itself (free, nothing leaves the device) comes down to time. FASHN VTON
+1.5 is a 1B-parameter pixel-space transformer: 30 steps, each a forward pass on two copies of the picture (with
+and without the garment, for guidance). The engine runs it in fp32 on Apple's GPU. This spike times it at fewer
+steps and at lower precision, and checks what that costs in looks:
+
+```sh
+script/spike/mac/setup.sh                                  # once: tmp/venv-mac, FASHN at the pinned commit, ~3 GB of weights
+tmp/venv-mac/bin/python script/spike/mac/run.py --smoke    # every precision at 2 steps on one item: does it all work?
+tmp/venv-mac/bin/python script/spike/mac/run.py --quick    # one item: fp32 30 and 20, fp16 20, hybrid 20 and 12
+tmp/venv-mac/bin/python script/spike/mac/run.py            # both items, the whole grid (below)
+tmp/venv-mac/bin/python script/spike/mac/run.py --minute   # both items: what fits in a minute (below)
+tmp/venv-mac/bin/python script/spike/mac/run.py --configs fp16:16,fp32:8:g3   # anything else, as precision:steps[:gN]
+```
+
+**Within a minute.** Each step runs the model twice, once with the garment and once without, and pushes the
+picture away from the second (classifier-free guidance, scale 1.5). FASHN drops the second pass on the last
+step only, and even then computes it. `:gN` keeps guidance on the first N steps, where the picture's shape is
+settled, and makes the rest one pass each: half the work. `--minute` runs the reference and six such runs on
+both items (fp32 12 steps with 4 guided, 10/3, 8/3, 8/0, 6/2, and fp16 8/3), and `summary.md` ends with the
+run that fits in `--target` seconds (60) at its slowest item and looks most like full quality. On the owner's
+M2 Pro (19 GPU cores, macOS 27) the smoke run measured ~12 s for a guided step at fp32 with the warm-up
+included; a one-pass step should be about half.
+
+The inputs are the spike's own (`tmp/spike`, from `inputs.mjs`); the results go to `tmp/spike/mac/<time>/`:
+`sheet.png` (store photo, render, then a column per run), `summary.md`, `results.json` (the Mac's chip and
+memory, every run's numbers) and each picture. The whole grid is 9 runs on each item:
+
+| Precision | Steps | What it is |
+|---|---|---|
+| `fp32` | 30, 20 | Today's Mac path. fp32 at 30 is the reference every other run is compared with. |
+| `fp16` | 30, 20, 12 | Everything in 16-bit, as the Kaggle T4 ran it (and passed). Half the memory traffic. |
+| `bf16` | 20 | FASHN's own choice on newer NVIDIA cards. Needs a recent macOS; skipped, with the reason, where it isn't. |
+| `hybrid` | 30, 20, 12 | fp16 weights and maths, with fp32 where fp16 loses most: the picture the sampler carries between steps, the time embedding (in fp16, 1000·t rounds to half steps), the layer norms and the last layer; and each block's output held inside fp16's range so an overflow can't turn the picture black. |
+
+Each run is timed on the GPU alone (`sample_seconds`, the number the summary ranks by) and as the whole call
+(`wall_seconds`, with DWPose on the CPU); each precision gets a short untimed run after loading, as Apple's GPU
+compiles its kernels on first use. Then, off the clock, every picture goes through the validator's three
+gates and is compared with the reference picture of the same item over the figure: DINOv2 cosine (does it look
+like the same thing) and SSIM (are the details where they were). `summary.md` ends with a pick: the fastest run
+that came out on every item, passed the gates and looks the same (DINOv2 at least 0.90, a starting point like
+the gates' thresholds). The sheet is the judge: look at the knit's stripes, the zip and the print.
+
+What differs from Kaggle and Modal, on purpose:
+
+- Every run starts from the same noise (drawn on the CPU from the seed), so the pictures line up across
+  precisions; they won't match Kaggle's pixel for pixel.
+- Apple's GPU has no float64, which FASHN's positional embedding uses (`tryon_mmdit.rope`): it's computed on the
+  CPU and moved over. Without this FASHN would stop at its first step on a Mac.
+- Attention runs 1024 queries at a time on Apple's GPU (`--attention-chunk`; 0 for all at once). Over the
+  blocks' 6912 tokens, all at once is a 3.8 GB score matrix in fp32, and on a 16 GB Mac the first smoke run sat
+  in one attention call for minutes. Each query's softmax is its own, so the numbers are the same.
+- `PYTORCH_ENABLE_MPS_FALLBACK=1`: an operation the GPU lacks runs on the CPU instead of failing. Any that did
+  are listed in `results.json` (`cpu_fallbacks`), as they slow a run down.
+- The gates' models run on the CPU (`--checker-device mps` to move them), so they never share the GPU with a
+  timed run.
+
+PyTorch 2.9 and later use Apple's GPU only on macOS 14 or newer; on macOS 13 they run on the CPU without a
+word, where fp16 is emulated (the owner's M2 Pro took 49 s for a 2-step fp32 picture and 14 minutes for the
+fp16 one). `setup.sh` installs PyTorch 2.8 on macOS 13, and `run.py` stops rather than time the CPU.
+
+Keep the Mac plugged in and leave it alone while it runs: a laptop slows down as it warms, and the runs are one
+after another (fp32 first).
 
 ### The sheet folder
 
@@ -320,18 +386,34 @@ bad pictures land.
 
 ## The service
 
-`modal deploy script/modal/tryon_spike.py` publishes the `tryon` endpoint. In Modal's dashboard, Settings >
-Proxy Auth Tokens, make a token and put the endpoint's URL and the token's key and secret in `.env` as
-`FITROOM_TRYON_URL`, `FITROOM_TRYON_KEY`, `FITROOM_TRYON_SECRET`. Requests without the token are turned away
-before any GPU starts. `TRYON_MODELS=fashn` (an env on the app) loads one model instead of both.
+The app's service is `script/modal/tryon_service.py`, not the spike's: FASHN only, its research-only parser
+off, at most `TRYON_MAX_GPUS` GPUs at once (default 2, so the bill can't run away) and back to sleep
+`TRYON_IDLE_SECONDS` after its last picture (default 60). Once, with a Modal account and a card on file:
 
-`POST` `{ person, garment: base64 PNG/JPEG, category: "tops"|"bottoms", mask?, outline?, print?: base64 PNG,
-pose?: the JSON above, model?: "fashn"|"leffa", seed? }` → `{ ok, image?: base64 PNG, checks: { shape,
-identity, print, ok }, seconds }`. With `ok` false there is no image; the checks say why. The service keeps
-nothing: pictures are decoded in memory and the reply is the only output. It prints nothing about a request.
+```sh
+tmp/venv-mac/bin/pip install modal          # any Python with numpy and Pillow will do
+tmp/venv-mac/bin/modal setup                # signs in, in the browser
+tmp/venv-mac/bin/modal deploy script/modal/tryon_service.py   # builds the image the first time (~15 min)
+```
 
-The server (`TryOn.call`) sends `{ person, garment, category, mask? }`, and a refused picture leaves the
-draped render in place; the checks travel with the job's status as `exact_checks` (see `docs/api.md`).
+The deploy prints the `tryon` endpoint's URL. In Modal's dashboard, Settings > Proxy Auth Tokens, make a token;
+put the URL, the token's key and its secret in `.env` as `FITROOM_TRYON_URL`, `FITROOM_TRYON_KEY`,
+`FITROOM_TRYON_SECRET`, and restart the app: the **Real clothes (AI)** button appears. Requests without the
+token are turned away before any GPU starts.
+
+`POST` `{ person, garment: base64 PNG/JPEG, category: "tops"|"bottoms", steps?, mask?, outline?, print?:
+base64 PNG, pose?, seed? }` → `{ ok, image?: base64 PNG, checks: { shape, identity, print, ok }, seconds }`.
+With `ok` false there is no image; the checks say why. `{ warm: true }` → `{ ok, warm }` once a GPU is up,
+painting nothing. The service keeps nothing: pictures are decoded in memory and the reply is the only output.
+
+The page (`aiPicture` in `fitting_room_controller.js`) takes its own photo from the front with the figure's
+outline and sends them, with each garment's shop photo, to `POST /api/v1/try_ons`. The server (`TryOn.dress`)
+paints the outermost top, then the pants onto that, at `FITROOM_TRYON_STEPS` steps each (default 20), and
+answers with the picture and each garment's checks; a refused garment stays as the page drew it. Adding
+clothes with a shop photo sends `POST /api/v1/try_ons/warm`, which wakes a GPU at most every 45 s, so it's
+up (a cold start is about a minute) by the time the button is pressed.
+
+The spike's `tryon_spike.py` stays for comparing models: it carries Leffa too, and `modal run` writes sheets.
 
 ## Licences
 
@@ -350,9 +432,10 @@ draped render in place; the checks travel with the job's status as `exact_checks
 
 ## Free compute
 
-- **Modal**: a monthly free credit on the starter plan (about $30 at the time of writing; check the current
-  figure). An L4 is roughly $0.80 an hour, and the containers scale to zero after 3 minutes idle, so a few
-  hundred pictures a month fit in the credit.
+- **Modal**: the Starter plan is $0 a month with $30 of usage included (October 2026; check the current
+  figure). An L4 is $0.000222 a second (about $0.80 an hour), and the app's service sleeps after a minute idle:
+  a picture at 20 steps is roughly 15 s of GPU, plus about a minute to wake and a minute idle per visit, so
+  on the order of 2,000 pictures a month fit in the credit (an estimate until a month's bill says).
 - **Hugging Face ZeroGPU**: free accounts get a few GPU minutes a day (about 5); PRO more. Enough for a demo
   Space, not for the server to call.
 - **Local ComfyUI** with the `ComfyUI-FASHN-VTON` node: $0, and nothing leaves the device, which also makes

@@ -6,7 +6,7 @@ require "net/http"
 #
 # Two ways to do it, Fitroom's own first:
 #
-# - Fitroom's own try-on service (script/modal/tryon_spike.py on Modal), when FITROOM_TRYON_URL, _KEY and
+# - Fitroom's own try-on service (script/modal/tryon_service.py on Modal), when FITROOM_TRYON_URL, _KEY and
 #   _SECRET are set. It runs an open-source model and then three checks: the figure's outline is the
 #   render's (shape), the garment looks like the shop's (identity: likeness and colour) and its print
 #   survived (print). When a check fails the service says so, `call` gives back no picture, and the page
@@ -19,6 +19,7 @@ require "net/http"
 # measurements, nothing about the person. Pictures pass through in memory; nothing is written or logged.
 class TryOn
   class Error < StandardError; end
+  class Invalid < StandardError; end
 
   # What `call` gives back: the PNG bytes (nil when the service refused the picture) and the service's
   # checks ({shape, identity, print, ok}, nil from FASHN's hosted API).
@@ -27,8 +28,18 @@ class TryOn
   end
 
   BASE = "https://api.fashn.ai/v1"
-  CATEGORIES = { "jacket" => "tops", "coat" => "tops", "trousers" => "bottoms" }.freeze
-  TIMEOUT = 150 # seconds; a cold start (the GPU waking up) takes most of a minute
+  CATEGORIES = { "top" => "tops", "jacket" => "tops", "coat" => "tops", "trousers" => "bottoms" }.freeze
+  # The outermost top is the one that shows, so it's the one painted; then the trousers, onto that.
+  LAYERS = [ %w[coat jacket top], %w[trousers] ].freeze
+  # Seconds to wait for a picture. A warm GPU answers in 15 to 30 s; a cold one takes about a minute to wake,
+  # and the very first start after a deploy longer still (it pulls the service's image first), so there's room.
+  TIMEOUT = 240
+  # Steps of the model for each garment on Fitroom's own service: 20 is FASHN's "fast", and keeps a top and
+  # trousers inside a minute on a warm L4 (30, its default, is a little finer and a third slower).
+  STEPS = Integer(ENV.fetch("FITROOM_TRYON_STEPS", 20), exception: false) || 20
+  WARM_EVERY = 45 # seconds: a wake-up call at most this often (the GPU sleeps after a minute idle)
+  PNG = %r{\Adata:image/png;base64,([A-Za-z0-9+/=]+)\z}
+  MAX_PICTURE = 8_000_000 # characters of a data: URL
   SELF_HOSTED = %w[FITROOM_TRYON_URL FITROOM_TRYON_KEY FITROOM_TRYON_SECRET].freeze
   DATA_URL = %r{\Adata:image/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=]+)\z}
 
@@ -39,12 +50,62 @@ class TryOn
     def hosted? = ENV["FASHN_API_KEY"].present?
     def available? = self_hosted? || hosted?
 
-    # model_png: the render (PNG bytes). garment: the shop's photo as a data: URL. kind: jacket, coat or
-    # trousers. mask: the garment's outline in the render as PNG bytes, when the page has one. Returns a
-    # Result; raises Error when neither service answers.
-    def call(model_png, garment, kind, mask: nil)
+    # The page's own picture of the outfit with the shops' photos painted on, the outermost top first and
+    # then the trousers onto that. photo and outline: data:image/png URLs from the page (the picture, and the
+    # figure white on black). items: [{kind:, photo:}] with each garment's shop photo as a data: URL. Returns
+    # {image: data URL or nil, checks: {kind => checks}, painted: [kinds]}; image nil when nothing passed.
+    # Raises Invalid on bad input, Error when the service doesn't answer.
+    def dress(photo:, items:, outline: nil)
+      picture = png(photo) or raise Invalid, "photo"
+      edge = outline.present? ? (png(outline) or raise Invalid, "outline") : nil
+      photos = Array(items).filter_map do |item|
+        item = item.to_h.symbolize_keys
+        [ item[:kind].to_s, item[:photo].to_s ] if CATEGORIES.key?(item[:kind].to_s) && item[:photo].to_s.match?(DATA_URL)
+      end.to_h
+      layers = LAYERS.filter_map { |kinds| kinds.find { photos.key?(it) } }
+      raise Invalid, "items" if layers.empty?
+
+      checks, painted = {}, []
+      layers.each do |kind|
+        answer = call(picture, photos[kind], kind, outline: edge)
+        checks[kind] = answer.checks if answer.checks
+        next unless answer.ok?
+
+        picture = answer.image
+        painted << kind
+      end
+      { image: painted.any? ? "data:image/png;base64,#{Base64.strict_encode64(picture)}" : nil, checks:, painted: }
+    end
+
+    # Wakes Fitroom's own service (a GPU takes about a minute to start) without painting anything, in the
+    # background and at most every WARM_EVERY seconds. Returns the thread sending it, or false when none
+    # was sent. FASHN's hosted API is always awake: nothing to do.
+    def warm
+      return false unless self_hosted?
+
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @warming ||= Mutex.new
+      @warming.synchronize do
+        return false if @warmed_at && now - @warmed_at < WARM_EVERY
+
+        @warmed_at = now
+      end
+      Thread.new do
+        client.call({ warm: true })
+      rescue StandardError
+        nil # a wake-up that fails costs nothing; the picture itself will say what's wrong
+      end
+    end
+
+    # Forgets the last wake-up (for the tests).
+    def reset! = @warmed_at = nil
+
+    # model_png: the render (PNG bytes). garment: the shop's photo as a data: URL. kind: top, jacket, coat or
+    # trousers. mask: the garment's outline in the render, and outline: the figure's (white on black), as PNG
+    # bytes, when the page has them. Returns a Result; raises Error when neither service answers.
+    def call(model_png, garment, kind, mask: nil, outline: nil)
       category = CATEGORIES.fetch(kind)
-      return own(model_png, garment, category, mask) if self_hosted?
+      return own(model_png, garment, category, mask, outline) if self_hosted?
       raise Error, "no try-on service is set up" unless hosted?
 
       Result.new(fashn(model_png, garment, category), nil)
@@ -54,13 +115,21 @@ class TryOn
 
     private
 
-    # Fitroom's own service: {person, garment, category, mask?} in, {ok, image?, checks} out.
-    def own(model_png, garment, category, mask)
+    def png(data_url)
+      text = data_url.to_s
+      text.length <= MAX_PICTURE && text.match(PNG)&.then { Base64.strict_decode64(it[1]) }
+    rescue ArgumentError
+      nil
+    end
+
+    # Fitroom's own service: {person, garment, category, steps, mask?, outline?} in, {ok, image?, checks} out.
+    def own(model_png, garment, category, mask, outline)
       payload = garment.to_s.match(DATA_URL)&.[](1)
       raise Error, "the garment's photo isn't a picture" unless payload
 
-      body = { person: Base64.strict_encode64(model_png), garment: payload, category: }
+      body = { person: Base64.strict_encode64(model_png), garment: payload, category:, steps: STEPS }
       body[:mask] = Base64.strict_encode64(mask) if mask
+      body[:outline] = Base64.strict_encode64(outline) if outline
       answer = client.call(body)
       checks = answer["checks"].is_a?(Hash) ? answer["checks"] : nil
       if answer["ok"] && answer["image"].is_a?(String)

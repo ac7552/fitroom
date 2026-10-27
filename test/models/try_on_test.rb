@@ -10,7 +10,12 @@ class TryOnTest < ActiveSupport::TestCase
     "ok" => true
   }.freeze
 
-  teardown { TryOn.client = nil }
+  teardown do
+    TryOn.client = nil
+    TryOn.reset!
+  end
+
+  def png_url(bytes) = "data:image/png;base64,#{Base64.strict_encode64(bytes)}"
 
   test "sends the render, the shop photo and the category to Fitroom's own service, and gets the picture and checks back" do
     sent = nil
@@ -82,5 +87,70 @@ class TryOnTest < ActiveSupport::TestCase
     assert TryOn.self_hosted?
     assert TryOn.available?
     assert_equal "painted", TryOn.call(PNG, PHOTO, "jacket").image
+  end
+
+  test "a top is a top for the service, and the figure's outline and the steps go along" do
+    sent = nil
+    TryOn.client = ->(body) { sent = body; { "ok" => true, "image" => Base64.strict_encode64("painted"), "checks" => CHECKS } }
+
+    TryOn.call(PNG, PHOTO, "top", outline: "outline png".b)
+
+    assert_equal "tops", sent[:category]
+    assert_equal Base64.strict_encode64("outline png"), sent[:outline]
+    assert_equal TryOn::STEPS, sent[:steps]
+  end
+
+  test "dressing the page's picture paints the outermost top, then the trousers onto that" do
+    sent = []
+    TryOn.client = lambda do |body|
+      sent << body
+      { "ok" => true, "image" => Base64.strict_encode64("#{Base64.decode64(body[:person])}+#{body[:category]}"), "checks" => CHECKS }
+    end
+    items = [ { kind: "trousers", photo: PHOTO }, { kind: "top", photo: PHOTO }, { kind: "jacket", photo: PHOTO }, { kind: "shoes", photo: PHOTO } ]
+
+    dressed = TryOn.dress(photo: png_url("page"), outline: png_url("figure"), items:)
+
+    assert_equal %w[tops bottoms], sent.map { it[:category] }  # the jacket over the top, then the trousers
+    assert_equal png_url("page+tops+bottoms"), dressed[:image]
+    assert_equal %w[jacket trousers], dressed[:painted]
+    assert_equal %w[jacket trousers], dressed[:checks].keys
+    assert_equal Base64.strict_encode64("figure"), sent.first[:outline]
+  end
+
+  test "a refused garment is left as the page drew it, and when every one is refused there's no picture" do
+    refused = CHECKS.merge("ok" => false)
+    TryOn.client = ->(body) { body[:category] == "tops" ? { "ok" => false, "checks" => refused } : { "ok" => true, "image" => Base64.strict_encode64("pants on"), "checks" => CHECKS } }
+    both = TryOn.dress(photo: png_url("page"), items: [ { kind: "top", photo: PHOTO }, { kind: "trousers", photo: PHOTO } ])
+    assert_equal png_url("pants on"), both[:image]
+    assert_equal %w[trousers], both[:painted]
+    assert_equal false, both[:checks]["top"]["ok"]
+
+    TryOn.client = ->(_) { { "ok" => false, "checks" => refused } }
+    none = TryOn.dress(photo: png_url("page"), items: [ { kind: "top", photo: PHOTO } ])
+    assert_nil none[:image]
+    assert_equal({ "top" => refused }, none[:checks])
+  end
+
+  test "a picture that isn't a PNG, or no garment it can paint, is turned away before the service" do
+    TryOn.client = ->(_) { flunk "the service was called" }
+    assert_raises(TryOn::Invalid) { TryOn.dress(photo: PHOTO, items: [ { kind: "top", photo: PHOTO } ]) }
+    assert_raises(TryOn::Invalid) { TryOn.dress(photo: png_url("page"), outline: "not a picture", items: [ { kind: "top", photo: PHOTO } ]) }
+    assert_raises(TryOn::Invalid) { TryOn.dress(photo: png_url("page"), items: [ { kind: "shoes", photo: PHOTO } ]) }
+    assert_raises(TryOn::Invalid) { TryOn.dress(photo: png_url("page"), items: [ { kind: "top", photo: "https://shop.example/top.jpg" } ]) }
+  end
+
+  test "a wake-up goes to Fitroom's own service at most every 45 seconds, in the background" do
+    sent = []
+    TryOn.client = ->(body) { sent << body; { "ok" => true, "warm" => true } }
+
+    TryOn.warm.join
+    refute TryOn.warm
+
+    assert_equal [ { warm: true } ], sent
+  end
+
+  test "a wake-up that fails is quiet" do
+    TryOn.client = ->(_) { raise TryOn::Error, "Net::ReadTimeout" }
+    assert_nil TryOn.warm.value
   end
 end

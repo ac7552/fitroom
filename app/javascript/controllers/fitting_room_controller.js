@@ -28,6 +28,8 @@ const ACCESSORIES = ["shoes", "socks", "belt"]
 const DEFAULT_STYLE = { top: "tee", jacket: "tailored" }
 const KIND_WORDS = { top: "top", jacket: "jacket", coat: "coat", trousers: "pants", shoes: "shoes", socks: "socks", belt: "belt" }
 const ORDER = ["coat", "jacket", "top", "trousers", "belt", "socks", "shoes"]
+// What the AI picture can paint a store's photo of (the server paints the outermost top, then the pants).
+const TRY_ON_KINDS = ["coat", "jacket", "top", "trousers"]
 const OWN_PARTS = {
   jacket: [["chest", "Chest"], ["waist", "Waist"], ["shoulders", "Shoulders"], ["sleeve", "Sleeve"], ["length", "Length"]],
   trousers: [["waist", "Waist"], ["seat", "Seat"], ["thigh", "Thigh"], ["inseam", "Inseam"], ["leg_opening", "Opening"]]
@@ -62,7 +64,7 @@ export default class extends Controller {
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
     "bodyPhotoFront", "bodyPhotoSide", "bodyPhotoFrontLabel", "bodyPhotoSideLabel", "bodyPhotoButton", "bodyPhotoStatus", "bodyPhotoResult"
   ]
-  static values = { fitsUrl: String, importUrl: String, studioUrl: String, lookUrl: String, garment: Object, dress: Object }
+  static values = { fitsUrl: String, importUrl: String, studioUrl: String, lookUrl: String, tryOnUrl: String, warmUrl: String, garment: Object, dress: Object }
 
   connect() {
     this.unit = this.unitTargets.find(radio => radio.checked)?.value ?? "in"
@@ -178,6 +180,7 @@ export default class extends Controller {
     const item = { garment, selected: null, fit: null }
     this.outfit[kind] = item
     this.renderOutfit()
+    if (garment.photo && TRY_ON_KINDS.includes(kind)) this.warmTryOn()
     if (ACCESSORIES.includes(kind)) {
       // Shoes take their upper's and their sole's colours from the photo; socks and a belt, their colour.
       if (garment.photo && !garment.photoColor) {
@@ -889,6 +892,88 @@ export default class extends Controller {
     } catch (error) {
       if (token === this.studioToken) this.studioStatusTarget.textContent = error.message
     }
+  }
+
+  // The AI picture (TryOn.dress on the server): the page's photo, from the front, with the stores' own
+  // photos of the clothes painted on, the outermost top and then the pants. Only that picture, its outline
+  // and the stores' photos go; the answer is the new picture and our checks on it. Nothing is kept.
+  async aiPicture() {
+    if (!this.hasTryOnUrlValue) return
+    const items = TRY_ON_KINDS.map(kind => [kind, this.outfit[kind]])
+      .filter(([, item]) => item?.garment.photo && item.garment.style !== "dress")
+    this.closeStudio()
+    if (!items.length) {
+      this.showStudio("Add clothes from a store link first. The AI paints the store's own photo on.")
+      return
+    }
+    if (!this.stage.settled) {
+      this.showStudio("Wait for the cloth to finish settling, then try again.")
+      return
+    }
+    this.showStudio("Taking the photo…")
+    const token = this.studioToken = Symbol("ai")
+    const controller = this.studioAbort = new AbortController()
+    const began = Date.now()
+    const tick = setInterval(() => {
+      if (token !== this.studioToken || this.studioView !== "draped") return
+      const seconds = Math.round((Date.now() - began) / 1000)
+      // A warm GPU paints in 15 to 30 s; past that it's waking up (about a minute, longer the first time).
+      this.studioStatusTarget.textContent = seconds > 35
+        ? `Waking the AI up, then painting the stores' clothes on… ${seconds}s (a first picture can take a few minutes)`
+        : `Painting the stores' clothes on with AI… ${seconds}s`
+    }, 1000)
+    try {
+      const box = this.canvasTarget.parentElement
+      const scale = 1280 / Math.max(box.clientWidth, box.clientHeight)
+      const passes = await this.stage.photoPasses({ width: Math.round(box.clientWidth * scale), height: Math.round(box.clientHeight * scale), guides: true, front: true })
+      if (token !== this.studioToken) return
+      this.studioImages = { draped: URL.createObjectURL(passes.image) }
+      this.studioChecks = null
+      this.showStudioImage("draped")
+      const [photo, outline, shops] = await Promise.all([
+        pngDataUrl(passes.image, 1280),
+        pngDataUrl(passes.mask, 1280),
+        Promise.all(items.map(([, item]) => shrunkPhoto(item.garment.photo)))
+      ])
+      const answer = await fetch(this.tryOnUrlValue, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ photo, outline, items: items.map(([kind], i) => ({ kind, photo: shops[i] })) }),
+        signal: controller.signal
+      })
+      const reply = await answer.json()
+      if (token !== this.studioToken) return
+      if (!answer.ok) throw new Error(reply.message ?? "The AI picture didn't work this time. Here's our own.")
+      this.studioChecks = reply.checks && Object.keys(reply.checks).length ? reply.checks : null
+      if (reply.image) {
+        const painted = await (await fetch(reply.image)).blob()
+        if (token !== this.studioToken) return
+        this.studioImages.exact = URL.createObjectURL(painted)
+        this.studioSwitchTarget.hidden = false
+        this.studioSwitchTarget.querySelector('input[value="exact"]').checked = true
+        this.offerCompare()
+        this.showStudioImage("exact")
+      } else {
+        // The service painted it but a check said no: the page keeps its own picture and can show why.
+        if (this.studioChecks) {
+          this.studioSwitchTarget.hidden = false
+          this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
+          this.offerCompare()
+        }
+        this.studioStatusTarget.textContent = "The AI's picture didn't pass our checks, so here's our own. Nothing was kept."
+      }
+    } catch (error) {
+      if (token === this.studioToken && error.name !== "AbortError") this.studioStatusTarget.textContent = error.message
+    } finally {
+      clearInterval(tick)
+    }
+  }
+
+  // Clothes with a store photo just went on: wake the AI's GPU now (it takes about a minute to start), so
+  // the AI picture is quick when asked for. The server sends at most one wake-up every 45 seconds.
+  warmTryOn() {
+    if (!this.hasWarmUrlValue) return
+    fetch(this.warmUrlValue, { method: "POST", headers: { Accept: "application/json" } }).catch(() => {})
   }
 
   // When the studio program runs on this computer (see lib/local_studio.js), the photo is also finished
