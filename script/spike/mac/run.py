@@ -15,6 +15,7 @@ The Mac stays as it is: the pictures are made here, nothing is uploaded.
 
 import argparse
 import datetime
+import faulthandler
 import json
 import os
 import platform
@@ -40,6 +41,7 @@ import plan  # noqa: E402
 
 BEGAN = time.time()
 LOG = []
+faulthandler.enable()  # a hard crash in the GPU code still prints where Python was
 
 
 def say(message):
@@ -186,6 +188,7 @@ def make_runs(items, configs, baseline, device, args, out):
             for steps in step_list:
                 config = plan.Config(precision, steps)
                 run = {"item": item["name"], "config": config.name, "precision": precision, "steps": steps}
+                say(f"{item['name']} {config.title}: running...")
                 try:
                     picture, numbers = one_run(pipe, item, seed, steps)
                     run.update(numbers)

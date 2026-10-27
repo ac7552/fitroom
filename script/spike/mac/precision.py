@@ -151,14 +151,16 @@ def spike_pipeline(weights_dir, device, precision, seed=7):
 
         def _setup_tryon_model(self):
             # As the pipeline's own (load the checkpoint, cast, eval), at the spike's dtype, then the hybrid's
-            # changes. The checkpoint is read to the CPU first: the safetensors file then the model's fp32 copy.
+            # changes. The model is built empty (on the meta device) and handed the checkpoint's own tensors, so
+            # the CPU never holds a second, fp32 copy of the weights beside them (~4 GB more on a 16 GB Mac).
             from safetensors.torch import load_file
             from fashn_vton.tryon_mmdit import TryOnModel
 
             self.inference_dtype = DTYPES[self.spike_precision]
             state = load_file(os.path.join(self.weights_dir, "model.safetensors"), device="cpu")
-            model = TryOnModel()
-            model.load_state_dict(state)
+            with torch.device("meta"):
+                model = TryOnModel()
+            model.load_state_dict(state, assign=True)
             del state
             model.to(self.device, dtype=self.inference_dtype).eval()
             if self.spike_precision == "hybrid":
