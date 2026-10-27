@@ -117,6 +117,7 @@ def machine():
         "python": platform.python_version(),
         "torch": torch.__version__,
         "mps": bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()),
+        "mps_built": bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_built()),
     }
 
 
@@ -319,8 +320,14 @@ def main(argv=None):
     device = pick_device(args.device)
     info = machine()
     say(f"{info['chip']}, {info['memory_gb']} GB, macOS {info['macos']} | torch {info['torch']} on {device}")
-    if device.type == "cpu":
-        say("warning: no Apple GPU found (torch.backends.mps); this runs on the CPU and the times won't mean much")
+    if device.type == "cpu" and not args.device:
+        # On the CPU fp16 is emulated: a 2-step smoke picture takes a quarter of an hour, and no time means much.
+        hint = ("PyTorch 2.9 and later use Apple's GPU only on macOS 14 or newer: run script/spike/mac/setup.sh again "
+                "(on macOS 13 it installs PyTorch 2.8) or update macOS"
+                if info["mps_built"] and info["macos"].split(".")[0].isdigit() and int(info["macos"].split(".")[0]) < 14
+                else "this PyTorch can't see Apple's GPU")
+        say(f"stopped: no Apple GPU (torch {info['torch']}, macOS {info['macos']}): {hint}. --device cpu runs anyway.")
+        sys.exit(1)
     if prec.patch_rope(device):
         say("positional embedding computed on the CPU (Apple's GPU has no float64)")
     say(f"{len(items)} item(s) x {len(configs)} run(s): {', '.join(c.name for c in configs)}; reference {baseline.name}")

@@ -170,6 +170,10 @@ What differs from Kaggle and Modal, on purpose:
 - The gates' models run on the CPU (`--checker-device mps` to move them), so they never share the GPU with a
   timed run.
 
+PyTorch 2.9 and later use Apple's GPU only on macOS 14 or newer; on macOS 13 they run on the CPU without a
+word, where fp16 is emulated (the owner's M2 Pro took 49 s for a 2-step fp32 picture and 14 minutes for the
+fp16 one). `setup.sh` installs PyTorch 2.8 on macOS 13, and `run.py` stops rather than time the CPU.
+
 Keep the Mac plugged in and leave it alone while it runs: a laptop slows down as it warms, and the runs are one
 after another (fp32 first).
 

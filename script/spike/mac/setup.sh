@@ -31,7 +31,15 @@ echo "== libraries (a few minutes the first time)"
 # The engine's pins where it has them (script/spike/kaggle/spike.py); onnxruntime is the plain one, as
 # onnxruntime-gpu has no Mac build (DWPose runs on the CPU, a second or two a picture).
 "${PIP[@]}" --upgrade pip
-"${PIP[@]}" torch torchvision numpy pillow opencv-python-headless matplotlib tqdm onnxruntime \
+# PyTorch 2.9 and later use Apple's GPU only on macOS 14 or newer; on macOS 13 they quietly fall back to the
+# CPU. There, PyTorch 2.8 (the last that supports it, with Python 3.13 at most) keeps the GPU.
+TORCH=(torch torchvision)
+MACOS=$(sw_vers -productVersion 2>/dev/null || echo 0)
+if [ "${MACOS%%.*}" -lt 14 ] 2>/dev/null && [ "$(uname -s)" = "Darwin" ]; then
+  echo "   macOS $MACOS: PyTorch 2.8, the last that uses Apple's GPU before macOS 14"
+  TORCH=("torch==2.8.0" "torchvision==0.23.0")
+fi
+"${PIP[@]}" "${TORCH[@]}" numpy pillow opencv-python-headless matplotlib tqdm onnxruntime \
   "transformers==4.46.3" "safetensors>=0.4.5" "huggingface_hub>=0.26.2,<1.0" "einops==0.8.0" "timm==1.0.11" "kornia==0.7.4"
 # Optional: the validator has its own SSIM and colour difference when scikit-image is missing.
 "${PIP[@]}" scikit-image || echo "(scikit-image didn't install; the validator uses its own maths)"
@@ -56,6 +64,6 @@ tryon_engine.download('$WEIGHTS', models=('fashn',), checker=True)
 "$VENV/bin/python" -c "
 import torch, fashn_vton, onnxruntime
 mps = torch.backends.mps.is_available()
-print(f'== ready: torch {torch.__version__}, Apple GPU (MPS): {\"yes\" if mps else \"NO, it would run on the CPU\"}')
+print(f'== ready: torch {torch.__version__}, Apple GPU (MPS): {\"yes\" if mps else \"NO: run.py will stop (see docs/ai-spike.md, On the Mac)\"}')
 "
 echo "Next: $VENV/bin/python script/spike/mac/run.py --smoke"
