@@ -278,7 +278,7 @@
           </div>
           <% if TryOn.available? %>
             <div class="studio-start">
-              <button type="button" class="studio-take" data-action="fitting-room#aiPicture"
+              <button type="button" class="studio-take" data-fitting-room-target="aiButton" data-action="fitting-room#aiPicture"
                       title="AI paints the stores' own photos of your clothes onto this picture. Only the picture and the stores' photos are sent, and nothing is kept.">Real clothes (AI)</button>
             </div>
           <% end %>
@@ -289,8 +289,10 @@
           <div class="stage-loading-card">
             <span class="stage-loading-label" data-fitting-room-target="loadingLabel"></span>
             <span class="stage-loading-track" aria-hidden="true"><i data-fitting-room-target="loadingBar"></i></span>
+            <button type="button" class="button button--dark stage-loading-stop" data-action="fitting-room#closeStudio">Stop</button>
           </div>
         </div>
+        <p class="stage-toast mono" role="status" aria-live="polite" data-fitting-room-target="stageToast" hidden></p>
         <div class="studio" data-fitting-room-target="studio" hidden>
           <div class="studio-frame" data-fitting-room-target="studioFrame"></div>
           <div class="studio-bar">

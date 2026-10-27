@@ -60,7 +60,7 @@ export default class extends Controller {
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
-    "loading", "loadingLabel", "loadingBar", "scene", "stage",
+    "loading", "loadingLabel", "loadingBar", "scene", "stage", "aiButton", "stageToast",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
     "bodyPhotoFront", "bodyPhotoSide", "bodyPhotoFrontLabel", "bodyPhotoSideLabel", "bodyPhotoButton", "bodyPhotoStatus", "bodyPhotoResult"
   ]
@@ -897,30 +897,40 @@ export default class extends Controller {
   // The AI picture (TryOn.dress on the server): the page's photo, from the front, with the stores' own
   // photos of the clothes painted on, the outermost top and then the pants. Only that picture, its outline
   // and the stores' photos go; the answer is the new picture and our checks on it. Nothing is kept.
+  //
+  // While it's being made, the 3D view stays where it is under a veil (see showVeil) and the stage's controls
+  // are inert; the picture then opens in the studio panel over the same box, where the person is looking. If
+  // the AI says no or something goes wrong, the veil goes and the person is back on the 3D view with a short
+  // word saying so.
   async aiPicture() {
     if (!this.hasTryOnUrlValue) return
+    // Pressed again while one is being made: the veil is already up; keep it.
+    if (this.aiBusy) { this.showVeil(this.veilWords); return }
     const items = TRY_ON_KINDS.map(kind => [kind, this.outfit[kind]])
       .filter(([, item]) => item?.garment.photo && item.garment.style !== "dress")
     this.closeStudio()
     if (!items.length) {
-      this.showStudio("Add clothes from a store link first. The AI paints the store's own photo on.")
+      this.toast("Add clothes from a store link first. The AI paints the store's own photo on.")
       return
     }
     if (!this.stage.settled) {
-      this.showStudio("Wait for the cloth to finish settling, then try again.")
+      this.toast("Wait for the cloth to finish settling, then try again.")
       return
     }
-    this.showStudio("Taking the photo…")
+    this.aiBusy = true
+    if (this.hasAiButtonTarget) this.aiButtonTarget.disabled = true
+    this.coverStage(true)
+    this.showVeil("Taking the photo…")
     const token = this.studioToken = Symbol("ai")
     const controller = this.studioAbort = new AbortController()
     const began = Date.now()
     const tick = setInterval(() => {
-      if (token !== this.studioToken || this.studioView !== "draped") return
+      if (token !== this.studioToken) return
       const seconds = Math.round((Date.now() - began) / 1000)
       // A warm GPU paints in 15 to 30 s; past that it's waking up (about a minute, longer the first time).
-      this.studioStatusTarget.textContent = seconds > 35
+      this.showVeil(seconds > 35
         ? `Waking the AI up, then painting the stores' clothes on… ${seconds}s (a first picture can take a few minutes)`
-        : `Painting the stores' clothes on with AI… ${seconds}s`
+        : `Painting the stores' clothes on with AI… ${seconds}s`)
     }, 1000)
     try {
       const box = this.canvasTarget.parentElement
@@ -929,7 +939,6 @@ export default class extends Controller {
       if (token !== this.studioToken) return
       this.studioImages = { draped: URL.createObjectURL(passes.image) }
       this.studioChecks = null
-      this.showStudioImage("draped")
       const [photo, outline, shops] = await Promise.all([
         pngDataUrl(passes.image, 1280),
         pngDataUrl(passes.mask, 1280),
@@ -943,7 +952,7 @@ export default class extends Controller {
       })
       const reply = await answer.json()
       if (token !== this.studioToken) return
-      if (!answer.ok) throw new Error(reply.message ?? "The AI picture didn't work this time. Here's our own.")
+      if (!answer.ok) throw new Error(reply.message ?? "The AI picture didn't work this time.")
       this.studioChecks = reply.checks && Object.keys(reply.checks).length ? reply.checks : null
       if (reply.image) {
         const painted = await (await fetch(reply.image)).blob()
@@ -953,20 +962,100 @@ export default class extends Controller {
         this.studioSwitchTarget.querySelector('input[value="exact"]').checked = true
         this.offerCompare()
         this.showStudioImage("exact")
+        // The picture opens over the 3D view, where the person is looking: the veil fades as the panel fades in.
+        this.openStudio()
+        this.hideVeil()
       } else {
-        // The service painted it but a check said no: the page keeps its own picture and can show why.
-        if (this.studioChecks) {
-          this.studioSwitchTarget.hidden = false
-          this.studioSwitchTarget.querySelector('input[value="exact"]').parentElement.hidden = true
-          this.offerCompare()
-        }
-        this.studioStatusTarget.textContent = "The AI's picture didn't pass our checks, so here's our own. Nothing was kept."
+        // The service painted it but a check said no: nothing is shown, and the person is told.
+        this.closeStudio()
+        this.toast("The AI's picture didn't pass our checks, so here's our own. Nothing was kept.")
       }
     } catch (error) {
-      if (token === this.studioToken && error.name !== "AbortError") this.studioStatusTarget.textContent = error.message
+      if (token === this.studioToken && error.name !== "AbortError") {
+        this.closeStudio()
+        this.toast(error.message)
+      }
     } finally {
       clearInterval(tick)
+      this.aiBusy = false
+      if (this.hasAiButtonTarget) this.aiButtonTarget.disabled = false
+      if (this.studioTarget.hidden) this.uncoverStage()
     }
+  }
+
+  // The veil over the 3D view while the AI paints: the stage's loader, as a blurred, tinted cover with the
+  // words in the middle. It owns the loader until hideVeil; the drape's own words wait their turn.
+  showVeil(words) {
+    if (!this.hasLoadingTarget) return
+    this.veilWords = words
+    const box = this.loadingTarget
+    clearTimeout(this.loadingTimer)
+    box.classList.add("stage-loading--ai")
+    box.classList.remove("is-done")
+    box.hidden = false
+    // The bar slides on its own here (there's no progress to show), so the drape's width is let go of.
+    this.loadingBarTarget.style.transform = ""
+    if (this.loadingLabelTarget.textContent !== words) this.loadingLabelTarget.textContent = words
+  }
+
+  hideVeil() {
+    if (!this.hasLoadingTarget || !this.veilWords) return
+    this.veilWords = null
+    const box = this.loadingTarget
+    box.classList.add("is-done")
+    clearTimeout(this.loadingTimer)
+    this.loadingTimer = setTimeout(() => {
+      if (!box.classList.contains("is-done")) return
+      box.hidden = true
+      box.classList.remove("stage-loading--ai")
+    }, 400)
+  }
+
+  // While the veil or the studio panel is up, the controls and size rows under it can't be reached (or
+  // tabbed to), and are dimmed; the panel's own bar is always the top layer.
+  coverStage(on) {
+    const stage = this.hasStageTarget ? this.stageTarget : this.canvasTarget.closest(".stage")
+    if (!stage) return
+    stage.classList.toggle("stage--covered", on)
+    const under = [stage.querySelector(".stage-top"), this.sizesTarget, this.hasLegendTarget ? this.legendTarget : null, this.hasStagePhotosTarget ? this.stagePhotosTarget : null]
+    for (const element of under) {
+      if (!element) continue
+      if (on) element.setAttribute("inert", "")
+      else element.removeAttribute("inert")
+    }
+  }
+
+  // Back to the 3D view: the veil goes and everything is clickable again.
+  uncoverStage() {
+    this.hideVeil()
+    this.coverStage(false)
+  }
+
+  // A short word over the 3D view, gone again after a few seconds (or when the next one comes).
+  toast(words) {
+    if (!this.hasStageToastTarget) return
+    const box = this.stageToastTarget
+    box.textContent = words
+    box.hidden = false
+    clearTimeout(this.toastTimer)
+    this.toastTimer = setTimeout(() => { box.hidden = true }, 8000)
+  }
+
+  // The studio panel, over the same box as the 3D view, fading in. If the stage is partly off screen it is
+  // brought into view first (no jump: the nearest edge, smoothly).
+  openStudio() {
+    const stage = this.hasStageTarget ? this.stageTarget : this.canvasTarget.closest(".stage")
+    if (stage) {
+      const r = stage.getBoundingClientRect()
+      if (r.top < 0 || r.bottom > window.innerHeight) stage.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    }
+    if (this.hasStageToastTarget) this.stageToastTarget.hidden = true
+    this.coverStage(true)
+    const panel = this.studioTarget
+    if (!panel.hidden) return
+    panel.hidden = false
+    // Two frames in, so the fade starts from hidden rather than snapping.
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (!panel.hidden) panel.classList.add("is-shown") }))
   }
 
   // Clothes with a store photo just went on: wake the AI's GPU now (it takes about a minute to start), so
@@ -1157,10 +1246,12 @@ export default class extends Controller {
   }
 
   showStudio(message) {
-    this.studioTarget.hidden = false
+    this.openStudio()
     this.studioStatusTarget.textContent = message
   }
 
+  // Close: the panel and the veil go, whatever was in flight is stopped, and the 3D view is back with
+  // everything clickable.
   closeStudio() {
     this.studioToken = null
     this.studioAbort?.abort()
@@ -1169,8 +1260,10 @@ export default class extends Controller {
     for (const url of Object.values(this.studioImages ?? {})) URL.revokeObjectURL(url)
     this.studioImages = {}
     this.studioChecks = null
+    this.uncoverStage()
     if (!this.hasStudioTarget) return
     this.studioTarget.hidden = true
+    this.studioTarget.classList.remove("is-shown")
     this.studioFrameTarget.innerHTML = ""
     this.studioDownloadTarget.hidden = true
     this.studioSwitchTarget.hidden = true
@@ -1272,6 +1365,8 @@ export default class extends Controller {
   // how far along it is. It fades once they're on.
   showLoading(words) {
     if (!this.hasLoadingTarget) return
+    // The AI's veil has the loader until the picture is in (or given up on); the drape's words wait.
+    if (this.veilWords) return
     const box = this.loadingTarget
     if (!words) {
       if (!box.hidden) box.classList.add("is-done")
@@ -1280,7 +1375,7 @@ export default class extends Controller {
       return
     }
     clearTimeout(this.loadingTimer)
-    box.classList.remove("is-done")
+    box.classList.remove("is-done", "stage-loading--ai")
     box.hidden = false
     if (this.loadingLabelTarget.textContent !== words) this.loadingLabelTarget.textContent = words
     this.loadingBarTarget.style.transform = `scaleX(${Math.max(0.04, this.stage.progress()).toFixed(3)})`
