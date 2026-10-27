@@ -31,7 +31,9 @@ class TryOn
   CATEGORIES = { "top" => "tops", "jacket" => "tops", "coat" => "tops", "trousers" => "bottoms" }.freeze
   # The outermost top is the one that shows, so it's the one painted; then the trousers, onto that.
   LAYERS = [ %w[coat jacket top], %w[trousers] ].freeze
-  TIMEOUT = 150 # seconds; a cold start (the GPU waking up) takes most of a minute
+  # Seconds to wait for a picture. A warm GPU answers in 15 to 30 s; a cold one takes about a minute to wake,
+  # and the very first start after a deploy longer still (it pulls the service's image first), so there's room.
+  TIMEOUT = 240
   # Steps of the model for each garment on Fitroom's own service: 20 is FASHN's "fast", and keeps a top and
   # trousers inside a minute on a warm L4 (30, its default, is a little finer and a third slower).
   STEPS = Integer(ENV.fetch("FITROOM_TRYON_STEPS", 20), exception: false) || 20

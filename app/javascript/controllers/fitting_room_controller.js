@@ -917,7 +917,10 @@ export default class extends Controller {
     const tick = setInterval(() => {
       if (token !== this.studioToken || this.studioView !== "draped") return
       const seconds = Math.round((Date.now() - began) / 1000)
-      this.studioStatusTarget.textContent = `Painting the stores' clothes on with AI… ${seconds}s`
+      // A warm GPU paints in 15 to 30 s; past that it's waking up (about a minute, longer the first time).
+      this.studioStatusTarget.textContent = seconds > 35
+        ? `Waking the AI up, then painting the stores' clothes on… ${seconds}s (a first picture can take a few minutes)`
+        : `Painting the stores' clothes on with AI… ${seconds}s`
     }, 1000)
     try {
       const box = this.canvasTarget.parentElement
