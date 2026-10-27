@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, stripeStrip, stripeColumns, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, garmentRows, stripeStrip, stripeColumns, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
 import "./support/lib.mjs"
 
 const { bottomsPhotoUV } = await import("lib/garments/photo_map")
@@ -477,4 +477,62 @@ test("vertical stripes are laid by how far across: the back's meet the front's a
   // The hem band: as far across as the front's and back's hems it's sewn to.
   const band = range("waistband")
   assert.ok(Math.abs(band[0] + m.hem / 4) < 0.5 && Math.abs(band[1] - m.hem / 4) < 0.5, `band ${band}`)
+})
+
+// A long-sleeve flat-lay: the sleeves hang down against the body, past its hem, as most shops lay them.
+function longSleeveFlatLay({ graphic = true } = {}) {
+  const w = 320, h = 400, data = new Uint8ClampedArray(4 * w * h)
+  const cloth = [228, 222, 206], back = [244, 244, 242]
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = back
+      const body = x >= 100 && x < 220 && y >= 60 && y < 300
+      const sleeveL = x >= 70 && x < 100 && y >= 64 && y < 330
+      const sleeveR = x >= 220 && x < 250 && y >= 64 && y < 330
+      if (body || sleeveL || sleeveR) c = cloth
+      // A red graphic on the photo's left sleeve, up by the shoulder.
+      if (graphic && x >= 76 && x < 94 && y >= 110 && y < 160) c = [190, 40, 40]
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h }
+}
+
+test("a graphic on a long sleeve laid against the body is read off it, down from the shoulder", () => {
+  const { data, w, h } = longSleeveFlatLay()
+  const found = findPrint(data, w, h)
+  assert.ok(found.sleeves.left, "the left sleeve's graphic")
+  assert.equal(found.sleeves.right, null, "the right sleeve is plain")
+  const { data: strip, width, height } = found.sleeves.left
+  // Red, opaque, in the strip's upper part; the rest of it clear.
+  let redTop = 0, opaqueLow = 0
+  for (let j = 0; j < height; j++) {
+    for (let i = 0; i < width; i++) {
+      const q = 4 * (j * width + i)
+      if (strip[q + 3] > 128 && strip[q] > 150 && strip[q + 1] < 90) j < height / 2 ? redTop++ : 0
+      if (j > height * 0.6 && strip[q + 3] > 128) opaqueLow++
+    }
+  }
+  assert.ok(redTop > width * height * 0.05, `red in the top half: ${redTop}`)
+  assert.equal(opaqueLow, 0)
+})
+
+test("plain sleeves give no sleeve graphic", () => {
+  const { data, w, h } = longSleeveFlatLay({ graphic: false })
+  const found = findPrint(data, w, h)
+  assert.equal(found.sleeves.left, null)
+  assert.equal(found.sleeves.right, null)
+})
+
+test("a T-shirt's shoulders, sloping out from its collar to sleeves held out sideways, aren't a hood", () => {
+  const w = 320, h = 360, mask = new Uint8Array(w * h)
+  for (let y = 40; y < 320; y++) {
+    // The collar 60 wide, widening to the shoulders (140) by y 70; the sleeves out to 260 wide down to y 130;
+    // the body 150 wide to the hem.
+    const half = y < 70 ? 30 + (y - 40) * (40 / 30) : y < 130 ? 130 - (y - 70) * 0.9 : 75
+    for (let x = Math.round(160 - half); x < Math.round(160 + half); x++) mask[y * w + x] = 1
+  }
+  const rows = garmentRows(mask, w, h)
+  assert.equal(rows.hood, null)
+  assert.ok(rows.top < 70, `the front starts at the shoulders, not down at row ${rows.top}`)
 })

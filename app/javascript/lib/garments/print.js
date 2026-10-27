@@ -471,7 +471,12 @@ export function garmentRows(mask, w, h) {
     return gaps === 0
   }
   const wide = middle.filter(y => width(y) > full * 0.22 && width(y) < full * 0.8 && onePiece(y)).length
-  if (above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6) {
+  // And it narrows again at the neck, below its widest: a T-shirt's shoulders, sloping out from the collar
+  // to sleeves held out sideways, only ever widen.
+  const widestAbove = above.reduce((best, y) => width(y) > width(best) ? y : best, above[0])
+  const belowCrown = above.filter(y => y > widestAbove)
+  const pinched = belowCrown.length > 0 && Math.min(...belowCrown.map(width)) < width(widestAbove) * 0.92
+  if (above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6 && pinched) {
     // Dropped shoulders slope on out below the shoulder line, so the body's full width comes a good way
     // down it: the shoulders are where the outline leaps out from the hood's narrow neck instead.
     const lower = above.slice(Math.round(above.length * 0.5))

@@ -31,8 +31,11 @@ from silhouette import iou, mask_of  # noqa: E402
 THRESHOLDS = {"shape": 0.85, "identity": 0.80, "colour": 12.0, "print": 0.45}
 # With the render given (validate(..., render=)), the identity gate is relative: a flat-lay shop photo and a
 # garment worn on a body never embed alike (0.4-0.6 is usual), so the finish must look at least as much like
-# the shop photo as Fitroom's own render did, less a little slack, and never less than a floor.
-RELATIVE_SLACK = 0.05
+# the shop photo as Fitroom's own render did, less some slack, and never less than a floor. The slack is
+# 0.10: the AI paints a whole new picture (lighting, folds, a slightly different crop of the print), and as
+# the render's own print got truer its likeness rose to meet the AI's, refusing good pictures by 0.005.
+# The colour gate and the floor still turn away a different garment.
+RELATIVE_SLACK = 0.10
 IDENTITY_FLOOR = 0.35
 # ... and never above this: when the page's own render already matches the shop photo closely (a mapped print),
 # baseline - slack would ask the AI to beat it, and a good picture is refused on the AI's run-to-run variation.
