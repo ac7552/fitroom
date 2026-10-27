@@ -33,7 +33,7 @@ const OWN_PARTS = {
   trousers: [["waist", "Waist"], ["seat", "Seat"], ["thigh", "Thigh"], ["inseam", "Inseam"], ["leg_opening", "Opening"]]
 }
 // What the 3D view says while it drapes a top.
-const DRAPE_TEXT = { sewing: "Sewing your size…", settling: "Letting it settle…", posing: "Striking the pose…" }
+const DRAPE_TEXT = { sewing: "Sewing your size…", settling: "Almost ready…", posing: "Almost ready…" }
 const FLAT_PARTS = ["chest", "waist", "seat", "thigh", "leg_opening"]
 // The page's words for each measurement, for messages about them (see PagesHelper).
 const BODY_WORDS = {

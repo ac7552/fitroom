@@ -1477,6 +1477,9 @@ export class FittingStage {
   // the outfit and, once everything's on, makes its slow turn (see reveal).
   show(d) {
     if (d.shown) return
+    // The outfit appears all at once, when every piece is sewn and in its pose: until then the loader runs and
+    // what was on before stays on, rather than pieces arriving one by one and settling in view.
+    if (!this.settled) return
     const pants = this.slots.bottom
     if (d.slot === "top" && this.order === TUCKED_LAYERS && pants && !pants.shown) return
     d.shown = true
