@@ -287,8 +287,13 @@ export function findPrint(data, w, h, shape = null) {
   // button-up). Both at once is a check: that's laid as the photo's print, not as stripes. Faint stripes (pale
   // blue on white) are read too, though they're too close to the cloth's colour to count as print above.
   const strong = coverage > 0.25
-  const down = stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last, strong)
-  const across = stripeColumns(data, lab, garment.mask, w, x0, x1, top, bottom, strong)
+  // Stripes run right across, to the side seams (or right down, to the hem); a big chest graphic (a logo's
+  // bold letters over a line of text) has rows of its own colours too, but plain cloth either side of it.
+  let down = stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last, strong)
+  let across = stripeColumns(data, lab, garment.mask, w, x0, x1, top, bottom, strong)
+  // (Both ways at once is a check, which is laid whole anyway.)
+  if (down && !across && !reachesEdges(lab, garment.mask, w, x0, x1, top, bottom, "rows")) down = null
+  if (across && !down && !reachesEdges(lab, garment.mask, w, x0, x1, top, bottom, "columns")) across = null
   const strip = down && across ? null : down ?? across
   // A striped or checked front is laid whole, as photographed (the placket, the pocket and the collar's
   // shadow with it); a check's cloth repeats over the other pieces as an all-over print's does.
@@ -337,7 +342,18 @@ export function garmentRows(mask, w, h) {
     return gaps === 0
   }
   const wide = middle.filter(y => width(y) > full * 0.22 && width(y) < full * 0.8 && onePiece(y)).length
-  if (above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6) hood = { bottom: shoulders - 1, width: median(middle.map(width)) }
+  if (above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6) {
+    // Dropped shoulders slope on out below the shoulder line, so the body's full width comes a good way
+    // down it: the shoulders are where the outline leaps out from the hood's narrow neck instead.
+    const lower = above.slice(Math.round(above.length * 0.5))
+    if (lower.length) {
+      const neck = lower.reduce((best, y) => width(y) < width(best) ? y : best, lower[0])
+      let leap = neck
+      while (leap < shoulders && width(leap) <= width(neck) * 1.25) leap++
+      if (leap < shoulders) shoulders = leap
+    }
+    hood = { bottom: shoulders - 1, width: median(middle.map(width)) }
+  }
   if (hood) top = shoulders
   // The middle of the collar.
   const collar = []
@@ -353,6 +369,34 @@ export function garmentRows(mask, w, h) {
   }
   if (bottom - top < (last - top) * 0.3) bottom = last
   return { top, bottom, last, widest, rowMin, rowMax, centre, hood }
+}
+
+// Whether stripes found across the middle of a front (`rows`: horizontal ones; `columns`: vertical ones)
+// carry on out to its edges: down a narrow band by either side seam, or along a band just above the hem. A
+// striped knit's do; a chest graphic's rows of colour stop short, with plain cloth beyond them. One side is
+// enough (the other may be under a sleeve laid over it).
+export function reachesEdges(lab, mask, w, x0, x1, top, bottom, way = "rows") {
+  const pw = x1 - x0 + 1, ph = bottom - top + 1
+  const bands = way === "rows"
+    ? [[x0 + Math.round(pw * 0.02), x0 + Math.round(pw * 0.1)], [x1 - Math.round(pw * 0.1), x1 - Math.round(pw * 0.02)]]
+    : [[top + Math.round(ph * 0.84), top + Math.round(ph * 0.92)]]
+  return bands.some(([from, to]) => {
+    const lines = [], within = []
+    const count = way === "rows" ? ph : pw
+    for (let k = 0; k < count; k++) {
+      const L = [], A = [], B = []
+      for (let j = from; j <= to; j++) {
+        const i = way === "rows" ? (top + k) * w + j : j * w + x0 + k
+        if (!mask[i]) continue
+        L.push(lab[3 * i]); A.push(lab[3 * i + 1]); B.push(lab[3 * i + 2])
+      }
+      if (L.length < (to - from + 1) * 0.5) continue
+      const line = [median(L), median(A), median(B)]
+      lines.push(line)
+      within.push(median(L.map((l, n) => Math.abs(l - line[0]) + 0.6 * Math.hypot(A[n] - line[1], B[n] - line[2]))))
+    }
+    return striped(lines, within, count, false)
+  })
 }
 
 // Horizontal stripes right across a front: each row is much the same colour along it, and the rows differ

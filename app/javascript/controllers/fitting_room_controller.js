@@ -1708,13 +1708,15 @@ async function readBackPhoto(images, { shape, bottomShape }) {
   const photo = await readShopPhoto(pick.src)
   if (!photo || named) return photo
   const near = (a, b) => a && b && Math.abs(a / b - 1) < 0.15
-  if (bottomShape) {
-    const other = await readBottomShape(photo).catch(() => null)
-    return other && near(other.length, bottomShape.length) && near(other.hips, bottomShape.hips) ? photo : null
-  }
+  // Either reading matching is enough: a top is read as trousers too (a hoodie's body and hood as legs and
+  // a waist), and that reading moves a lot with a hood up or down.
   if (shape) {
     const other = await readTopShape(photo).catch(() => null)
-    return other && near(other.length, shape.length) && near(other.waist, shape.waist) ? photo : null
+    if (other && near(other.length, shape.length) && near(other.waist, shape.waist)) return photo
+  }
+  if (bottomShape) {
+    const other = await readBottomShape(photo).catch(() => null)
+    if (other && near(other.length, bottomShape.length) && near(other.hips, bottomShape.hips)) return photo
   }
   return null
 }
