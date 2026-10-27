@@ -97,7 +97,8 @@ export function bottomMeasures(styleName, size, body, cut = null) {
   // The waistband's middle sits on that line (the pattern's top, y = 0, is the band's seam, below it). A
   // chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that.
   const rise = Math.max(14, size.rise ? size.rise * 0.9 : naturalRise * sitAt - style.band.height / 2)
-  const inseam = size.inseam ?? (styleName === "shorts" ? 18 : body.inseam ?? body.height * 0.45)
+  // Pants sold unhemmed (cut.hem, from the import) are drawn as a tailor would hem them: 3 cm above the floor.
+  const inseam = cut?.hem === "unfinished" && body.inseam ? body.inseam - 3 : size.inseam ?? (styleName === "shorts" ? 18 : body.inseam ?? body.height * 0.45)
   return {
     waist, seat, thigh, knee, opening, rise, inseam,
     // The seat's fullest point, below the top; the knee, down the inseam.

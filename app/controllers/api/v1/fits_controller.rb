@@ -23,7 +23,7 @@ module Api
         return render(json: { error: "invalid", errors: }, status: :unprocessable_entity) if errors.any?
 
         response.headers["Cache-Control"] = "no-store"
-        details = params[:details].respond_to?(:to_unsafe_h) ? params[:details].to_unsafe_h.slice("stretch", "sleeves", "fit", "women", "cropped", "snug", "dropped", "elastic") : {}
+        details = params[:details].respond_to?(:to_unsafe_h) ? params[:details].to_unsafe_h.slice("stretch", "sleeves", "fit", "women", "cropped", "snug", "dropped", "elastic", "hem", "ends") : {}
         results = Fit.rank(body, sizes, cut, garment, style: params[:style].to_s.presence, details:)
         render json: {
           size_chart: chart&.summary,
