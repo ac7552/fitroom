@@ -511,6 +511,11 @@ a { color: inherit; }
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
   backdrop-filter: blur(8px);
 }
+/* The AI picture's button, when the server has a try-on service: in the same graphite glass. */
+.studio-start { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.studio-take { padding: 9px 14px; border: 1px solid #e9ebef; border-radius: 4px; background: #e9ebef; color: #101216; font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.studio-take:hover { background: transparent; color: #e9ebef; }
+.studio-take:focus-visible { outline: 2px solid #8fb0ff; outline-offset: 2px; }
 /* While a garment is sewn: a soft band of light sweeps down over the figure (the one it replaces stays on
    until the new one is ready), with a small line saying what's happening and how far along it is, low in the
    picture above the size rows. It fades once the clothes are on. The controls and size rows stay above it. */

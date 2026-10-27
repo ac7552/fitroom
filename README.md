@@ -55,6 +55,10 @@ Optional settings are environment variables, listed in `.env.example`. Fitroom r
   made smaller than the body.
 - **Private:** no accounts. Your measurements are used for one answer and never stored or logged, and
   photos are read in your browser.
+- **Real clothes (optional):** with the try-on service set up, **Real clothes (AI)** paints the store's own
+  photo of each piece onto the mannequin, in about a minute. Our checks make sure it still fits the same
+  way; if not, you get our own picture. Only the mannequin's picture and the store photos are sent, and
+  nothing is kept. The button only shows when the server has the service (see `.env.example`).
 - **Clear about the rest:** shoes, socks, belts and hats get a plain "not yet".
 
 ## How it's built

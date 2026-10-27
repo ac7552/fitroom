@@ -141,6 +141,24 @@ renders nobody fetched within 10 minutes, it's gone.
 `"invalid"` for anything that isn't a PNG; `502` if the photo service failed; `503` when the server has no
 `FITROOM_STUDIO_URL`. Sent with `Cache-Control: no-store`; nothing is kept or logged.
 
+## The AI picture
+
+`POST /api/v1/try_ons` with the page's own picture of the outfit and each garment's shop photo:
+
+```json
+{ "photo": "data:image/png;base64,...", "outline": "data:image/png;base64,...",
+  "items": [ { "kind": "top", "photo": "data:image/jpeg;base64,..." }, { "kind": "trousers", "photo": "..." } ] }
+```
+
+`outline` is the figure, white on black (optional). Kinds are `top`, `jacket`, `coat` and `trousers`; the
+outermost top is painted, then the trousers onto that. → `{ "image": "data:image/png;base64,..." | null,
+"checks": { "top": { "shape": ..., "identity": ..., "print": ..., "ok": true } }, "painted": ["top"] }`.
+`image` is null when every garment was refused (the checks say which gate said no). 422 for a picture it
+can't read or no garment it can paint, 502 when the service didn't answer, 503 when none is set up.
+
+`POST /api/v1/try_ons/warm` → 202 `{ "warming": true | false }`: wakes the try-on service's GPU, at most
+every 45 seconds, so the next picture doesn't wait for it to start.
+
 ## POST /api/v1/size_charts/:key/fits
 
 Ranks the chart's sizes against a body. The measurements are used for this response only: nothing

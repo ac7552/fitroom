@@ -13,6 +13,9 @@ Rails.application.routes.draw do
       resources :studio_photos, only: %i[create show] do
         get :image, on: :member
       end
+      resources :try_ons, only: :create do
+        post :warm, on: :collection
+      end
       resources :size_charts, only: %i[index show] do
         resources :fits, only: :create
       end
