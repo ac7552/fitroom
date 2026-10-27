@@ -744,6 +744,7 @@ export class FittingStage {
     if (!d) return
     d.top.setColor(item.color)
     d.top.setPrint(item.print ?? null, item.backPrint ?? null)
+    d.top.setSleeves(item.sleevePrint ?? null)
     d.top.setPhotoMap(item.photoMap ?? null)
     d.top.mesh.visible = d.shown
     if (this.view === "fit") d.top.paintFit(item.checks ?? [], STATUS_COLORS)
@@ -1230,7 +1231,9 @@ export class FittingStage {
   // `record` (the default) keeps the camera that took it, with the depth it saw, as this.capture, so a picture
   // painted from this photo can be laid back onto the clothes (see wearPhoto); a picture already worn comes
   // off first, so the photo is the page's own.
-  async photoPasses({ width = 1600, height = 2000, guides = true, front = false, record = true } = {}) {
+  // `close`: framed on the figure (a portrait close-up of it, width by height) rather than the stage as the
+  // screen shows it: the same camera, the rest cropped away (see photoPassesNow).
+  async photoPasses({ width = 1600, height = 2000, guides = true, front = false, record = true, close = false } = {}) {
     if (record) this.wearPhoto(null)
     this.wearBelt()
     this.wearScarf()
@@ -1241,7 +1244,7 @@ export class FittingStage {
     // zip, the print and the hood where a shop photo shows them). The camera goes back after.
     const facing = front ? this.faceFront() : null
     try {
-      return await this.photoPassesNow({ width, height, guides, record })
+      return await this.photoPassesNow({ width, height, guides, record, close })
     } finally {
       if (facing) { this.camera.position.copy(facing.position); this.controls.update() }
     }
@@ -1258,7 +1261,7 @@ export class FittingStage {
     return { position }
   }
 
-  async photoPassesNow({ width, height, guides, record = false }) {
+  async photoPassesNow({ width, height, guides, record = false, close = false }) {
     const renderer = this.renderer, camera = this.camera
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
     const { aspect, fov, near, far } = camera
@@ -1275,6 +1278,15 @@ export class FittingStage {
     camera.fov = fov * 0.85
     camera.aspect = width / height
     camera.updateProjectionMatrix()
+    // A close-up: the screen's view, cut down to a width-by-height box round the figure and drawn at full
+    // size. The camera keeps its place, so the recorded projection (with the cut in it) still lays a picture
+    // painted from this photo back onto the clothes.
+    if (close) {
+      camera.aspect = size.x / size.y
+      camera.updateProjectionMatrix()
+      const view = this.figureView(camera, width / height)
+      if (view) camera.setViewOffset(view.fullWidth, view.fullHeight, view.x, view.y, view.width, view.height)
+    }
     this.effects?.composer.setPixelRatio(1)
     this.effects?.composer.setSize(width, height)
     this.draw()
@@ -1321,6 +1333,7 @@ export class FittingStage {
       camera.far = far
     }
     camera.fov = fov
+    if (close) camera.clearViewOffset()
     if (key) {
       key.shadow.mapSize.copy(mapSize)
       key.shadow.map?.dispose()
@@ -1333,6 +1346,35 @@ export class FittingStage {
     camera.aspect = aspect
     camera.updateProjectionMatrix()
     return { image: await image, depth: await depth, mask: await mask }
+  }
+
+  // Where the figure (the mannequin and everything it wears; not the floor, its shadow or the lights) sits in
+  // `camera`'s view: a box of the given shape (width over height) round it, a margin of its height each way,
+  // in a frame 1000 high. Null when nothing's there.
+  figureView(camera, shape) {
+    const stand = new Set([this.pool, this.floor, this.contact].filter(Boolean))
+    const bounds = new THREE.Box3()
+    for (const object of this.scene.children) {
+      if (!object.visible || object.isLight || stand.has(object)) continue
+      bounds.expandByObject(object)
+    }
+    if (bounds.isEmpty()) return null
+    // The camera may have just been turned (faceFront): its inverse matrix is otherwise only renewed at the
+    // next render.
+    camera.updateMatrixWorld()
+    const fullHeight = 1000, fullWidth = fullHeight * camera.aspect
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
+    for (const corner of [0, 1, 2, 3, 4, 5, 6, 7]) {
+      const p = new THREE.Vector3(corner & 1 ? bounds.max.x : bounds.min.x, corner & 2 ? bounds.max.y : bounds.min.y, corner & 4 ? bounds.max.z : bounds.min.z).project(camera)
+      const x = (p.x + 1) / 2 * fullWidth, y = (1 - p.y) / 2 * fullHeight
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y)
+    }
+    const pad = (y1 - y0) * 0.04
+    let w = x1 - x0 + 2 * pad, h = y1 - y0 + 2 * pad
+    if (w / h < shape) w = h * shape
+    else h = w / shape
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
+    return { fullWidth, fullHeight, x: cx - w / 2, y: cy - h / 2, width: w, height: h }
   }
 
   // The camera that took the photo, kept for laying a picture painted from it back onto the clothes (see

@@ -169,6 +169,46 @@ class RequestTest(unittest.TestCase):
         self.assertEqual(answer["error"], "leffa_failed:RuntimeError")
         self.assertIn("seconds", answer)
 
+    def test_fashn_paints_a_close_up_of_the_figure_and_it_goes_back_where_it_was_cut(self):
+        stage = Image.new("RGB", (1280, 1000), (236, 233, 228))
+        stage.paste((30, 30, 34), (500, 200, 620, 800))
+        outline = Image.new("L", (1280, 1000), 0)
+        outline.paste(255, (500, 200, 620, 800))
+
+        def b64(picture):
+            out = io.BytesIO()
+            picture.save(out, format="PNG")
+            return base64.b64encode(out.getvalue()).decode()
+
+        seen = {}
+
+        def fake_fashn(_pipe, person, *_args, **kwargs):
+            seen["person"], seen["sharpen"] = person.size, kwargs.get("sharpen")
+            return Image.new("RGB", person.size, (200, 20, 20))
+
+        def fake_check(_checker, result, person, outline, *_args):
+            seen["checked"], seen["outline"] = (result.size, person.size), outline.size
+            return {"ok": True}
+
+        request = {"person": b64(stage), "garment": base64.b64encode(png()).decode(), "outline": b64(outline)}
+        with mock.patch.multiple(engine, run_fashn=fake_fashn, check=fake_check):
+            answer = engine.paint({"fashn": object(), "upscaler": "sharp"}, None, request, "fashn")
+        self.assertTrue(answer["ok"])
+        width, height = seen["person"]
+        self.assertAlmostEqual(width / height, 576 / 864, places=2)
+        self.assertLess(height, 1000)
+        self.assertEqual(seen["checked"], (seen["person"], seen["person"]))
+        self.assertEqual(seen["outline"], seen["person"])
+        self.assertEqual(seen["sharpen"], "sharp")
+        back = Image.open(io.BytesIO(base64.b64decode(answer["image"])))
+        self.assertEqual(back.size, (1280, 1000))
+        self.assertEqual(back.convert("RGB").getpixel((560, 500)), (200, 20, 20))
+        self.assertEqual(back.convert("RGB").getpixel((40, 40)), (236, 233, 228))
+
+        with mock.patch.multiple(engine, run_fashn=fake_fashn, check=fake_check):
+            engine.paint({"fashn": object()}, None, {**request, "close_up": False}, "fashn")
+        self.assertEqual(seen["person"], (1280, 1000))
+
 
 class WordsTest(unittest.TestCase):
     def test_a_failure_is_captioned(self):

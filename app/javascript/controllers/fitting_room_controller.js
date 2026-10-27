@@ -30,6 +30,8 @@ const KIND_WORDS = { top: "top", jacket: "jacket", coat: "coat", trousers: "pant
 const ORDER = ["coat", "jacket", "top", "trousers", "belt", "socks", "shoes"]
 // What the AI picture can paint a store's photo of (the server paints the outermost top, then the pants).
 const TRY_ON_KINDS = ["coat", "jacket", "top", "trousers"]
+// The AI picture's photo: FASHN's 576 x 864, doubled (see aiPicture).
+const AI_WIDTH = 1152, AI_HEIGHT = 1728
 const OWN_PARTS = {
   jacket: [["chest", "Chest"], ["waist", "Waist"], ["shoulders", "Shoulders"], ["sleeve", "Sleeve"], ["length", "Length"]],
   trousers: [["waist", "Waist"], ["seat", "Seat"], ["thigh", "Thigh"], ["inseam", "Inseam"], ["leg_opening", "Opening"]]
@@ -225,6 +227,13 @@ export default class extends Controller {
           const printed = !(garment.style === "dress" && garment.cut && !garment.cut.printed)
           garment.print = printed ? read?.print ?? null : null
           garment.backPrint = printed && back?.print ? { image: back.print.image } : null
+          // The sleeves' graphics, by the wearer's side: the front photo shows the right sleeve on its left,
+          // the back photo the left one; the front photo shows each sleeve's front half, the back its back.
+          const front = read?.sleeves, behind = back?.sleeves
+          garment.sleevePrint = printed && (front || behind) ? {
+            right: { front: front?.left ?? null, back: behind?.right ?? null },
+            left: { front: front?.right ?? null, back: behind?.left ?? null }
+          } : null
         }
         this.renderOutfit()
         if (item.fit) this.render()
@@ -944,15 +953,16 @@ export default class extends Controller {
     }, 1000)
     let cancel = null
     try {
-      const box = this.canvasTarget.parentElement
-      const scale = 1280 / Math.max(box.clientWidth, box.clientHeight)
-      const passes = await this.stage.photoPasses({ width: Math.round(box.clientWidth * scale), height: Math.round(box.clientHeight * scale), guides: true, front: true })
+      // A portrait close-up of the figure, in the AI's own shape (576 by 864) at twice its size: the clothes
+      // fill the frame it paints in, instead of a narrow strip of the wide stage, and its picture, doubled
+      // (see the service's upscaler), comes back at this size.
+      const passes = await this.stage.photoPasses({ width: AI_WIDTH, height: AI_HEIGHT, guides: true, front: true, close: true })
       if (token !== this.studioToken) return
       this.studioImages = { draped: URL.createObjectURL(passes.image) }
       this.studioChecks = null
       const [photo, outline, shops] = await Promise.all([
-        pngDataUrl(passes.image, 1280),
-        pngDataUrl(passes.mask, 1280),
+        pngDataUrl(passes.image, AI_HEIGHT),
+        pngDataUrl(passes.mask, AI_HEIGHT),
         Promise.all(items.map(([, item]) => shrunkPhoto(item.garment.photo)))
       ])
       const answer = await fetch(this.tryOnUrlValue, {
@@ -1338,6 +1348,7 @@ export default class extends Controller {
       color: garment.color,
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
+      sleevePrint: garment.sleevePrint ?? null,
       photoSize: photoSize(garment.chart),
       photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,

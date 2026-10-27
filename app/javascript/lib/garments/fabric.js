@@ -7,7 +7,7 @@ import { BORDER, DEPTH_BIAS, FACING, LIGHT } from "lib/projection"
 //   uv       where it is on its pattern piece, in metres (so textures tile at a real size)
 //   aEdge    how far it is from the edge of its piece (cm): seams show as a soft groove along it
 //   aHem     how far it is from a hem or other free edge (cm): hems are stitched a little way up
-//   aPiece   which piece it's on (1 the front, 0 the rest)
+//   aPiece   which piece it's on (1 the front, 2 the back, 3 the left sleeve, 4 the right, 0 the rest)
 //   aShade   how open to the room it is (1) or tucked into a fold or under the hood (less): ambient light
 //            reaching it, worked out from the drape
 //   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
@@ -305,7 +305,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
   const material = new THREE.MeshPhysicalMaterial({
     color: fitMap ? 0xffffff : color, vertexColors: fitMap, roughness: look.roughness, normalMap,
     normalScale: new THREE.Vector2(look.normal, look.normal), sheen: fitMap ? 0 : look.sheen,
-    sheenRoughness: look.sheenRoughness, sheenColor: new THREE.Color(color).offsetHSL(0, -0.1, 0.25),
+    sheenRoughness: look.sheenRoughness, sheenColor: sheenTint(color),
     clearcoat: fitMap ? 0 : look.clearcoat ?? 0, clearcoatRoughness: look.clearcoatRoughness ?? 0.5, side: THREE.DoubleSide
   })
   const uniforms = {
@@ -343,6 +343,15 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // A top's back, from the shop's photo of it (laid as the front's print is).
     uBack: { value: BLANK },
     uBackOn: { value: 0 },
+    // Graphics on the sleeves, from the shop's photos (print.js's sleevePrint): each sleeve's front half
+    // and back half, by the wearer's side. uSleeveSize: half the sleeve's width at the top and at the hem,
+    // and its length (cm), down which each strip is laid.
+    // All four in one texture, side by side (right front, left front, right back, left back): a GPU has
+    // only so many textures a material may read, and the cloth's are nearly all spoken for.
+    uSleeveOn: { value: 0 },
+    uSleeves: { value: BLANK },
+    uSleeveHave: { value: new THREE.Vector4() },
+    uSleeveSize: { value: new THREE.Vector3(16, 12, 60) },
     uPhotoOn: { value: 0 },
     // How much of a sheer part's colour shows (1: none of it is sheer).
     uSheer: { value: details.sheer ?? 1 },
@@ -417,6 +426,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform sampler2D uPhotoBack;
         uniform sampler2D uBack;
         uniform float uBackOn;
+        uniform float uSleeveOn;
+        uniform sampler2D uSleeves;
+        uniform vec4 uSleeveHave;
+        uniform vec3 uSleeveSize;
         uniform float uPhotoOn;
         uniform float uSheer;
         varying float vCover;
@@ -497,7 +510,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         }
         diffuseColor.rgb *= 1.0 - 0.22 * groove - 0.5 * shadow;
         diffuseColor.rgb = mix( diffuseColor.rgb, thread, stitch * 0.85 );
-        bool backPhoto = uBackOn > 0.5 && vPiece > 1.5;
+        bool backPhoto = uBackOn > 0.5 && vPiece > 1.5 && vPiece < 2.5;
         // (On the front too, where a bigger size reaches past the photo's print, and the print shows through.)
         if ( uPrintOn > 0.5 && uAllOver > 0.5 && !backPhoto && gl_FrontFacing ) {
           // Started half a repeat off the middle, so the back isn't mirrored about its centre seam.
@@ -528,6 +541,24 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
             diffuseColor.rgb = mix( diffuseColor.rgb, printed.rgb, printed.a );
           }
         }
+        // A sleeve's graphic: down it by its length from the top of the cap, across it from its top line (x 0)
+        // to the underarm seam (x at half its width there), on the half facing the way the photo saw it.
+        if ( uSleeveOn > 0.5 && vPiece > 2.5 && gl_FrontFacing ) {
+          bool right = vPiece > 3.5;
+          float along = -vPattern.y / uSleeveSize.z;
+          float across = abs( vPattern.x ) / mix( uSleeveSize.x, uSleeveSize.y, clamp( along, 0.0, 1.0 ) );
+          // The right sleeve's front half is on its +x side, the left's on its -x side (pattern.js's sleeve).
+          bool front = right ? vPattern.x >= 0.0 : vPattern.x <= 0.0;
+          if ( along > 0.0 && along < 1.0 && across < 1.0 ) {
+            float slot = ( front ? 0.0 : 2.0 ) + ( right ? 0.0 : 1.0 );
+            float have = slot < 0.5 ? uSleeveHave.x : slot < 1.5 ? uSleeveHave.y : slot < 2.5 ? uSleeveHave.z : uSleeveHave.w;
+            if ( have > 0.5 ) {
+              // Kept off the strip's own edges, so a neighbour's pixels don't bleed in.
+              vec4 printed = texture2D( uSleeves, vec2( ( slot + clamp( across, 0.02, 0.98 ) ) / 4.0, 1.0 - along ) );
+              diffuseColor.rgb = mix( diffuseColor.rgb, printed.rgb, printed.a );
+            }
+          }
+        }
         diffuseColor.rgb = mix( diffuseColor.rgb, uMetal, metal );
         // Creases: where the cloth is gathered (squeezed) or tucked into a fold, its tiny folds shade each
         // other, so it's a little darker and rougher there (the photo's colour too, laid on above).
@@ -535,14 +566,28 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         diffuseColor.rgb *= 1.0 - CREASE_DARK * crease;
         if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.55;   // the inside
         ${fitMap ? "" : PROJECTION.fragmentApply}`)
+      // The inside of the cloth (a hood's, a turned-back cuff's) is in its own shade: its sheen dimmed with it,
+      // or a black hood's inside catches a grey shine the outside doesn't.
+      .replace("#include <lights_physical_fragment>", `#include <lights_physical_fragment>
+        #ifdef USE_SHEEN
+          if ( !gl_FrontFacing ) material.sheenColor *= 0.3;
+        #endif`)
       .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
         roughnessFactor = mix( roughnessFactor, 0.28, metal );
         roughnessFactor = min( 1.0, roughnessFactor * ( 1.0 + CREASE_ROUGH * crease ) );`)
       .replace("#include <aomap_fragment>", `#include <aomap_fragment>
         reflectedLight.indirectDiffuse *= vShade;
-        reflectedLight.indirectSpecular *= vShade;`)
+        reflectedLight.indirectSpecular *= vShade;
+        if ( !gl_FrontFacing ) { reflectedLight.indirectSpecular *= 0.3; reflectedLight.directSpecular *= 0.3; }`)
   }
   return material
+}
+
+// The light a cloth's nap catches along its folds: its own colour, a little paler. Dark cloth's sheen is
+// faint (a fixed lift turns black fleece's folds mid-grey, like a satin), pale cloth's brighter.
+export function sheenTint(color) {
+  const c = new THREE.Color(color), hsl = c.getHSL({})
+  return c.offsetHSL(0, -0.1, 0.06 + 0.2 * hsl.l)
 }
 
 export function clothLook(cloth) {

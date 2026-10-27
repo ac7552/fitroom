@@ -82,5 +82,67 @@ class SheetTest(unittest.TestCase):
         self.assertGreater(len(p.png_bytes(sheet)), 100)
 
 
+class CloseUpTest(unittest.TestCase):
+    def stage(self):
+        """A wide stage: a light backdrop and a dark figure 120 wide, 600 tall, a little left of the middle."""
+        picture = Image.new("RGB", (1280, 1000), (236, 233, 228))
+        figure = Image.new("RGB", (120, 600), (30, 30, 34))
+        picture.paste(figure, (500, 200))
+        outline = Image.new("L", (1280, 1000), 0)
+        outline.paste(255, (500, 200, 620, 800))
+        return picture, outline
+
+    def test_the_box_is_fashn_shaped_round_the_figure_with_a_margin(self):
+        picture, outline = self.stage()
+        box = p.figure_box(picture, outline)
+        left, top, right, bottom = box
+        self.assertAlmostEqual((right - left) / (bottom - top), 576 / 864, places=2)
+        self.assertLessEqual(top, 200 - 30)
+        self.assertGreaterEqual(bottom, 800 + 30)
+        self.assertLess(left, 500)
+        self.assertGreater(right, 620)
+        self.assertAlmostEqual((left + right) / 2, 560, delta=1)
+        # The figure fills most of the box's height: a close-up, not the wide stage.
+        self.assertGreater(600 / (bottom - top), 0.8)
+
+    def test_without_an_outline_the_backdrop_is_left_out(self):
+        picture, outline = self.stage()
+        self.assertEqual(p.figure_box(picture), p.figure_box(picture, outline))
+
+    def test_no_figure_no_box(self):
+        self.assertIsNone(p.figure_box(Image.new("RGB", (200, 300), (236, 233, 228))))
+        self.assertIsNone(p.figure_box(Image.new("RGB", (200, 300)), Image.new("L", (200, 300), 0)))
+
+    def test_a_box_past_the_edge_is_padded_with_the_backdrop(self):
+        picture, _ = self.stage()
+        piece = p.cut(picture, (-40, -20, 160, 280))
+        self.assertEqual(piece.size, (200, 300))
+        self.assertEqual(piece.getpixel((0, 0)), (236, 233, 228))
+        mask = p.cut(Image.new("L", (100, 100), 255), (-10, 0, 90, 100))
+        self.assertEqual(mask.getpixel((0, 50)), 0)
+        self.assertEqual(mask.getpixel((50, 50)), 255)
+
+    def test_put_back_lands_where_it_was_cut_with_soft_edges(self):
+        picture, outline = self.stage()
+        box = p.figure_box(picture, outline)
+        piece = p.cut(picture, box)
+        painted = Image.new("RGB", (576, 864), (200, 20, 20))
+        out = p.put_back(picture, painted, box)
+        self.assertEqual(out.size, picture.size)
+        cx, cy = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+        self.assertEqual(out.getpixel((cx, cy)), (200, 20, 20))
+        self.assertEqual(out.getpixel((10, 10)), (236, 233, 228))
+        edge = out.getpixel((box[0] + 1, cy))
+        self.assertTrue(200 < edge[1] < 233 or edge[0] > 200, edge)
+        self.assertEqual(piece.size, (box[2] - box[0], box[3] - box[1]))
+
+    def test_a_box_past_the_edge_is_put_back_inside_the_picture(self):
+        picture = Image.new("RGB", (300, 200), (236, 233, 228))
+        out = p.put_back(picture, Image.new("RGB", (100, 150), (0, 0, 0)), (-50, -50, 150, 250))
+        self.assertEqual(out.size, (300, 200))
+        self.assertEqual(out.getpixel((50, 100)), (0, 0, 0))
+        self.assertEqual(out.getpixel((250, 100)), (236, 233, 228))
+
+
 if __name__ == "__main__":
     unittest.main()

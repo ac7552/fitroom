@@ -123,3 +123,70 @@ def png_bytes(picture):
     out = io.BytesIO()
     picture.save(out, format="PNG")
     return out.getvalue()
+
+
+# The figure, close up ----------------------------------------------------------------------------------------
+# FASHN paints at 576x864. The page's picture is the whole stage, wide, with the figure a narrow strip in the
+# middle: squeezed into FASHN's frame, a hoodie got about 130 pixels across. So the figure is cut out first, in
+# FASHN's own shape, painted at full size, and put back where it was cut from.
+
+FASHN_ASPECT = 576 / 864  # width over height
+
+
+def figure_box(picture, outline=None, aspect=FASHN_ASPECT, margin=0.06):
+    """The box (left, top, right, bottom) to paint: round the figure (white in `outline`, else whatever
+    isn't the backdrop's colour), a `margin` of its height added each way, widened or heightened to `aspect`
+    about its middle. It may run past the picture's edges (cut pads them). None when no figure is found."""
+    if outline is not None:
+        on = np.asarray(outline.convert("L").resize(picture.size)) > 127
+    else:
+        rgb = np.asarray(picture.convert("RGB")).astype(np.int16)
+        corners = np.array([rgb[0, 0], rgb[0, -1], rgb[-1, 0], rgb[-1, -1]])
+        backdrop = np.median(corners, axis=0)
+        on = np.abs(rgb - backdrop).sum(axis=2) > 36
+    rows, cols = np.flatnonzero(on.any(axis=1)), np.flatnonzero(on.any(axis=0))
+    if not len(rows) or not len(cols):
+        return None
+    left, right, top, bottom = cols[0], cols[-1] + 1, rows[0], rows[-1] + 1
+    pad = (bottom - top) * margin
+    left, right, top, bottom = left - pad, right + pad, top - pad, bottom + pad
+    w, h = right - left, bottom - top
+    if w / h < aspect:
+        w = h * aspect
+    else:
+        h = w / aspect
+    cx, cy = (left + right) / 2, (top + bottom) / 2
+    return tuple(int(round(v)) for v in (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2))
+
+
+def backdrop_colour(picture):
+    """The picture's backdrop: the middle of its four corners' colours."""
+    rgb = np.asarray(picture.convert("RGB"))
+    corners = np.array([rgb[0, 0], rgb[0, -1], rgb[-1, 0], rgb[-1, -1]])
+    return tuple(int(v) for v in np.median(corners, axis=0))
+
+
+def cut(picture, box, fill=None):
+    """The part of `picture` inside `box`; where the box runs past the picture's edge, `fill` (the
+    backdrop's colour for a picture, 0 for a mask)."""
+    if fill is None:
+        fill = backdrop_colour(picture) if picture.mode == "RGB" else 0
+    left, top, right, bottom = box
+    out = Image.new(picture.mode, (right - left, bottom - top), fill)
+    out.paste(picture, (-left, -top))
+    return out
+
+
+def put_back(picture, painted, box, feather=0.04):
+    """`picture` with `painted` (the painted close-up, any size) laid back over `box`, its edges faded in over
+    `feather` of the box's width, so a slight change of backdrop tone leaves no line round it."""
+    left, top, right, bottom = box
+    size = (right - left, bottom - top)
+    painted = painted.convert(picture.mode).resize(size, Image.LANCZOS)
+    reach = max(1.0, size[0] * feather)
+    ys, xs = np.mgrid[0 : size[1], 0 : size[0]]
+    edge = np.minimum.reduce([xs + 0.5, size[0] - xs - 0.5, ys + 0.5, size[1] - ys - 0.5])
+    alpha = Image.fromarray((np.clip(edge / reach, 0, 1) * 255).astype(np.uint8), "L")
+    out = picture.copy()
+    out.paste(painted, (left, top), alpha)
+    return out

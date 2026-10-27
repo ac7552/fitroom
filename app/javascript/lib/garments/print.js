@@ -87,7 +87,17 @@ export async function readPhoto(src, { shape = null } = {}) {
       stripSpan: strip && !strip.vertical ? strip.span : 1, stripAcross: strip?.vertical ? { from: strip.from, span: strip.span } : null
     }
   }
-  return { color: found.color, print }
+  // The sleeves' graphics, by the wearer's side: a photo of the front shows the right sleeve on its left.
+  const canvas = part => {
+    if (!part) return null
+    const c = document.createElement("canvas")
+    c.width = part.width
+    c.height = part.height
+    c.getContext("2d").putImageData(new ImageData(part.data, part.width, part.height), 0, 0)
+    return c
+  }
+  const sleeves = found.sleeves && (found.sleeves.left || found.sleeves.right) ? { left: canvas(found.sleeves.left), right: canvas(found.sleeves.right) } : null
+  return { color: found.color, print, sleeves }
 }
 
 // A striped front's colours row by row, as a texture a few pixels wide (the same column repeated); a
@@ -301,7 +311,126 @@ export function findPrint(data, w, h, shape = null) {
   if (patterned && !strong) for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   const allOver = strong || patterned
   const print = coverage > 0.01 || patterned ? { data: out, width: pw, height: ph, coverage, allOver, stripes: Boolean(strip), strip } : null
-  return { color, print, rect: [x0, top, x1, bottom] }
+  // A graphic on a sleeve (an all-over print or stripes already cover them).
+  const sleeves = allOver ? { left: null, right: null } : {
+    left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
+    right: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, 1)
+  }
+  return { color, print, rect: [x0, top, x1, bottom], sleeves }
+}
+
+// A graphic on one sleeve of a photo (`way` -1: the photo's left one, +1 its right), as a strip of pixels
+// SLEEVE_ACROSS wide and SLEEVE_ALONG long: down it from the shoulder to the cuff, across it from its outer
+// edge (the top of the arm, where its sewn top line runs) to its inner edge (the underarm seam), plain cloth
+// transparent as on the front. Null when the sleeve can't be told from the body (folded over it, or short and
+// hidden) or nothing is printed on it. Returns { data, width, height, coverage }.
+// A long sleeve laid down beside the body, touching it (most flat-lays), is found by its cuff: below the hem
+// only the sleeves are left. Its axis runs from the shoulder point to the cuff's middle, and it's measured in
+// from its outer edge by the cuff's width (a little more up the arm). A sleeve standing clear of the body is
+// found as the cloth beside the front.
+export const SLEEVE_ACROSS = 48, SLEEVE_ALONG = 192
+export function sleevePrint(data, lab, mask, w, h, front, rows, baseLab, way) {
+  const line = hangingSleeve(mask, w, h, front, rows, way) ?? clearSleeve(mask, w, h, front, way)
+  if (!line) return null
+  const { start, end, wide, inside } = line
+  const length = Math.hypot(end[0] - start[0], end[1] - start[1])
+  const d = [(end[0] - start[0]) / length, (end[1] - start[1]) / length]
+  let o = [-d[1], d[0]]
+  if (Math.sign(o[0]) !== way) o = [-o[0], -o[1]]   // across it, outwards: towards its outer edge
+  const out = new Uint8ClampedArray(4 * SLEEVE_ACROSS * SLEEVE_ALONG), alpha = new Float32Array(SLEEVE_ACROSS * SLEEVE_ALONG)
+  let lines = 0
+  for (let j = 0; j < SLEEVE_ALONG; j++) {
+    const t = (j + 0.5) / SLEEVE_ALONG
+    const cx = start[0] + d[0] * length * t, cy = start[1] + d[1] * length * t
+    // Its outer edge on this line, then in by the sleeve's width there.
+    let outer = null
+    for (let k = -Math.round(wide[0]); k <= Math.round(wide[0] * 1.5); k++) {
+      if (inside(Math.round(cx + o[0] * k), Math.round(cy + o[1] * k))) outer = k
+    }
+    if (outer === null) continue
+    const across = wide[0] + (wide[1] - wide[0]) * t
+    lines++
+    for (let i = 0; i < SLEEVE_ACROSS; i++) {
+      const k = outer - ((i + 0.5) / SLEEVE_ACROSS) * across
+      const x = Math.round(cx + o[0] * k), y = Math.round(cy + o[1] * k)
+      if (!inside(x, y)) continue
+      const at = y * w + x, q = j * SLEEVE_ACROSS + i
+      out[4 * q] = data[4 * at]; out[4 * q + 1] = data[4 * at + 1]; out[4 * q + 2] = data[4 * at + 2]
+      const dl = Math.abs(lab[3 * at] - baseLab[0]), dc = Math.hypot(lab[3 * at + 1] - baseLab[1], lab[3 * at + 2] - baseLab[2])
+      alpha[q] = Math.min(1, Math.max(smooth(dl, 22, 34), smooth(dc, 16, 26)))
+    }
+  }
+  if (lines < SLEEVE_ALONG * 0.6) return null
+  // A line down the sleeve by its edges is the photo's light on its rim, or the seam where it meets the body,
+  // not a graphic: a graphic is a patch, not marked down most of the sleeve.
+  for (let i = 0; i < SLEEVE_ACROSS; i++) {
+    if (i >= 8 && i < SLEEVE_ACROSS - 8) continue
+    let marked = 0
+    for (let j = 0; j < SLEEVE_ALONG; j++) if (alpha[j * SLEEVE_ACROSS + i] > 0.3) marked++
+    if (marked > SLEEVE_ALONG * 0.3) for (let j = 0; j < SLEEVE_ALONG; j++) alpha[j * SLEEVE_ACROSS + i] = 0
+  }
+  // Specks and the photo's own folds and seams are thin; a graphic is solid. The cuff's rib and the line where
+  // the sleeve meets the body are left out.
+  const solid = boxBlur(alpha, SLEEVE_ACROSS, SLEEVE_ALONG, 1)
+  let covered = 0
+  for (let q = 0; q < alpha.length; q++) {
+    const j = Math.floor(q / SLEEVE_ACROSS), i = q % SLEEVE_ACROSS
+    const keep = smooth(solid[q], 0.3, 0.55) * smooth(SLEEVE_ALONG - j, 4, 12) * smooth(SLEEVE_ACROSS - i, 2, 5) * smooth(i, 1, 3)
+    const a = alpha[q] * keep
+    out[4 * q + 3] = Math.round(a * 255)
+    covered += a
+  }
+  const coverage = covered / alpha.length
+  return coverage > 0.01 ? { data: out, width: SLEEVE_ACROSS, height: SLEEVE_ALONG, coverage } : null
+}
+
+// A long sleeve hanging below the hem on its side: { start (the shoulder point, its axis's top), end (the
+// cuff's middle), wide: [its width at the top, at the cuff] (px), inside(x, y) } or null.
+function hangingSleeve(mask, w, h, front, rows, way) {
+  const { top, bottom } = front, { rowMin, rowMax, last, centre } = rows
+  // Below the hem, the cloth on this side of the middle: the sleeve's end.
+  const ends = []
+  for (let y = bottom + 3; y <= last; y++) {
+    let a = -1, b = -1
+    for (let x = way < 0 ? 0 : centre; way < 0 ? x < centre : x < w; x++) if (mask[y * w + x]) { if (a < 0) a = x; b = x }
+    if (a >= 0 && b - a >= 3) ends.push([y, a, b])
+  }
+  if (ends.length < 3) return null
+  // The cuff: its last few rows, short of the rounded tip.
+  const cuff = ends.slice(Math.max(0, ends.length - 8), Math.max(1, ends.length - 2))
+  const cy = median(cuff.map(e => e[0])), cx = median(cuff.map(e => (e[1] + e[2]) / 2)), cw = median(cuff.map(e => e[2] - e[1] + 1))
+  // A sleeve is long and narrow; a skirt or the other sleeve's tip isn't this.
+  if (cw > (front.x1 - front.x0) * 0.4 || cw < 3) return null
+  const shoulderY = top + 2, outerX = way < 0 ? rowMin[shoulderY] : rowMax[shoulderY]
+  if (outerX < 0 || outerX >= w) return null
+  const topWide = cw * 1.35
+  const start = [outerX - way * topWide / 2, shoulderY]
+  if (Math.hypot(cx - start[0], cy - start[1]) < cw * 4) return null
+  return { start, end: [cx, cy], wide: [topWide, cw], inside: (x, y) => x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x] === 1 }
+}
+
+// A sleeve standing clear of the body: the cloth beside the front, along its long axis.
+function clearSleeve(mask, w, h, front, way) {
+  const { x0, x1, top } = front
+  const clear = Math.max(2, Math.round((x1 - x0) * 0.02))
+  const inside = (x, y) => x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x] === 1 && y >= top &&
+    (way < 0 ? x < x0 - clear : x > x1 + clear)
+  let n = 0, mx = 0, my = 0
+  for (let y = top; y < h; y++) for (let x = 0; x < w; x++) if (inside(x, y)) { n++; mx += x; my += y }
+  if (n < (x1 - x0) * (x1 - x0) * 0.06) return null
+  mx /= n; my /= n
+  let sxx = 0, syy = 0, sxy = 0
+  for (let y = top; y < h; y++) for (let x = 0; x < w; x++) if (inside(x, y)) { const dx = x - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy }
+  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy)
+  let d = [Math.cos(angle), Math.sin(angle)]
+  if (d[1] < 0) d = [-d[0], -d[1]]
+  if (d[1] < 0.5) return null   // held out sideways, or not a sleeve
+  let t0 = Infinity, t1 = -Infinity
+  for (let y = top; y < h; y++) for (let x = 0; x < w; x++) if (inside(x, y)) { const t = (x - mx) * d[0] + (y - my) * d[1]; t0 = Math.min(t0, t); t1 = Math.max(t1, t) }
+  // Its width: n pixels over its length.
+  const wide = n / Math.max(1, t1 - t0)
+  if (t1 - t0 < wide * 2.2) return null
+  return { start: [mx + d[0] * t0, my + d[1] * t0], end: [mx + d[0] * t1, my + d[1] * t1], wide: [wide, wide], inside }
 }
 
 // A top's rows in a photo, from its outline (mask): { top: the shoulder line, bottom: the hem, centre (x),

@@ -86,12 +86,16 @@ image = (
         "kornia==0.7.4",
         "fastapi[standard]==0.115.5",
         "onnxruntime-gpu==1.19.2",
+        "spandrel==0.4.0",
     )
     # FASHN imports the parser's label tables even with the parser off; both without their own requirements
     # (which would bring opencv-python beside the headless one), at the commit that was read.
     .run_commands(
         "pip install --no-deps fashn-human-parser==0.1.1",
         f"pip install --no-deps git+{engine.FASHN_REPO}@{engine.FASHN_COMMIT}" if engine else "true",
+        # The upscaler's weights (64 MB) in the image itself, so nothing new has to go into the Volume.
+        f"mkdir -p /opt/esrgan && python -c \"import urllib.request; urllib.request.urlretrieve('{engine.UPSCALER_URL}', "
+        "'/opt/esrgan/RealESRGAN_x2plus.pth')\"" if engine else "true",
     )
     .env({
         "TRYON_WEIGHTS": WEIGHTS,
@@ -152,6 +156,11 @@ class TryOn:
 
         device = torch.device("cpu" if SNAPSHOT == "cpu" else "cuda")
         self.models = {"fashn": engine.load_fashn(f"{WEIGHTS}/fashn", device=device, dtype=torch.bfloat16, pose=SNAPSHOT != "cpu")}
+        # FASHN's picture doubled before it goes back into the page's (None, and skipped, if it won't load).
+        try:
+            self.models["upscaler"] = engine.load_upscaler(device=device)
+        except Exception as error:  # noqa: BLE001 - the picture still goes, just not sharpened
+            print(f"[tryon] upscaler not loaded: {type(error).__name__}: {error}")
         # The validator's models load here too, not on the first picture: a warm GPU is ready for all of it.
         self.checker = engine.load_checker(device).preload()
 
@@ -164,6 +173,8 @@ class TryOn:
 
         gpu = torch.device("cuda")
         engine.move_fashn(self.models["fashn"], gpu)
+        if self.models.get("upscaler") is not None:
+            self.models["upscaler"].move(gpu)
         self.checker.move(gpu)
 
     @modal.method()

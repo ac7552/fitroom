@@ -24,7 +24,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tryon_prep import contact_sheet, dwpose_from_openpose, grow, letterbox, png_bytes, unletterbox  # noqa: E402
+from tryon_prep import contact_sheet, cut, dwpose_from_openpose, figure_box, grow, letterbox, png_bytes, put_back, unletterbox  # noqa: E402
 
 FASHN_REPO = "https://github.com/fashn-AI/fashn-vton-1.5"
 FASHN_COMMIT = "7c0f10af3f91ad4048fe9729c470a13ef905d25a"
@@ -34,6 +34,10 @@ LEFFA_DIR = os.environ.get("LEFFA_DIR", "/opt/leffa")
 WEIGHTS = os.environ.get("TRYON_WEIGHTS", "/weights")
 DINO = "facebook/dinov2-small"
 CUTOUT = "ZhengPeng7/BiRefNet"
+# Real-ESRGAN x2plus (BSD-3-Clause, github.com/xinntao/Real-ESRGAN), loaded with spandrel (MIT): FASHN's
+# 576x864 picture doubled before it's laid back into the page's bigger one. The service bakes it into its image.
+UPSCALER_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth"
+UPSCALER = os.environ.get("TRYON_UPSCALER", "/opt/esrgan/RealESRGAN_x2plus.pth")
 
 # What download() fetches of franciszzj/Leffa. The try-on needs virtual_tryon.pth (every weight of the VAE
 # and both UNets: leffa/model.py builds them `from_config` and load_state_dict's the whole thing), the
@@ -200,9 +204,10 @@ def move_fashn(pipe, device):
     return pipe
 
 
-def run_fashn(pipe, person, garment, category, *, flat_lay=False, seed=7, steps=30, pose_json=None):
+def run_fashn(pipe, person, garment, category, *, flat_lay=False, seed=7, steps=30, pose_json=None, sharpen=None):
     """One FASHN try-on. pose_json: the page's keypoints (see tryon_prep.dwpose_from_openpose), or None to
-    let DWPose look for a person in the render. Returns the picture at the render's size."""
+    let DWPose look for a person in the render. sharpen: an Upscaler for FASHN's 576x864 picture, or None.
+    Returns the picture at the render's size."""
     from PIL import Image
 
     flat_lay = flat_lay or parser_off()
@@ -221,7 +226,13 @@ def run_fashn(pipe, person, garment, category, *, flat_lay=False, seed=7, steps=
         )
     finally:
         pipe.pose_model = detector
-    return out.images[0].resize(person.size, Image.LANCZOS)
+    picture = out.images[0]
+    if sharpen is not None and picture.width < person.width:
+        try:
+            picture = sharpen(picture)
+        except Exception:  # noqa: BLE001 - a sharper picture is a nicety; FASHN's own still goes
+            pass
+    return picture.resize(person.size, Image.LANCZOS)
 
 
 # Leffa ----------------------------------------------------------------------------------------------------
@@ -386,6 +397,36 @@ class Checker:
             return model(**inputs).last_hidden_state[0, 0].float().cpu().numpy()
 
 
+class Upscaler:
+    """Real-ESRGAN x2plus through spandrel: a picture in, the same picture at twice the size out."""
+
+    def __init__(self, path=UPSCALER, device=None):
+        import spandrel
+
+        self.model = spandrel.ModelLoader().load_from_file(path).eval()
+        if device is not None:
+            self.model.to(device)
+
+    def move(self, device):
+        self.model.to(device)
+        return self
+
+    def __call__(self, picture):
+        import numpy as np
+        import torch
+        from PIL import Image
+
+        x = torch.from_numpy(np.asarray(picture.convert("RGB"), dtype=np.float32) / 255.0).permute(2, 0, 1)[None]
+        with torch.inference_mode():
+            y = self.model(x.to(self.model.device)).clamp(0, 1)
+        return Image.fromarray((y[0].permute(1, 2, 0).float().cpu().numpy() * 255 + 0.5).astype("uint8"))
+
+
+def load_upscaler(path=UPSCALER, device=None):
+    """The upscaler, or None when its weights aren't there (a spike or Colab run without them)."""
+    return Upscaler(path, device) if path and os.path.exists(path) else None
+
+
 def load_checker(device=None):
     """The validator's models, lazily (nothing is loaded until the first check)."""
     return Checker(device)
@@ -430,8 +471,13 @@ def parse_request(request):
 
 
 def paint(models, checker, request, which):
-    """Runs one model (`models`: {"fashn": pipe, "leffa": Leffa}) and the gates on a request. Returns
-    {ok, image?: base64 PNG, seconds, checks?, error?}; never raises."""
+    """Runs one model (`models`: {"fashn": pipe, "leffa": Leffa, "upscaler"?: Upscaler}) and the gates on a
+    request. Returns {ok, image?: base64 PNG, seconds, checks?, error?}; never raises.
+
+    FASHN paints a close-up: the figure cut out of the page's wide picture in FASHN's own shape (tryon_prep's
+    figure_box), so the clothes get the model's whole frame; the gates judge that close-up, and the picture
+    goes back where it was cut from, the same size as the page's. A request with "close_up": false (or Leffa)
+    paints the picture whole, as before."""
     try:
         got = parse_request(request)
     except ValueError as error:
@@ -440,18 +486,30 @@ def paint(models, checker, request, which):
     if model is None:
         return {"ok": False, "error": "model_not_loaded"}
 
+    person, pictures = got["person"], got["pictures"]
+    box = None
+    if which == "fashn" and request.get("close_up", True) is not False:
+        box = figure_box(person, pictures.get("outline"))
+    if box is not None:
+        whole = person
+        person = cut(whole, box)
+        # The mask and outline are of the page's picture, so they're cut the same way; the print's region is
+        # of the shop's photo and stays.
+        pictures = {name: cut(p, box) if name in ("mask", "outline") else p for name, p in pictures.items()}
+
     began = time.perf_counter()
     try:
         if which == "fashn":
-            result = run_fashn(model, got["person"], got["garment"], got["category"], flat_lay=got["flat_lay"], seed=got["seed"], steps=got["steps"], pose_json=got["pose"])
+            result = run_fashn(model, person, got["garment"], got["category"], flat_lay=got["flat_lay"], seed=got["seed"], steps=got["steps"], pose_json=None if box else got["pose"], sharpen=models.get("upscaler"))
         else:
-            result = run_leffa(model, got["person"], got["garment"], got["category"], mask=got["pictures"].get("mask"), seed=got["seed"], steps=got["steps"])
+            result = run_leffa(model, person, got["garment"], got["category"], mask=pictures.get("mask"), seed=got["seed"], steps=got["steps"])
     except Exception as error:  # noqa: BLE001 - the model's own failure is the answer, not a crash
         return {"ok": False, "error": f"{which}_failed:{type(error).__name__}", "seconds": round(time.perf_counter() - began, 1)}
     painted = time.perf_counter() - began
 
-    pictures = got["pictures"]
-    checks = check(checker, result, got["person"], pictures.get("outline"), got["garment"], pictures.get("mask"), got["category"], pictures.get("print"), got["flat_lay"])
+    checks = check(checker, result, person, pictures.get("outline"), got["garment"], pictures.get("mask"), got["category"], pictures.get("print"), got["flat_lay"])
+    if box is not None:
+        result = put_back(whole, result, box)
     return {
         "ok": checks["ok"],
         "image": base64.b64encode(png_bytes(result)).decode(),

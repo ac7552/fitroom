@@ -6,7 +6,7 @@ import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
 import { bottomsPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
 import { Drape } from "lib/garments/drape"
-import { clothMaterial } from "lib/garments/fabric"
+import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
 
 // Dressing the mannequin in a top cut from its pattern: the body as the cloth sees it, the drape run a few
 // frames at a time between redraws (so the page stays smooth and the cloth is seen settling), the garment's
@@ -459,7 +459,8 @@ export class DrapedTop {
     geometry.setAttribute("aEdge", new THREE.BufferAttribute(Float32Array.from(cloth.toEdge), 1))
     geometry.setAttribute("aHem", new THREE.BufferAttribute(Float32Array.from(cloth.toFree, d => Math.min(d, 99)), 1))
     const front = cloth.panels.indexOf("front"), back = cloth.panels.indexOf("back")
-    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : p === back ? 2 : 0)), 1))
+    const sleeveL = cloth.panels.indexOf("sleeve_L"), sleeveR = cloth.panels.indexOf("sleeve_R")
+    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : p === back ? 2 : p === sleeveL ? 3 : p === sleeveR ? 4 : 0)), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
     geometry.setAttribute("aPhoto", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
@@ -511,7 +512,7 @@ export class DrapedTop {
   setColor(color) {
     for (const key of ["main", "rib"]) {
       this.materials[key].color.set(color)
-      this.materials[key].sheenColor.set(color).offsetHSL(0, -0.1, 0.25)
+      this.materials[key].sheenColor.copy(sheenTint(color))
       this.materials[key].userData.uniforms.uThread.value.set(color).offsetHSL(0, 0, 0.07)
     }
   }
@@ -577,6 +578,38 @@ export class DrapedTop {
       if (striped) u.uStripe.value = this.tileTexture
     }
   }
+
+  // Graphics on the sleeves from the shop's photos: { right: { front, back }, left: { front, back } }, each a
+  // canvas (print.js's sleevePrint, by the wearer's side) or null; null for none. Laid down each sleeve from
+  // the top of its cap to its hem, across from its top line to the underarm seam.
+  setSleeves(sleeves) {
+    if (this.bottoms || !this.pattern.panels.sleeve_R) sleeves = null
+    const parts = [sleeves?.right?.front, sleeves?.left?.front, sleeves?.right?.back, sleeves?.left?.back].map(c => c ?? null)
+    if (this.sleeveCanvases && parts.every((c, i) => c === this.sleeveCanvases[i])) return
+    this.sleeveCanvases = parts
+    this.sleeveTexture?.dispose()
+    this.sleeveTexture = null
+    const u = this.materials.main.userData.uniforms
+    const m = this.pattern.measures
+    if (parts.some(Boolean)) {
+      // The four strips side by side in one texture (see fabric.js's uSleeves).
+      const width = Math.max(...parts.map(c => c?.width ?? 0)), height = Math.max(...parts.map(c => c?.height ?? 0))
+      const atlas = document.createElement("canvas")
+      atlas.width = 4 * width
+      atlas.height = height
+      const context = atlas.getContext("2d")
+      parts.forEach((canvas, i) => { if (canvas) context.drawImage(canvas, i * width, 0, width, height) })
+      const t = this.sleeveTexture = new THREE.CanvasTexture(atlas)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.generateMipmaps = false
+      t.minFilter = THREE.LinearFilter
+    }
+    u.uSleeves.value = this.sleeveTexture ?? BLANK_TEXTURE
+    u.uSleeveHave.value.set(...parts.map(c => (c ? 1 : 0)))
+    u.uSleeveSize.value.set((m.bicep ?? 32) / 2, (m.opening ?? (m.bicep ?? 32) - 3) / 2, m.sleeve ?? 60)
+    u.uSleeveOn.value = parts.some(Boolean) ? 1 : 0
+  }
+
 
   // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),
   // laid on the cloth: the photo on the front, its softened copy on the back.
