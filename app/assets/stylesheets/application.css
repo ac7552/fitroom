@@ -546,11 +546,44 @@ a { color: inherit; }
   position: absolute; inset: 0; background: var(--sweep-bar); transform: scaleX(0.04); transform-origin: left;
   transition: transform 0.25s linear;
 }
+.stage-loading-stop { display: none; }
 @media (prefers-reduced-motion: reduce) { .stage-loading-sweep { animation: none; opacity: 0; } }
 .stage--studio .stage-loading, .stage--daylight .stage-loading {
   --sweep: rgb(255 255 255 / 0.5); --sweep-text: #3b3f47; --sweep-line: rgb(16 18 22 / 0.14); --sweep-bar: #101216;
 }
+/* While the AI paints the picture: the same sweep, but as a veil over the whole stage. The 3D view is blurred
+   and tinted to the stage's own tone (it keeps rendering underneath, so the handoff is instant), the words sit in
+   the middle with the live seconds, and the bar slides on its own because there's no progress to show. The
+   veil takes the clicks; the controls under it are made inert by the controller. */
+.stage-loading--ai {
+  z-index: 3;
+  pointer-events: auto;
+  background: var(--veil, rgb(21 23 27 / 0.84));
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.stage--studio .stage-loading--ai { --veil: rgb(235 232 226 / 0.84); }
+.stage--daylight .stage-loading--ai { --veil: rgb(220 216 209 / 0.84); }
+.stage-loading--ai .stage-loading-card {
+  top: 50%; bottom: auto; transform: translate(-50%, -50%);
+  width: min(360px, calc(100% - 48px)); gap: 14px;
+}
+.stage-loading--ai .stage-loading-label { white-space: normal; text-align: center; line-height: 1.6; }
+.stage-loading--ai .stage-loading-track i { transform: none; width: 34%; animation: stage-loading-slide 1.4s ease-in-out infinite alternate; transition: none; }
+@keyframes stage-loading-slide { from { left: 0; right: 66%; } to { left: 66%; right: 0; } }
+.stage-loading--ai .stage-loading-stop { display: inline-block; margin-top: 4px; }
+.stage--studio .stage-loading--ai .stage-loading-stop, .stage--daylight .stage-loading--ai .stage-loading-stop { --ink: #101216; --bg: #ebe8e2; }
+@media (prefers-reduced-motion: reduce) { .stage-loading--ai .stage-loading-track i { animation: none; left: 0; right: 0; } }
+/* A short word over the 3D view when something didn't happen (the AI said no, or there's nothing to paint). */
+.stage-toast {
+  position: absolute; left: 50%; bottom: calc(var(--rows, 60px) + 24px); z-index: 3; transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 48px); margin: 0; padding: 10px 14px;
+  border: 1px solid #2c3037; border-radius: 4px; background: rgb(15 16 19 / 0.8); color: #e9ebef;
+  backdrop-filter: blur(6px); text-align: center; pointer-events: none;
+}
 .stage-top, .size-rows, .stage-photos, .stage-legend { z-index: 2; }
+/* While the veil or the studio panel is up, what's under them is dimmed as well as inert. */
+.stage-top, .size-rows, .stage-photos, .stage-legend { transition: opacity 0.3s ease; }
+.stage--covered :is(.stage-top, .size-rows, .stage-photos, .stage-legend) { opacity: 0.35; }
 
 .tone-pick { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border: 1px solid #2c3037; border-radius: 4px; background: rgb(15 16 19 / 0.6); backdrop-filter: blur(6px); }
 .tone-pick label { position: relative; cursor: pointer; }
@@ -559,18 +592,30 @@ a { color: inherit; }
 .tone-pick input:checked + span { outline: 1px solid #e9ebef; outline-offset: 3px; }
 .tone-pick input:focus-visible + span { outline: 2px solid #8fb0ff; outline-offset: 2px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* The studio panel: the picture in the same box as the 3D view, with its bar along the bottom. It is the top
+   layer of the stage, above the controls and the size rows (which the controller also makes inert), and it
+   fades in over the veil when the picture arrives. */
 .studio {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 4;
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   background: #15171b;
+  color: #e9ebef;
+  --ink: #e9ebef;
+  --bg: #15171b;
+  --line: #343841;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
+.studio.is-shown { opacity: 1; }
 .studio-frame { min-height: 0; height: 100%; padding: 16px 16px 0; overflow: hidden; }
 .studio-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.studio-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 16px 16px; }
-.studio-bar p { flex: 1 1 220px; color: #9aa0ab; }
+.studio-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 16px 16px; border-top: 1px solid #2c3037; }
+.studio-bar p { flex: 1 1 160px; min-width: 0; margin: 0; color: #9aa0ab; }
+.studio-bar .segmented { border-color: #2c3037; background: rgb(15 16 19 / 0.6); }
+.studio-bar .button { flex: none; }
 
 /* Compare: store photo | our fit | AI finish, one row per item, the checks under the AI's picture. */
 .studio-compare { display: flex; flex-direction: column; gap: 12px; height: 100%; overflow: auto; color: #e9ebef; }
@@ -773,4 +818,15 @@ a { color: inherit; }
   .size-row::after { content: ""; flex: none; width: 8px; }
   .stage .size-rows .size-row-label { width: 56px; color: #9aa0ab; }
   .size-chip { padding: 11px 13px; font-size: 13px; }
+  /* The studio panel on a phone: the picture, then the switch across the top of the bar, the words under it,
+     and Save and Close on their own row. The panel sits above the bottom sheet (z-index), so they never meet. */
+  .studio-frame { padding: 12px 12px 0; }
+  .studio-bar { gap: 10px 8px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .studio-bar .segmented { display: flex; width: 100%; }
+  .studio-bar .segmented label { flex: 1 1 auto; }
+  .studio-bar .segmented span { display: block; text-align: center; }
+  .studio-bar p { flex-basis: 100%; order: 1; }
+  .studio-bar .button { order: 2; flex: 1 1 0; text-align: center; }
+  .stage-loading--ai .stage-loading-card { width: calc(100% - 40px); }
+  .stage-toast { bottom: calc(var(--rows, 60px) + 16px); max-width: calc(100% - 24px); }
 }
