@@ -42,6 +42,18 @@ class ParseConfigs(unittest.TestCase):
     def test_names(self):
         self.assertEqual(Config("hybrid", 12).name, "hybrid-12")
         self.assertEqual(Config("hybrid", 12).title, "hybrid · 12 steps")
+        self.assertEqual(Config("fp32", 8, 3).name, "fp32-8-g3")
+        self.assertEqual(Config("fp32", 8, 3).title, "fp32 · 8 steps · 3 guided")
+
+    def test_guidance_on_the_first_steps_only(self):
+        self.assertEqual(plan.parse_configs("fp32:8:g3,fp32:8:g0,fp32:8:G8"),
+                         [Config("fp32", 8, 3), Config("fp32", 8, 0), Config("fp32", 8, 8)])
+        # FASHN's own (every step but the last) is the plain config, so it isn't run twice.
+        self.assertEqual(plan.parse_configs("fp32:8:g7,fp32:8"), [Config("fp32", 8)])
+        self.assertEqual(Config("fp32", 8).guided_steps, 7)
+        for bad in ("fp32:8:g9", "fp32:8:3", "fp32:8:gx"):
+            with self.assertRaises(ValueError, msg=bad):
+                plan.parse_configs(bad)
 
 
 class Baseline(unittest.TestCase):
@@ -59,8 +71,12 @@ class Baseline(unittest.TestCase):
 
     def test_one_load_per_precision_reference_first(self):
         configs, baseline, _ = plan.with_baseline(plan.parse_configs(plan.PRESETS["full"]))
-        self.assertEqual(plan.run_order(configs, baseline),
-                         [("fp32", [30, 20]), ("fp16", [30, 20, 12]), ("bf16", [20]), ("hybrid", [30, 20, 12])])
+        order = [(p, [c.steps for c in group]) for p, group in plan.run_order(configs, baseline)]
+        self.assertEqual(order, [("fp32", [30, 20]), ("fp16", [30, 20, 12]), ("bf16", [20]), ("hybrid", [30, 20, 12])])
+        minute = plan.with_baseline(plan.parse_configs(plan.PRESETS["minute"]))
+        self.assertEqual(minute[1], Config("fp32", 30))
+        self.assertEqual([c.name for c in plan.run_order(minute[0], minute[1])[0][1]],
+                         ["fp32-30", "fp32-12-g4", "fp32-10-g3", "fp32-8-g3", "fp32-8-g0", "fp32-6-g2"])
 
 
 class Likeness(unittest.TestCase):
@@ -142,6 +158,15 @@ class Summary(unittest.TestCase):
         self.assertEqual(pick["pick"], "fp16-20")
         self.assertIn("likeness not measured", pick["why"])
 
+    def test_within_a_minute_the_one_most_like_full(self):
+        rows = plan.summarize(self.runs, self.configs, self.baseline)  # whole calls: 322, 112, 64, 74 s at worst
+        self.assertEqual(plan.within(rows, self.baseline, target=120)["pick"], "fp16-20")  # 0.95 beats fp16-12's 0.84
+        self.assertEqual(plan.within(rows, self.baseline, target=70)["pick"], "fp16-12")
+        self.assertIn("below the look-the-same line", plan.within(rows, self.baseline, target=70)["why"])
+        none = plan.within(rows, self.baseline, target=30)
+        self.assertIsNone(none["pick"])
+        self.assertIn("the fastest was fp16-12 at 64", none["why"])
+
     def test_nothing_when_everything_failed(self):
         runs = [run("a", "fp32-30", 300, error="x"), run("a", "fp16-20", 100, finite=False)]
         configs, baseline, _ = plan.with_baseline(plan.parse_configs("fp32:30,fp16:20"))
@@ -150,10 +175,10 @@ class Summary(unittest.TestCase):
     def test_table_and_captions(self):
         rows = plan.summarize(self.runs, self.configs, self.baseline)
         text = plan.table(rows, self.baseline)
-        self.assertIn("| fp32 · 30 steps | 310.0 |", text)
+        self.assertIn("| fp32 · 30 steps | 310.0 | 322 |", text)
         self.assertIn("reference", text)
-        self.assertIn("| hybrid · 12 steps | 71.0 | 5.92 | 4.37x | no: refused |", text)
-        self.assertIn("| fp16 · 12 steps | 61.0 | 5.08 | 5.08x | yes | 0.84 / 0.7 |", text)
+        self.assertIn("| hybrid · 12 steps | 71.0 | 74 | 5.92 | 4.37x | no: refused |", text)
+        self.assertIn("| fp16 · 12 steps | 61.0 | 64 | 5.08 | 5.08x | yes | 0.84 / 0.7 |", text)
         self.assertEqual(plan.caption(self.runs[2], self.baseline), "100 s\nPASS · look 0.6\nlike full 0.97 / 0.9")
         self.assertEqual(plan.caption(self.runs[0], self.baseline).split("\n")[2], "reference")
         self.assertIn("NaN", plan.caption(run("a", "fp16-20", 10, finite=False), self.baseline))

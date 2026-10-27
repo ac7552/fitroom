@@ -137,8 +137,18 @@ script/spike/mac/setup.sh                                  # once: tmp/venv-mac,
 tmp/venv-mac/bin/python script/spike/mac/run.py --smoke    # every precision at 2 steps on one item: does it all work?
 tmp/venv-mac/bin/python script/spike/mac/run.py --quick    # one item: fp32 30 and 20, fp16 20, hybrid 20 and 12
 tmp/venv-mac/bin/python script/spike/mac/run.py            # both items, the whole grid (below)
-tmp/venv-mac/bin/python script/spike/mac/run.py --configs fp16:16,hybrid:16   # anything else, as precision:steps
+tmp/venv-mac/bin/python script/spike/mac/run.py --minute   # both items: what fits in a minute (below)
+tmp/venv-mac/bin/python script/spike/mac/run.py --configs fp16:16,fp32:8:g3   # anything else, as precision:steps[:gN]
 ```
+
+**Within a minute.** Each step runs the model twice, once with the garment and once without, and pushes the
+picture away from the second (classifier-free guidance, scale 1.5). FASHN drops the second pass on the last
+step only, and even then computes it. `:gN` keeps guidance on the first N steps, where the picture's shape is
+settled, and makes the rest one pass each: half the work. `--minute` runs the reference and six such runs on
+both items (fp32 12 steps with 4 guided, 10/3, 8/3, 8/0, 6/2, and fp16 8/3), and `summary.md` ends with the
+run that fits in `--target` seconds (60) at its slowest item and looks most like full quality. On the owner's
+M2 Pro (19 GPU cores, macOS 27) the smoke run measured ~12 s for a guided step at fp32 with the warm-up
+included; a one-pass step should be about half.
 
 The inputs are the spike's own (`tmp/spike`, from `inputs.mjs`); the results go to `tmp/spike/mac/<time>/`:
 `sheet.png` (store photo, render, then a column per run), `summary.md`, `results.json` (the Mac's chip and

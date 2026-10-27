@@ -6,7 +6,8 @@ all of it lands on one contact sheet. docs/ai-spike.md, "On the Mac", says what 
     tmp/venv-mac/bin/python script/spike/mac/run.py --smoke           # every code path, a couple of minutes
     tmp/venv-mac/bin/python script/spike/mac/run.py --quick           # one item, the likely answers (~15 min)
     tmp/venv-mac/bin/python script/spike/mac/run.py                   # both items, the whole grid (~45 min)
-    tmp/venv-mac/bin/python script/spike/mac/run.py --configs fp16:16,hybrid:16
+    tmp/venv-mac/bin/python script/spike/mac/run.py --minute          # both items: what fits in a minute (~25 min)
+    tmp/venv-mac/bin/python script/spike/mac/run.py --configs fp16:16,fp32:8:g3   # :g3 = guidance on the first 3 steps
 
 The inputs are the spike's (tmp/spike: NAME-person.png, NAME-garment.jpg, NAME-category.txt, NAME-outline.png,
 as inputs.mjs makes them). Out: tmp/spike/mac/<time>/ with NAME-<run>.png, sheet.png, summary.md, results.json.
@@ -80,9 +81,11 @@ def arguments(argv):
     preset = p.add_mutually_exclusive_group()
     preset.add_argument("--smoke", action="store_true", help=f"one item, {plan.PRESETS['smoke']}: checks everything works")
     preset.add_argument("--quick", action="store_true", help=f"one item, {plan.PRESETS['quick']}")
+    preset.add_argument("--minute", action="store_true", help=f"both items, what fits in a minute: {plan.PRESETS['minute']}")
     preset.add_argument("--configs", default=None, help=f"runs as precision:steps (default {plan.PRESETS['full']})")
     p.add_argument("--items", default=None, help="only these items (names, comma-separated)")
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--target", type=float, default=plan.TARGET_SECONDS, help="the whole call must fit in this (s, default 60)")
     p.add_argument("--device", default=None, help="mps (default on a Mac), cuda or cpu")
     p.add_argument("--checker-device", default="cpu", help="where the gates' models run (default cpu: off the clock)")
     p.add_argument("--no-checks", action="store_true", help="skip the gates and the likeness (times only)")
@@ -149,7 +152,7 @@ def load_items(folder, only):
     return items
 
 
-def one_run(pipe, item, seed, steps):
+def one_run(pipe, item, seed, steps, guided=None):
     """One try-on: the picture and its numbers (the whole call, the sampling alone, any CPU fallbacks)."""
     import tryon_engine as engine
 
@@ -163,6 +166,7 @@ def one_run(pipe, item, seed, steps):
             WARNED.add(text)
             say(f"warning: {text.splitlines()[0][:220] if text else category.__name__}")
 
+    pipe.guided_steps = guided
     began = time.perf_counter()
     with warnings.catch_warnings():
         warnings.simplefilter("always")
@@ -186,15 +190,15 @@ def make_runs(items, configs, baseline, device, args, out):
 
     runs, pictures, notes = [], {}, {}
     seed = args.seed
-    for precision, step_list in plan.run_order(configs, baseline):
+    for precision, group in plan.run_order(configs, baseline):
         problem = prec.probe(device, precision)
         if problem:
             say(f"{precision}: not on this {device.type} ({problem}); skipped")
             notes[precision] = f"unsupported: {problem}"
             for item in items:
-                for steps in step_list:
-                    runs.append({"item": item["name"], "config": plan.Config(precision, steps).name, "precision": precision,
-                                 "steps": steps, "error": "unsupported here", "finite": False})
+                for config in group:
+                    runs.append({"item": item["name"], "config": config.name, "precision": precision,
+                                 "steps": config.steps, "error": "unsupported here", "finite": False})
             continue
         say(f"loading FASHN at {precision}...")
         began = time.time()
@@ -204,9 +208,9 @@ def make_runs(items, configs, baseline, device, args, out):
             say(f"{precision}: didn't load ({type(error).__name__}: {error})")
             notes[precision] = f"load failed: {type(error).__name__}: {str(error)[:200]}"
             for item in items:
-                for steps in step_list:
-                    runs.append({"item": item["name"], "config": plan.Config(precision, steps).name, "precision": precision,
-                                 "steps": steps, "error": "load failed", "finite": False})
+                for config in group:
+                    runs.append({"item": item["name"], "config": config.name, "precision": precision,
+                                 "steps": config.steps, "error": "load failed", "finite": False})
             prec.free(device)
             continue
         notes[precision] = {"load_seconds": round(time.time() - began, 1)}
@@ -221,12 +225,12 @@ def make_runs(items, configs, baseline, device, args, out):
                 notes[precision]["warmup_error"] = one_line(error)
                 say(f"{precision} warm-up failed ({one_line(error)})")
         for item in items:
-            for steps in step_list:
-                config = plan.Config(precision, steps)
-                run = {"item": item["name"], "config": config.name, "precision": precision, "steps": steps}
+            for config in group:
+                run = {"item": item["name"], "config": config.name, "precision": precision, "steps": config.steps,
+                       "guided": config.guided_steps}
                 say(f"{item['name']} {config.title}: running...")
                 try:
-                    picture, numbers = one_run(pipe, item, seed, steps)
+                    picture, numbers = one_run(pipe, item, seed, config.steps, config.guided)
                     run.update(numbers)
                     pictures[(item["name"], config.name)] = picture
                     picture.save(os.path.join(out, f"{item['name']}-{config.name}.png"))
@@ -300,7 +304,8 @@ def judge(items, runs, pictures, baseline, checker_device):
 def main(argv=None):
     args = arguments(argv)
     try:
-        configs = plan.parse_configs(plan.PRESETS["smoke"] if args.smoke else plan.PRESETS["quick"] if args.quick else args.configs or plan.PRESETS["full"])
+        preset = "smoke" if args.smoke else "quick" if args.quick else "minute" if args.minute else None
+        configs = plan.parse_configs(plan.PRESETS[preset] if preset else args.configs or plan.PRESETS["full"])
     except ValueError as error:
         sys.exit(f"--configs: {error}")
     configs, baseline, note = plan.with_baseline(configs)
@@ -347,6 +352,7 @@ def main(argv=None):
 
     rows = plan.summarize(runs, configs, baseline)
     pick = plan.recommend(rows, baseline)
+    fits = plan.within(rows, baseline, target=args.target)
     summary = plan.table(rows, baseline)
     captions = {(r["item"], r["config"]): plan.caption(r, baseline) for r in runs}
     sheet_items = [{"name": i["name"], "shop": i["garment"], "render": i["person"]} for i in items]
@@ -363,18 +369,21 @@ def main(argv=None):
         "runs": runs,
         "summary": rows,
         "recommendation": pick,
+        "within_target": dict(fits, target_seconds=args.target),
         "max_rss_gb": round(max_rss / (1e9 if sys.platform == "darwin" else 1e6), 2),
     }
     with open(os.path.join(out, "results.json"), "w") as f:
         json.dump(results, f, indent=1)
     heading = f"# FASHN VTON 1.5 on {info['chip']} ({info['memory_gb']} GB)\n\n"
     with open(os.path.join(out, "summary.md"), "w") as f:
-        f.write(heading + summary + f"\n\n**Pick:** {pick['pick'] or 'none'}: {pick['why']}\n")
+        f.write(heading + summary + f"\n\n**Pick:** {pick['pick'] or 'none'}: {pick['why']}\n"
+                f"\n**Within {args.target:g} s:** {fits['pick'] or 'none'}: {fits['why']}\n")
     say("\n" + summary)
     say(f"pick: {pick['pick'] or 'none'}: {pick['why']}")
+    say(f"within {args.target:g} s: {fits['pick'] or 'none'}: {fits['why']}")
     if args.smoke:
-        say("smoke run: 2 steps make a rough picture, so REFUSED is expected; what matters is that every precision "
-            "made one (no 'failed', no NaN). Next: --quick")
+        say("smoke run: 2 steps make a rough picture and the times include the GPU's first-use setup; what matters "
+            "is that every precision made one (no 'failed', no NaN)")
     say(f"wrote {out}/sheet.png, summary.md and results.json")
     faulthandler.cancel_dump_traceback_later()
     LIVE["log"].close()

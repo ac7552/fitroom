@@ -170,6 +170,7 @@ def spike_pipeline(weights_dir, device, precision, seed=7):
         def __init__(self):
             self.spike_precision = precision
             self.noise_seed = seed
+            self.guided_steps = None  # None: FASHN's own, guidance on every step but the last
             self.last_sample = None
             super().__init__(weights_dir=weights_dir, device=str(device))
 
@@ -199,7 +200,9 @@ def spike_pipeline(weights_dir, device, precision, seed=7):
         def _sample(self, *, ca_images, garment_images, person_poses, garment_poses, garment_categories,
                     num_timesteps=30, time_shift_mu=1.5, guidance_scale=1.5, skip_cfg_last_n_steps=1, use_tqdm=True):
             # FASHN's Euler sampler with classifier-free guidance (pipeline.py, _sample), line for line, but
-            # for the noise (drawn on the CPU from the seed) and, for hybrid, the picture kept in fp32.
+            # for the noise (drawn on the CPU from the seed), for hybrid the picture kept in fp32, and the steps
+            # without guidance: FASHN still runs both passes there and keeps one; here they're one pass, the
+            # garment's (forward with no mask is forward_for_cfg's first half), so they cost half as much.
             model = self.tryon_model
             dev, dtype = ca_images.device, ca_images.dtype
             carry = torch.float32 if self.spike_precision == "hybrid" else dtype
@@ -214,20 +217,22 @@ def spike_pipeline(weights_dir, device, precision, seed=7):
             }
             sync(dev)
             began = time.perf_counter()
+            guided = num_timesteps - skip_cfg_last_n_steps if self.guided_steps is None else self.guided_steps
             for i, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
                 t_vec = torch.full((batch,), t_curr, dtype=carry, device=dev)
-                pred = model.forward_for_cfg(images.to(dtype), t_vec, **kwargs)
-                v_c, v_u = pred["v_c"].to(carry), pred["v_u"].to(carry)
-                if skip_cfg_last_n_steps > 0 and i >= num_timesteps - skip_cfg_last_n_steps:
-                    v = v_c
-                else:
+                if i < guided:
+                    pred = model.forward_for_cfg(images.to(dtype), t_vec, **kwargs)
+                    v_c, v_u = pred["v_c"].to(carry), pred["v_u"].to(carry)
                     v = v_u + guidance_scale * (v_c - v_u)
+                else:
+                    v = model(images.to(dtype), t_vec, **kwargs)["x"].to(carry)
                 images = images + (t_prev - t_curr) * v
             finite = bool(torch.isfinite(images).all())
             sync(dev)
             self.last_sample = {
                 "seconds": round(time.perf_counter() - began, 2),
                 "steps": num_timesteps,
+                "guided": min(guided, num_timesteps),
                 "finite": finite,
                 "memory_gb": memory_gb(dev),
             }
