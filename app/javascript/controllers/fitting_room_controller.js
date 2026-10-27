@@ -898,6 +898,10 @@ export default class extends Controller {
   // photos of the clothes painted on, the outermost top and then the pants. Only that picture, its outline
   // and the stores' photos go; the answer is the new picture and our checks on it. Nothing is kept.
   //
+  // It's a job on the server (POST answers at once with its id), asked after every 1.5 s until it's done:
+  // the GPU may have to wake up first, which no single request could wait for. Stop (closeStudio aborts the
+  // request) or leaving the page DELETEs the job, which cancels the GPU's work too.
+  //
   // While it's being made, the 3D view stays where it is under a veil (see showVeil) and the stage's controls
   // are inert; the picture then opens in the studio panel over the same box, where the person is looking. If
   // the AI says no or something goes wrong, the veil goes and the person is back on the 3D view with a short
@@ -924,14 +928,21 @@ export default class extends Controller {
     const token = this.studioToken = Symbol("ai")
     const controller = this.studioAbort = new AbortController()
     const began = Date.now()
+    // What the server last said (TryOnJob.status): "starting" (a GPU waking up) or "painting", and which
+    // garment of how many; "sent" until it first answers.
+    let progress = null
     const tick = setInterval(() => {
-      if (token !== this.studioToken) return
+      if (token !== this.studioToken || !progress) return
       const seconds = Math.round((Date.now() - began) / 1000)
-      // A warm GPU paints in 15 to 30 s; past that it's waking up (about a minute, longer the first time).
-      this.showVeil(seconds > 35
-        ? `Waking the AI up, then painting the stores' clothes on… ${seconds}s (a first picture can take a few minutes)`
-        : `Painting the stores' clothes on with AI… ${seconds}s`)
+      const garment = progress.layer === "trousers" ? "pants" : progress.layer
+      const of = progress.layers?.length > 1 ? ` (${progress.layers.indexOf(progress.layer) + 1} of ${progress.layers.length})` : ""
+      this.showVeil(progress.status === "painting"
+        ? `Painting the store's ${garment ?? "clothes"} on with AI${of}… ${seconds}s`
+        : progress.status === "starting"
+          ? `Waking the AI up${of}… ${seconds}s (it sleeps when nobody's using it; usually under a minute)`
+          : `Sending the photo to the AI… ${seconds}s`)
     }, 1000)
+    let cancel = null
     try {
       const box = this.canvasTarget.parentElement
       const scale = 1280 / Math.max(box.clientWidth, box.clientHeight)
@@ -950,9 +961,33 @@ export default class extends Controller {
         body: JSON.stringify({ photo, outline, items: items.map(([kind], i) => ({ kind, photo: shops[i] })) }),
         signal: controller.signal
       })
-      const reply = await answer.json()
-      if (token !== this.studioToken) return
-      if (!answer.ok) throw new Error(reply.message ?? "The AI picture didn't work this time.")
+      const started = await answer.json()
+      if (!answer.ok) throw new Error(started.message ?? "The AI picture didn't work this time.")
+      const jobUrl = `${this.tryOnUrlValue}/${encodeURIComponent(started.job)}`
+      let finished = false
+      cancel = () => {
+        if (finished) return
+        finished = true
+        fetch(jobUrl, { method: "DELETE", headers: { Accept: "application/json" }, keepalive: true }).catch(() => {})
+      }
+      controller.signal.addEventListener("abort", cancel, { once: true })
+      window.addEventListener("pagehide", cancel)
+      if (token !== this.studioToken) { cancel(); return }
+      progress = { status: "sent" }
+      let reply
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        if (token !== this.studioToken) return
+        const asked = await fetch(jobUrl, { headers: { Accept: "application/json" }, signal: controller.signal })
+        reply = await asked.json()
+        if (token !== this.studioToken) return
+        if (!asked.ok || reply.status === "failed" || reply.status === "cancelled") {
+          throw new Error(reply.message ?? "The AI picture didn't work this time.")
+        }
+        if (reply.status === "done") break
+        progress = reply
+      }
+      finished = true
       this.studioChecks = reply.checks && Object.keys(reply.checks).length ? reply.checks : null
       if (reply.image) {
         const painted = await (await fetch(reply.image)).blob()
@@ -977,6 +1012,7 @@ export default class extends Controller {
       }
     } finally {
       clearInterval(tick)
+      if (cancel) window.removeEventListener("pagehide", cancel)
       this.aiBusy = false
       if (this.hasAiButtonTarget) this.aiButtonTarget.disabled = false
       if (this.studioTarget.hidden) this.uncoverStage()

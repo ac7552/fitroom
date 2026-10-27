@@ -101,7 +101,8 @@ def free_memory():
 # Downloading -----------------------------------------------------------------------------------------------
 
 def download(weights=WEIGHTS, models=("fashn", "leffa"), checker=True):
-    """Fetches the weights into `weights` (Modal does this while the image is built; Colab in a cell)."""
+    """Fetches the weights into `weights` (the app's service into its Volume, the spike's while its image is built;
+    Colab in a cell). Files already there are kept, so running it again only checks."""
     from huggingface_hub import hf_hub_download, snapshot_download
 
     if "fashn" in models:
@@ -153,11 +154,16 @@ class NoParser:
         return np.zeros(picture.shape[:2], dtype=np.int64)
 
 
-def load_fashn(weights_dir=f"{WEIGHTS}/fashn", device=None, dtype=None):
+def load_fashn(weights_dir=f"{WEIGHTS}/fashn", device=None, dtype=None, pose=True):
     """FASHN's TryOnPipeline on `device` in `dtype`. The pipeline picks bf16 by itself whenever
     `torch.cuda.is_bf16_supported()` says yes, which on a T4 is emulation (slow), so the dtype is set before
     the weights are cast (pipeline.py: __init__ sets inference_dtype, then _setup_tryon_model casts to it).
-    With FASHN_PARSER=off the parser is never built (pipeline.py: _setup_hp_model)."""
+    With FASHN_PARSER=off the parser is never built (pipeline.py: _setup_hp_model).
+
+    pose=False leaves DWPose (two ONNX sessions, bound to a device when made) for `move_fashn` to build: the
+    service loads the rest on the CPU before Modal's memory snapshot and moves it to the GPU after. With
+    both `device` and `dtype` given nothing asks torch.cuda, which before a CPU-only snapshot must not be asked
+    (pipeline.py only looks when device is None, and only checks bf16 when the device is cuda)."""
     import torch  # noqa: F401 - first, so onnxruntime-gpu finds the CUDA libraries torch ships
     from fashn_vton import TryOnPipeline
 
@@ -168,6 +174,12 @@ def load_fashn(weights_dir=f"{WEIGHTS}/fashn", device=None, dtype=None):
             self.inference_dtype = dtype
             super()._setup_tryon_model()
 
+        def _setup_pose_model(self):
+            if pose or getattr(self, "pose_now", False):
+                super()._setup_pose_model()
+            else:
+                self.pose_model = None
+
         def _setup_hp_model(self):
             if parser_off():
                 self.hp_model = NoParser()
@@ -175,6 +187,17 @@ def load_fashn(weights_dir=f"{WEIGHTS}/fashn", device=None, dtype=None):
                 super()._setup_hp_model()
 
     return Pipeline(weights_dir=weights_dir, device=str(device))
+
+
+def move_fashn(pipe, device):
+    """A pipeline from `load_fashn(..., pose=False)` moved to `device` (a torch.device): its weights (dtype
+    kept), the device its __call__ puts tensors and seeds on (pipeline.py reads self.device), and DWPose
+    built there (pipeline.py: _setup_pose_model picks CUDA's ONNX provider from self.device)."""
+    pipe.tryon_model.to(device)
+    pipe.device = device
+    pipe.pose_now = True
+    pipe._setup_pose_model()
+    return pipe
 
 
 def run_fashn(pipe, person, garment, category, *, flat_lay=False, seed=7, steps=30, pose_json=None):
@@ -307,6 +330,26 @@ class Checker:
         if self.device is None:
             self.device, _ = device_and_dtype()
         return self.device
+
+    def preload(self):
+        """Both models loaded now, on this checker's device (the service does it before its snapshot)."""
+        from PIL import Image
+
+        blank = Image.new("RGB", (64, 64), "white")
+        self.cutout(blank)
+        self.embed(blank)
+        return self
+
+    def move(self, device):
+        """The loaded models moved to `device` (a torch.device): BiRefNet in fp16 on CUDA, as `cutout` loads it."""
+        self.device = device
+        if self._birefnet is not None:
+            model = self._birefnet.to(device)
+            self._birefnet = model.half() if device.type == "cuda" else model.float()
+        if self._dino is not None:
+            processor, model = self._dino
+            self._dino = (processor, model.to(device))
+        return self
 
     def cutout(self, picture):
         """The figure cut out of a picture with BiRefNet: a greyscale PIL picture, white where the figure is."""

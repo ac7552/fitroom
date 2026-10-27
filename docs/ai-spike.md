@@ -388,30 +388,79 @@ bad pictures land.
 
 The app's service is `script/modal/tryon_service.py`, not the spike's: FASHN only, its research-only parser
 off, at most `TRYON_MAX_GPUS` GPUs at once (default 2, so the bill can't run away) and back to sleep
-`TRYON_IDLE_SECONDS` after its last picture (default 60). Once, with a Modal account and a card on file:
+`TRYON_IDLE_SECONDS` after its last picture (default 60). Written against the `modal` client 1.6.2.
+
+**Why jobs.** Modal cuts any web request off at 150 s and answers with a 303 to poll instead, which
+`Net::HTTP` doesn't follow; a GPU waking from sleep (pull the image, load 10 GB of weights) could take longer
+than that, so the AI picture failed whenever the GPU had been asleep, and the abandoned requests went on
+holding the two GPUs for up to 300 s. Now nothing waits on a GPU:
+
+- the service's `jobs` web app (one URL, on a small CPU container, so asking never wakes or holds a GPU):
+  `POST /start` (the paint request as before, or `{ warm: true }`) → `{ id }` at once; `GET /result/{id}` →
+  202 `{ status: "pending", phase: "starting" | "painting" }`, or 200 `{ status: "done", ok, image?, checks,
+  seconds }`, or `{ status: "failed", error }`; `POST /cancel/{id}` → cancels the call on the GPU. All behind
+  the proxy auth token. `script/modal/tryon_jobs.py` has the endpoints' logic, tested without Modal.
+- the server (`TryOn`, `TryOnJob`) starts each layer's picture, asks every 2 s and then 3 s, and cancels it at
+  `FITROOM_TRYON_DEADLINE` (300 s for the whole outfit) or when the page's Stop sends
+  `DELETE /api/v1/try_ons/:job` (docs/api.md, "The AI picture");
+- the page polls the server every 1.5 s and says "Waking the AI up" or "Painting the store's top on".
+
+**Why it's quicker to wake.** The weights live in a Modal Volume (`fitroom-tryon-weights`, mounted at
+`/weights`), not in the image, so a fresh worker no longer pulls a 10 GB image; and the class takes a memory
+snapshot once the models are loaded (on the CPU), which later containers restore instead of loading again,
+then move the weights to the GPU (a few seconds). `TRYON_SNAPSHOT=gpu` uses Modal's GPU snapshot instead
+(alpha: no move at all, so faster still, but newer and with more ways to fail); `TRYON_SNAPSHOT=off` loads
+from the Volume on every start, the fallback if a snapshot ever misbehaves. A picture may run
+`TRYON_PAINT_SECONDS` (180) before Modal stops it.
+
+Once, with a Modal account and a card on file, in this order:
 
 ```sh
-tmp/venv-mac/bin/pip install modal          # any Python with numpy and Pillow will do
+tmp/venv-mac/bin/pip install modal==1.6.2   # any Python with numpy and Pillow will do
 tmp/venv-mac/bin/modal setup                # signs in, in the browser
-tmp/venv-mac/bin/modal deploy script/modal/tryon_service.py   # builds the image the first time (~15 min)
+tmp/venv-mac/bin/modal run script/modal/tryon_service.py::fetch_weights   # fills the Volume (~10 GB, ~10 min; once)
+tmp/venv-mac/bin/modal deploy script/modal/tryon_service.py               # builds the image the first time (~10 min)
 ```
 
-The deploy prints the `tryon` endpoint's URL. In Modal's dashboard, Settings > Proxy Auth Tokens, make a token;
-put the URL, the token's key and its secret in `.env` as `FITROOM_TRYON_URL`, `FITROOM_TRYON_KEY`,
-`FITROOM_TRYON_SECRET`, and restart the app: the **Real clothes (AI)** button appears. Requests without the
-token are turned away before any GPU starts.
+`fetch_weights` is safe to run again (what's there is kept); run it again only if the engine's models
+change. Other limits: `TRYON_MAX_GPUS=3 TRYON_IDLE_SECONDS=120 modal deploy script/modal/tryon_service.py`.
 
-`POST` `{ person, garment: base64 PNG/JPEG, category: "tops"|"bottoms", steps?, mask?, outline?, print?:
-base64 PNG, pose?, seed? }` → `{ ok, image?: base64 PNG, checks: { shape, identity, print, ok }, seconds }`.
-With `ok` false there is no image; the checks say why. `{ warm: true }` → `{ ok, warm }` once a GPU is up,
-painting nothing. The service keeps nothing: pictures are decoded in memory and the reply is the only output.
+The deploy prints two URLs. The one that matters is the `jobs` app's, like
+`https://WORKSPACE--fitroom-tryon-service-jobs.modal.run` (no path: the server adds `/start`,
+`/result/...`, `/cancel/...`). In Modal's dashboard, Settings > Proxy Auth Tokens, make a token; put the URL,
+the token's key and its secret in `.env` and restart the app: the **Real clothes (AI)** button appears.
+Requests without the token are turned away before any container starts.
+
+```sh
+FITROOM_TRYON_URL=https://WORKSPACE--fitroom-tryon-service-jobs.modal.run
+FITROOM_TRYON_KEY=wk-...
+FITROOM_TRYON_SECRET=ws-...
+```
+
+The other URL is the old synchronous `tryon` endpoint (`...-tryon-tryon.modal.run`), kept for one release
+so the old URL in `.env` still works until it's changed (with the old 150 s problem); the server talks to
+it the old way because of how the URL ends, or when `FITROOM_TRYON_MODE=sync`. Once `.env` has the jobs
+URL, the endpoint can be deleted from `tryon_service.py`.
+
+**Timings to expect** (L4, 20 steps; first figures to check against the logs): a warm GPU paints a garment
+in 15 to 30 s, so a top and pants in about a minute. A sleeping one restores its snapshot and moves the
+weights in roughly 15 to 30 s before that. The first start after each deploy is the slow one, a few minutes:
+it reads the weights from the Volume and takes the snapshot (Modal takes 2 or 3 per GPU type while it
+learns where the class runs). Polling adds up to 3 s.
+
+The paint request is `{ person, garment: base64 PNG/JPEG, category: "tops"|"bottoms", steps?, mask?,
+outline?, print?: base64 PNG, pose?, seed? }` → `{ ok, image?: base64 PNG, checks: { shape, identity,
+print, ok }, seconds }`. With `ok` false there is no image; the checks say why. The service keeps nothing:
+pictures are decoded in memory, and the result waits in Modal only until the server takes it (Modal's
+limit is 7 days; the server takes it within seconds). The `fitroom-tryon-phases` Dict holds only the ids of
+calls being painted, for the "painting" label.
 
 The page (`aiPicture` in `fitting_room_controller.js`) takes its own photo from the front with the figure's
-outline and sends them, with each garment's shop photo, to `POST /api/v1/try_ons`. The server (`TryOn.dress`)
-paints the outermost top, then the pants onto that, at `FITROOM_TRYON_STEPS` steps each (default 20), and
-answers with the picture and each garment's checks; a refused garment stays as the page drew it. Adding
-clothes with a shop photo sends `POST /api/v1/try_ons/warm`, which wakes a GPU at most every 45 s, so it's
-up (a cold start is about a minute) by the time the button is pressed.
+outline and sends them, with each garment's shop photo, to `POST /api/v1/try_ons`. The server (`TryOn.dress`
+in a `TryOnJob`) paints the outermost top, then the pants onto that, at `FITROOM_TRYON_STEPS` steps each
+(default 20), and hands back the picture and each garment's checks; a refused garment stays as the page drew
+it. Adding clothes with a shop photo sends `POST /api/v1/try_ons/warm`, which wakes a GPU at most every 45 s,
+so it's up by the time the button is pressed.
 
 The spike's `tryon_spike.py` stays for comparing models: it carries Leffa too, and `modal run` writes sheets.
 

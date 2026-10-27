@@ -143,7 +143,8 @@ renders nobody fetched within 10 minutes, it's gone.
 
 ## The AI picture
 
-`POST /api/v1/try_ons` with the page's own picture of the outfit and each garment's shop photo:
+A job, so no request waits on a GPU (one waking from sleep can take longer than any proxy will hold a
+request open). `POST /api/v1/try_ons` with the page's own picture of the outfit and each garment's shop photo:
 
 ```json
 { "photo": "data:image/png;base64,...", "outline": "data:image/png;base64,...",
@@ -151,10 +152,26 @@ renders nobody fetched within 10 minutes, it's gone.
 ```
 
 `outline` is the figure, white on black (optional). Kinds are `top`, `jacket`, `coat` and `trousers`; the
-outermost top is painted, then the trousers onto that. → `{ "image": "data:image/png;base64,..." | null,
-"checks": { "top": { "shape": ..., "identity": ..., "print": ..., "ok": true } }, "painted": ["top"] }`.
-`image` is null when every garment was refused (the checks say which gate said no). 422 for a picture it
-can't read or no garment it can paint, 502 when the service didn't answer, 503 when none is set up.
+outermost top is painted, then the trousers onto that. → 202 `{ "job": "..." }` at once. 422 for a picture
+it can't read or no garment it can paint (nothing starts), 429 when the server is already painting four
+pictures, 503 when no try-on service is set up.
+
+`GET /api/v1/try_ons/:job`, every second or two → `{ "status", "seconds", "layer", "layers" }`:
+
+- `"starting"`: waiting for a GPU (waking one takes under a minute; the first after a deploy, a few);
+- `"painting"`: a GPU is painting `layer` (one of `layers`, in order);
+- `"done"`, with `"image": "data:image/png;base64,..." | null`, `"checks": { "top": { "shape": ...,
+  "identity": ..., "print": ..., "ok": true } }` and `"painted": ["top"]`. `image` is null when every
+  garment was refused (the checks say which gate said no). A done job is handed over once, then forgotten;
+- `"failed"`, with a `"message"` for the page (the service didn't answer, or took longer than
+  `FITROOM_TRYON_DEADLINE`, 300 s by default; its work there is cancelled);
+- `"cancelled"`.
+
+404 for a job it doesn't know (never started, already handed over, or older than 10 minutes).
+
+`DELETE /api/v1/try_ons/:job` → `{ "status": "cancelled" }` (404 when unknown): Stop. The job ends and its
+call on the try-on service is cancelled, so it stops holding a GPU. Jobs live only in the server's memory;
+everything is sent with `Cache-Control: no-store`.
 
 `POST /api/v1/try_ons/warm` → 202 `{ "warming": true | false }`: wakes the try-on service's GPU, at most
 every 45 seconds, so the next picture doesn't wait for it to start.
