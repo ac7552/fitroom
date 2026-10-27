@@ -39,9 +39,17 @@ module Fit
   # Leggings stretch over the body: made a little smaller than it, at the waist and the seat.
   LEGGINGS_WAIST_EASE = -12..1
   LEGGINGS_SEAT_EASE = { "slim" => -16..-4, "regular" => -14..-2, "classic" => -10..1 }.freeze
-  # An elastic waist (joggers, sweatpants) is made smaller than the body and stretches on; a tailor can't
-  # let it out.
-  ELASTIC_WAIST_EASE = -10..6
+  # An elastic waist (joggers, sweatpants, pull-on pants) is made smaller than the body and stretches on, by
+  # about 8% of the body's waist (some 6 to 7 cm); past that it's tight, and a tailor can't let it out. It
+  # may be up to 6 cm bigger than the body, gathered in by its cord. Within that, the size that stretches
+  # a little under halfway (a size's relaxed waist is made for the smallest body it fits) wins a tie.
+  ELASTIC_STRETCH = 0.08
+  ELASTIC_ROOM = 6
+  ELASTIC_AIM = 0.4   # of the stretch
+  ELASTIC_TIE = 0.1   # penalty per cm from the aim
+  # The cloth under an elastic waist is gathered in, so pull-on pants are made this much fuller over the
+  # seat than tailored ones, as their cut.
+  GATHERED_SEAT = 8
   # The knee is about this share of the way down from the crotch to the floor.
   KNEE_SHARE = 0.47
 
@@ -66,6 +74,9 @@ module Fit
   # the shoe: about 3 cm shorter than the inseam measured to the floor.
   TROUSER_WAIST_EASE = 0..3
   SEAT_EASE = { "slim" => 3..7, "regular" => 6..10, "classic" => 9..14 }.freeze
+  # Pants made loose on purpose (baggy, wide-leg, pleated: the shop's words, see GarmentImport#bottoms_cut):
+  # 20 cm or more over the seat is how they're meant to be, so the waist picks the size.
+  LOOSE_SEAT_EASE = 8..34
   HEM_ABOVE_FLOOR = 3
   HEM_TOLERANCE = 1.5
   LEG_OPENINGS = [ [ 38, "a slim, tapered leg" ], [ 44, "a straight leg" ], [ Float::INFINITY, "a wide leg" ] ].freeze
@@ -79,6 +90,8 @@ module Fit
   ALTERATIONS = {
     waist:  { loose: [ "take_in_waist", "Take in the waist", 5 ], tight: [ "let_out_waist", "Let out the waist", 2.5 ] },
     trouser_waist: { loose: [ "take_in_waist", "Take in the waist", 5 ], tight: [ "let_out_waist", "Let out the waist", 3 ] },
+    # Through the centre back seam, which trousers are made with extra in for this.
+    seat: { loose: [ "take_in_seat", "Take in the seat", 6 ] },
     inseam: { long: [ "shorten_hem", "Take up the hem", 15 ], short: [ "lengthen_hem", "Let down the hem", 4 ] },
     sleeve: { long: [ "shorten_sleeves", "Shorten the sleeves", 5 ], short: [ "lengthen_sleeves", "Lengthen the sleeves", 3 ] }
   }.freeze
@@ -137,7 +150,8 @@ module Fit
   SHORT_SLEEVE = 40   # a sleeve shorter than this (cm, from the shoulder seam) is a short sleeve
 
   # Penalty per centimetre outside the target, plus a flat cost when no tailor can fix it.
-  WEIGHT = { shoulders: 4, chest: 3, length: 2, waist: 1, sleeve: 0.5, trouser_waist: 2, elastic_waist: 2, seat: 2, inseam: 0.4, hips: 2 }.freeze
+  WEIGHT = { shoulders: 4, chest: 3, length: 2, waist: 1, sleeve: 0.5, trouser_waist: 2, elastic_waist: 2, seat: 2, stretch_seat: 2,
+             inseam: 0.4, hips: 2 }.freeze
   UNFIXABLE = 6
 
   Fix = Data.define(:action, :text, :amount)
@@ -159,46 +173,94 @@ module Fit
   # Defined above, next to their numbers.
   module_function :skirt_length, :shorts_length
 
-  def check_size(body, size, cut = "regular", garment = "jacket")
+  # A women's jacket usually ends higher, at the top of the hip.
+  WOMEN_JACKET_LENGTH_PER_HEIGHT = 0.37
+  # Where a jacket made to end at the waist (cropped, a bomber, a track jacket) ends, by its length as a
+  # share of the height: [share, words], the first it's under.
+  WAIST_HEMLINES = [ [ 0.27, "Cropped. It ends above your waist." ], [ 0.32, "Made short. It ends at your waist." ],
+                     [ 0.38, "Made short. It ends at the top of your hips." ], [ Float::INFINITY, "It ends at your hips." ] ].freeze
+
+  # design: how its sizes are cut (see design), for a jacket. style: how it looks ("bomber"). details: { "women",
+  # "cropped", "ends" => "waist" (made to end at the waist: a track jacket, a blouson) }.
+  def check_size(body, size, cut = "regular", garment = "jacket", design = {}, style: nil, details: {})
     ranges = CUTS.fetch(cut)
     coat = garment == "coat"
     ranges = ranges.transform_values { it.is_a?(Range) ? (it.min + COAT_EXTRA_EASE)..(it.max + COAT_EXTRA_EASE) : it } if coat
+    roomy, dropped = coat ? [ nil, false ] : design.to_h.values_at(:roomy, :dropped)
+    women = flag?(details, "women")
+    short_by_design = !coat && (flag?(details, "cropped") || details["ends"].to_s == "waist" || style == "bomber")
     checks = [
-      given(size, "shoulders", "Shoulders") { range_check(:shoulders, "Shoulders", it - body["shoulders"], SHOULDER_EASE) },
-      given(size, "chest", "Chest") { range_check(:chest, "Chest", it - body["chest"], ranges[:chest]) },
-      given(size, "waist", "Waist") { range_check(:waist, "Waist", it - body["waist"], ranges[:waist]) },
+      given(size, "shoulders", "Shoulders") do |shoulders|
+        next check(:shoulders, "Shoulders", shoulders - body["shoulders"], "good").with(note: "The shoulder seam is made to sit down the arm.") if dropped
+
+        range_check(:shoulders, "Shoulders", shoulders - body["shoulders"], SHOULDER_EASE)
+      end,
+      given(size, "chest", "Chest") { roomy ? roomy_chest(it - body["chest"], roomy, cut) : range_check(:chest, "Chest", it - body["chest"], ranges[:chest]) },
+      given(size, "waist", "Waist") { range_check(:waist, "Waist", it - body["waist"], roomy ? (ranges[:waist].min + roomy)..(ranges[:waist].max + roomy) : ranges[:waist]) },
       given(size, "sleeve", "Sleeves") { sleeve_check(it - (body["arm"] - SLEEVE_ABOVE_WRIST)) },
-      given(size, "length", "Length") do
-        coat ? coat_length(it, body["height"]) : length_check(it - body["height"] * LENGTH_PER_HEIGHT)
+      given(size, "length", "Length") do |length|
+        next coat_length(length, body["height"]) if coat
+
+        diff = length - body["height"] * (women ? WOMEN_JACKET_LENGTH_PER_HEIGHT : LENGTH_PER_HEIGHT)
+        next waist_length(length, diff, body["height"]) if short_by_design && diff.negative?
+        if (roomy || dropped) && diff.negative? && diff >= -BOXY_SHORT
+          next check(:length, "Length", diff, "good").with(note: "Made short and boxy. It ends at your hips.")
+        end
+
+        length_check(diff)
       end
     ]
     Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
   end
 
+  # A jacket made to end at the waist: where it ends, not right or wrong.
+  def waist_length(length, diff, height)
+    note = WAIST_HEMLINES.find { |share, _| length < height * share }.last
+    Check.new(part: "length", label: "Length", ease: diff.round(2), status: "good", fix: nil, penalty: 0, note:)
+  end
+
+  # A chest made roomy on purpose (see design): judged against the room it's made with, the size nearest it
+  # first.
+  def roomy_chest(ease, roomy, cut)
+    aim = roomy + ROOMY_CUT.fetch(cut)
+    found = range_check(:chest, "Chest", ease, (aim + ROOMY_EASE.min)..(aim + ROOMY_EASE.max))
+    found = found.with(penalty: (found.penalty + (ease - aim).abs * 0.05).round(2))
+    found.status == "good" ? found.with(note: "Made to be big and loose. On you, it's loose the way it should be.") : found
+  end
+
+  def flag?(details, key) = [ true, "true" ].include?(details.to_h[key])
+
   # style: "shorts" (their length is where they end, not right or wrong), "leggings" (stretch, made smaller
   # than the body), or another (trousers, jeans, joggers).
+  # details: { "elastic" => pull-on (an elastic or drawcord waist), "fit" => "loose" or "slim" (how the shop
+  # says the pants are cut), "hem" => "unfinished" (sold long, to be hemmed) }.
   def check_trousers(body, size, cut = "regular", style: nil, details: {})
     stretch = style == "leggings"
     # Joggers, and pull-on pants with an elastic or drawcord waist.
-    elastic = style == "joggers" || [ true, "true" ].include?(details["elastic"])
+    elastic = style == "joggers" || flag?(details, "elastic")
+    made = style == "skirt" || stretch ? nil : details["fit"].to_s
     checks = [
       given(size, "waist", "Waist") do |waist|
         next range_check(:trouser_waist, "Waist", waist - body["waist"], stretch ? LEGGINGS_WAIST_EASE : TROUSER_WAIST_EASE, shown_as: "waist") unless elastic
 
-        found = range_check(:elastic_waist, "Waist", waist - body["waist"], ELASTIC_WAIST_EASE, shown_as: "waist")
-        found.status == "good" && waist < body["waist"] ? found.with(note: "The elastic waist stretches to fit") : found
+        elastic_waist(waist - body["waist"], body["waist"])
       end,
       given(size, "seat", "Seat") do |seat|
         next needs(:seat, "Seat", "hips") unless body["hips"]
+        next stretch_seat(seat - body["hips"], cut) if stretch
 
-        range = stretch ? LEGGINGS_SEAT_EASE.fetch(cut) : SEAT_EASE.fetch(cut)
+        range = made == "loose" ? LOOSE_SEAT_EASE : SEAT_EASE.fetch(made == "slim" ? "slim" : cut)
+        range = range.min..(range.max + GATHERED_SEAT) if elastic && made != "loose"
         found = range_check(:seat, "Seat", seat - body["hips"], range)
-        stretch && found.status == "good" ? found.with(note: "Stretches to fit close to the body") : found
+        next found.with(note: "Cut loose over the seat, as it's meant to be") if found.status == "good" && made == "loose" && seat - body["hips"] > SEAT_EASE["classic"].max
+
+        found
       end,
       (style == "skirt" ? given(size, "length", "Length") { skirt_length(it, body["inseam"], body["height"]) } : nil),
       (style == "skirt" ? nil : given(size, "inseam", "Length") do |inseam|
         next needs(:inseam, "Length", "inseam") unless body["inseam"]
         next shorts_length(inseam, body["inseam"]) if style == "shorts"
+        next unhemmed(inseam, body["inseam"]) if details["hem"].to_s == "unfinished"
 
         hem_check(inseam - (body["inseam"] - HEM_ABOVE_FLOOR))
       end),
@@ -208,6 +270,29 @@ module Fit
       end)
     ].compact
     Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
+  end
+
+  # An elastic waist against the body's: within its stretch (see ELASTIC_STRETCH), the size nearest the aim
+  # first.
+  def elastic_waist(ease, waist)
+    stretch = (waist * ELASTIC_STRETCH).round(1)
+    found = range_check(:elastic_waist, "Waist", ease, -stretch..ELASTIC_ROOM, shown_as: "waist")
+    found = found.with(penalty: (found.penalty + (ease + stretch * ELASTIC_AIM).abs * ELASTIC_TIE).round(2))
+    found.status == "good" && ease.negative? ? found.with(note: "The elastic waist stretches to fit") : found
+  end
+
+  # Leggings' seat: made smaller than the body, it stretches on.
+  def stretch_seat(ease, cut)
+    found = range_check(:stretch_seat, "Seat", ease, LEGGINGS_SEAT_EASE.fetch(cut), shown_as: "seat")
+    found.status == "good" ? found.with(note: "Stretches to fit close to the body") : found
+  end
+
+  # Pants sold long, to be hemmed to the wearer (see GarmentImport#unfinished_hem): their length is a note,
+  # not a fault.
+  def unhemmed(inseam, leg)
+    hem = (leg - HEM_ABOVE_FLOOR).round
+    Check.new(part: "inseam", label: "Length", ease: (inseam - hem).round(2), status: "good", fix: nil, penalty: 0,
+              note: "Comes unhemmed. Have it hemmed to about #{hem} cm.")
   end
 
   # A stretch dress is made smaller than the body and stretches onto it: its chest, waist and hips as a share
@@ -254,26 +339,50 @@ module Fit
   # Some tops are made roomy on purpose (oversized, boxy), often with a dropped shoulder: the seam sits
   # down the arm. Their chart is much bigger than the body each size is for, so they're judged against
   # how they're meant to be worn. The usual body for each letter size: [chest, shoulders] in cm.
-  LETTER_BODY = { "XS" => [ 86, 41 ], "S" => [ 91, 43 ], "M" => [ 97, 45 ], "L" => [ 104, 47 ], "XL" => [ 112, 49 ],
+  LETTER_BODY = { "XXS" => [ 81, 40 ], "XS" => [ 86, 41 ], "S" => [ 91, 43 ], "M" => [ 97, 45 ], "L" => [ 104, 47 ], "XL" => [ 112, 49 ],
                   "XXL" => [ 120, 51 ], "XXXL" => [ 128, 53 ] }.freeze
-  ROOMY = 30          # this much more chest than its size's usual body (cm): made roomy
+  # A women's (bust as GarmentImport::DressCut::LETTERS has it).
+  WOMEN_LETTER_BODY = { "XXS" => [ 78, 36 ], "XS" => [ 82, 37 ], "S" => [ 87, 38 ], "M" => [ 92, 39.5 ], "L" => [ 98, 41 ],
+                        "XL" => [ 104, 42.5 ], "XXL" => [ 110, 44 ], "XXXL" => [ 116, 45.5 ] }.freeze
+  # Italian and French men's sizes (44 to 60) are half the chest they're made for, in cm; the shoulders
+  # grow about 1 cm a size from 45 cm at a 48.
+  NUMBERED = /\A(4[2-9]|5\d|6[0-2])\b/
+  # This much more chest than its size's usual body (cm): made roomy. About a classic cut's most room (a men's
+  # top's 26 cm, a women's 18); or any more than a regular cut's when the shop says it's oversized.
+  ROOMY = 25
+  ROOMY_WOMEN = 18
+  OVERSIZED = { men: 15, women: 10 }.freeze
   DROPPED = 8         # this much wider shoulders than its size's usual body: a dropped shoulder
   ROOMY_CUT = { "slim" => -6, "regular" => 0, "classic" => 6 }.freeze   # Snug sizes down, Loose sizes up
   ROOMY_EASE = -5..7  # around the room it's made with
   BOXY_SHORT = 10     # a roomy top may be cut this much shorter than usual (boxy)
 
-  # How a top's sizes are cut: { roomy: the extra chest it's made with (cm), or nil; dropped: true/false }.
-  # details "dropped": its shop photo shows dropped shoulders, whatever its chart's numbers say.
+  # How a top's or a jacket's sizes are cut: { roomy: the extra chest it's made with (cm), or nil; dropped:
+  # true/false }, from each size's chart against the body that size is for (a men's or women's letter size,
+  # or an Italian number). details: "dropped" (its shop photo shows dropped shoulders, whatever its chart's
+  # numbers say), "women", "fit" => "oversized" (the shop says it's oversized or boxy).
   def design(sizes, details = {})
-    known = sizes.filter_map do |size|
-      letter = size["name"].to_s.upcase[/\A(XXXL|3XL|XXL|2XL|XL|XS|S|M|L)\b/, 1]&.sub("3XL", "XXXL")&.sub("2XL", "XXL")
-      [ size, LETTER_BODY[letter] ] if letter
-    end
+    women = flag?(details, "women")
+    # (Numbers that stop below 50 are more likely a shirt's collar.)
+    italian = sizes.any? { it["name"].to_s.strip.match?(/\A(5\d|6[0-2])\b/) }
+    known = sizes.filter_map { |size| (body = size_body(size["name"], women, numbered: italian)) && [ size, body ] }
     chest = known.filter_map { |size, (c, _)| size["chest"] && size["chest"] - c }.sort
     shoulders = known.filter_map { |size, (_, s)| size["shoulders"] && size["shoulders"] - s }.sort
-    roomy = chest.any? && chest[chest.size / 2] >= ROOMY ? chest[chest.size / 2] : nil
-    photo = details["dropped"] == true || details["dropped"].to_s == "true"
-    { roomy:, dropped: photo || (shoulders.any? && shoulders[shoulders.size / 2] >= DROPPED) }
+    middle = chest[chest.size / 2]
+    said = details.to_h["fit"].to_s == "oversized"
+    roomy = middle && (middle >= (women ? ROOMY_WOMEN : ROOMY) || (said && middle > OVERSIZED.fetch(women ? :women : :men))) ? middle : nil
+    { roomy:, dropped: flag?(details, "dropped") || (shoulders.any? && shoulders[shoulders.size / 2] >= DROPPED) }
+  end
+
+  # The usual body [chest, shoulders] a size is made for, from its name; nil when the name isn't a size
+  # Fitroom knows.
+  def size_body(name, women = false, numbered: true)
+    label = name.to_s.upcase.strip
+    letter = label[/\A(XXXL|3XL|XXL|2XL|XL|XXS|2XS|XS|S|M|L)\b/, 1]&.sub("3XL", "XXXL")&.sub("2XL", "XXL")&.sub("2XS", "XXS")
+    return (women ? WOMEN_LETTER_BODY : LETTER_BODY)[letter] if letter
+    return if women || !numbered || !(n = label[NUMBERED, 1])
+
+    [ n.to_i * 2, 45 + (n.to_i - 48) / 2.0 ]
   end
 
   # A T-shirt, shirt, sweatshirt or other top. Short sleeves end on the upper arm, so they aren't checked
@@ -285,10 +394,11 @@ module Fit
     women = details["women"] == true || details["women"].to_s == "true"
     cropped = details["cropped"] == true || details["cropped"].to_s == "true"
     snug = details["snug"] == true || details["snug"].to_s == "true"
-    knit = details["fit"].to_s == "fitted" && (details["stretch"] == true || details["stretch"].to_s == "true")
+    roomy, dropped = design.values_at(:roomy, :dropped)
+    # A chart made roomy says more than a listing's "fitted" (a zip hoodie with "fitted cuffs" and a slim rib).
+    knit = !roomy && details["fit"].to_s == "fitted" && (details["stretch"] == true || details["stretch"].to_s == "true")
     snug ||= knit
     ranges = (style == "dress" ? DRESS_CUTS : snug ? SNUG_TOP_CUTS : women ? WOMEN_TOP_CUTS : TOP_CUTS).fetch(cut)
-    roomy, dropped = design.values_at(:roomy, :dropped)
     checks = [
       given(size, "shoulders", "Shoulders") do |shoulders|
         next check(:shoulders, "Shoulders", shoulders - body["shoulders"], "good").with(note: "The shoulder seam is made to sit down the arm.") if dropped
@@ -303,13 +413,7 @@ module Fit
           found = found.with(penalty: (found.penalty + (chest - body["chest"] * (1 + FITTED_KNIT_AIM.fetch(cut))).abs * FITTED_KNIT_TIE).round(2))
           next found.status == "good" && chest < body["chest"] ? found.with(note: "A fitted knit: it stretches to fit close to the body.") : found
         end
-        next range_check(:chest, "Chest", chest - body["chest"], ranges[:chest]) unless roomy
-
-        aim = roomy + ROOMY_CUT.fetch(cut)
-        found = range_check(:chest, "Chest", chest - body["chest"], (aim + ROOMY_EASE.min)..(aim + ROOMY_EASE.max))
-        # The size nearest the room it's made with wins a tie.
-        found = found.with(penalty: (found.penalty + (chest - body["chest"] - aim).abs * 0.05).round(2))
-        found.status == "good" ? found.with(note: "Made to be big and loose. On you, it's loose the way it should be.") : found
+        roomy ? roomy_chest(chest - body["chest"], roomy, cut) : range_check(:chest, "Chest", chest - body["chest"], ranges[:chest])
       end,
       given(size, "waist", "Waist") { range_check(:waist, "Waist", it - body["waist"], roomy ? (ranges[:waist].min + roomy)..(ranges[:waist].max + roomy) : ranges[:waist]) },
       given(size, "sleeve", "Sleeves") do |sleeve|
@@ -339,14 +443,16 @@ module Fit
 
   # Every size, best first.
   # style: how a top is cut, when it changes what fits ("dress": its length is where it ends, not right or wrong).
-  # details: a dress's cut ({ "stretch", "sleeves", "fit" }, see GarmentImport::DressCut).
+  # details: a dress's cut ({ "stretch", "sleeves", "fit" }, see GarmentImport::DressCut), or how a top, jacket
+  # or pants are made (see check_top, check_size, check_trousers).
   def rank(body, sizes, cut = "regular", garment = "jacket", style: nil, details: {})
     cuts = nil
     results = sizes.map do |size|
       case garment
       when "trousers" then check_trousers(body, size, cut, style:, details: details.to_h)
       when "top" then style == "dress" ? check_dress(body, size, cut, details.to_h) : check_top(body, size, cut, cuts ||= design(sizes, details.to_h), style:, details: details.to_h)
-      else check_size(body, size, cut, garment)
+      when "jacket" then check_size(body, size, cut, garment, cuts ||= design(sizes, details.to_h), style:, details: details.to_h)
+      else check_size(body, size, cut, garment, style:, details: details.to_h)
       end
     end
     results.sort_by(&:penalty)

@@ -101,7 +101,7 @@ class GarmentImportTest < ActiveSupport::TestCase
     pants = ->(name) { GarmentImport.new.from_page(page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", name).gsub("Suit jackets", "Pants"), source_url: "x") }
     assert_equal({ elastic: true }, pants.call("Drawcord Linen Pant")[:cut])
     assert_equal({ elastic: true }, pants.call("Elastic Waist Trouser")[:cut])
-    assert_nil pants.call("Pleated Wool Trouser")[:cut]
+    assert_equal({ fit: "loose" }, pants.call("Pleated Wool Trouser")[:cut])
     assert_nil pants.call("Fleece Jogger Drawstring")[:cut]
   end
 
@@ -502,5 +502,79 @@ class GarmentImportTest < ActiveSupport::TestCase
 
     assert_equal "top", GarmentImport.new.send(:kind_of, { name: "Oxford Dress Shirt" })
     assert_not_equal "dress", GarmentImport.new.send(:top_style_of, { name: "Oxford Dress Shirt" })
+  end
+
+  def trouser_chart(inseams) = GarmentImport::ChartReader::Chart.new(sizes: inseams.each_with_index.map { |inseam, i| { "name" => (44 + 2 * i).to_s, "waist" => 79.0 + 4 * i, "seat" => 108.0 + 4 * i, "inseam" => inseam } }, unit: "cm", kind: "garment", missing: [])
+
+  test "pants the shop calls baggy, wide, relaxed or pleated are cut loose; slim, skinny or tapered ones slim" do
+    import = GarmentImport.new
+    cut = ->(name, description = "", style = "trousers") { import.send(:bottoms_cut, { name:, description: }, style, trouser_chart([ 81, 81 ])) }
+    assert_equal({ fit: "loose" }, cut.("Loewe Anagram Baggy Jeans - Jeans Blue", "", "jeans"))
+    assert_equal({ elastic: true, fit: "loose" }, cut.("Giorgio Armani & Kith Pleated Pant - Senape", "Elasticated waistband with drawcord"))
+    assert_equal({ fit: "loose" }, cut.("Giorgio Armani & Kith Cargo Pant - Sabbia", "Pleats at the waist. Relaxed, straight leg fit"))
+    assert_equal({ fit: "loose" }, cut.("Wide-Leg Trouser"))
+    assert_equal({ fit: "slim" }, cut.("Slim Tapered Chino"))
+    assert_nil cut.("Giorgio Armani & Kith Cashmere Trouser - Iron", "Button closure at the waistband. Straight-leg fit")
+    # A wide waistband isn't a wide leg; leggings aren't cut loose or slim.
+    assert_nil cut.("Twill Trouser", "Wide waistband")
+    assert_nil cut.("Slim Leggings", "", "leggings")
+  end
+
+  test "trousers sold unhemmed are marked so: every size far longer than a leg, or the listing says it" do
+    import = GarmentImport.new
+    hem = ->(inseams, description = "", name = "Trouser") { import.send(:bottoms_cut, { name:, description: }, "trousers", trouser_chart(inseams)) }
+    # Armani & Kith's Virgin Wool Trouser: 104 cm in every size. Its Cashmere Trouser's 88 to 89 cm is hemmed.
+    assert_equal({ hem: "unfinished" }, hem.([ 103.97 ] * 5))
+    assert_nil hem.([ 87.8, 87.8, 87.8, 88.3, 88.8 ])
+    assert_equal({ hem: "unfinished" }, hem.([ 82 ] * 3, "Unhemmed, to be finished to your length."))
+    # A raw hem is a cut edge (frayed jeans), unless the legs are long too.
+    assert_nil hem.([ 82 ] * 3, "Raw hem", "Raw Hem Jean")
+  end
+
+  test "French and Italian sizes are read as the waists they're for, not as inches" do
+    import = GarmentImport.new
+    # Loewe's Anagram Baggy Jeans come in French 38 to 46: a 44 is a 34 in waist, not a 44.
+    loewe = import.send(:usual_trousers, { name: "Loewe Anagram Baggy Jeans", sizes: %w[38 40 42 44 46] })
+    assert_in_delta 34 * 2.54, loewe.sizes.find { it["name"] == "44" }["waist"], 0.1
+    italian = import.send(:usual_trousers, { name: "Wool Trouser", sizes: %w[44 46 48 50 52 54] })
+    assert_in_delta 32 * 2.54, italian.sizes.find { it["name"] == "48" }["waist"], 0.1
+    # Waist sizes stay waist sizes.
+    levis = import.send(:usual_trousers, { name: "501 Jean", sizes: %w[28 29 30 31 32 33 34 36 38 40] })
+    assert_in_delta 34 * 2.54, levis.sizes.find { it["name"] == "34" }["waist"], 0.1
+  end
+
+  test "a women's jacket or coat with no chart gets a women's usual sizes" do
+    import = GarmentImport.new
+    jacket = import.send(:usual_sizes, "jacket", "zip", { women: true, sizes: %w[XS S M L XL] }).sizes.find { it["name"] == "M" }
+    assert_equal [ 101, 40.5, 57, 60 ], jacket.values_at("chest", "shoulders", "sleeve", "length")
+    assert_operator import.send(:usual_sizes, "coat", nil, { women: true, sizes: %w[S M L] }).sizes.find { it["name"] == "M" }["shoulders"], :<, 42
+  end
+
+  test "a jacket made to end at the waist, and an oversized top or jacket, say so in their cut" do
+    import = GarmentImport.new
+    assert_equal({ ends: "waist" }, import.send(:jacket_cut, { name: "Kith Women Ina II Terry Track Zip - Astronaut" }))
+    assert_equal({ ends: "waist" }, import.send(:jacket_cut, { name: "Giorgio Armani & Kith Lamb Leather Aviator Blouson Jacket - Meteorite" }))
+    assert_equal({ fit: "oversized" }, import.send(:jacket_cut, { name: "Utility Jacket", description: "An oversized fit with dropped shoulders." }))
+    assert_nil import.send(:jacket_cut, { name: "Kith Vancouver Dejan Utility Jacket - Kindling", description: "Nylon. Mock neckline." })
+    assert_equal({ fit: "oversized" }, import.send(:top_cut, { name: "Boxy Pocket Tee", description: "Cotton." }))
+    assert_equal "bomber", import.send(:style_of, { name: "Giorgio Armani & Kith Lamb Leather Aviator Blouson Jacket - Meteorite", category: "Leather Jackets" }, "x")
+  end
+
+  test "a long sleeve the shop photo shows hanging past the hem is read from the shoulder, not the centre back" do
+    # Kith Women's Camilla Plunge Shirt (inches): an L's sleeve is 27.6 in (70 cm) on 15.5 in shoulders and a
+    # 22 in body. From the centre back that's a 50 cm, three-quarter sleeve; the photo shows long ones,
+    # reaching about 1.45 times the body's length.
+    rows = [ [ 14, 33, 26.83, 20.5 ], [ 14.5, 35, 27.08, 21 ], [ 15, 37, 27.33, 21.5 ], [ 15.5, 39, 27.58, 22 ], [ 16, 41, 27.83, 22.5 ], [ 16.5, 43, 28.08, 23 ] ]
+    sizes = %w[XS S M L XL XXL].zip(rows).map { |name, row| { "name" => name }.merge(%w[shoulders chest sleeve length].zip(row.map { (it * 2.54).round(2) }).to_h) }
+    chart = GarmentImport::ChartReader::Chart.new(sizes:, unit: "in", kind: "garment", missing: [ "waist" ])
+    import = GarmentImport.new
+
+    guessed = import.send(:shoulder_sleeves, chart, { women: true })
+    assert_equal "centre_back_guessed", guessed.sleeve_from
+    seen = import.send(:shoulder_sleeves, chart, { women: true, shape: { sleeve: 2.66, length: 1.84 } })
+    assert_nil seen.sleeve_from
+    assert_in_delta 70.05, seen.sizes.find { it["name"] == "L" }["sleeve"], 0.01
+    # A photo of sleeves that end at the wrist (as long as the body) keeps the centre-back reading.
+    assert_equal "centre_back_guessed", import.send(:shoulder_sleeves, chart, { women: true, shape: { sleeve: 1.7, length: 1.84 } }).sleeve_from
   end
 end

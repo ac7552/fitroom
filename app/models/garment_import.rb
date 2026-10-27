@@ -71,7 +71,7 @@ class GarmentImport
   STYLES = [
     [ "cardigan", /cardigan/i ],
     [ "tailored", /blazer|suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
-    [ "bomber", /bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington/i ],
+    [ "bomber", /bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington|aviator|blouson/i ],
     [ "zip", /two-way zip|zip(?:per)? closure|full[- ]zip|zip[- ]up|front zip/i ],
     [ "shirt", /denim(?: \w+)? jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
     [ "zip", /zip|moto\b|biker|leather jacket|shearling|puffer|down jacket|windbreaker|anorak|track jacket|blouson|fleece/i ]
@@ -145,7 +145,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 27
+  FORMAT = 28
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -368,9 +368,12 @@ class GarmentImport
     opening, roomy = TROUSER_LEGS.find { |pattern, _| words.match?(pattern) }&.last || [ women ? 38 : 40, 0 ]
     roomy += 8 if words.match?(/oversized|baggy|relaxed/i)
     waists = names.filter_map { it.to_s.strip[/\A(2[2-9]|3\d|4[0-6])\z/, 1]&.to_i }
+    european = european_waists(names) unless women
     inseam = bottom_style_of(product) == "shorts" ? shorts_inseam(product) : nil
     sizes =
-      if waists.size >= 2
+      if european
+        european.map { |name, w| trouser_size(name, w * 2.54, women, opening, roomy, inseam:) }
+      elsif waists.size >= 2
         waists.uniq.sort.map { |w| trouser_size(w.to_s, w * 2.54, women, opening, roomy, inseam:) }
       elsif (letters = names.map { letter_of(it) }.compact.uniq).size >= 2
         letters.sort_by { ALL_LETTERS.index(it) }.map do |letter|
@@ -398,6 +401,17 @@ class GarmentImport
       opening = (shape[:hem] * size["waist"]).clamp(shorts ? thigh * 0.9 : [ 18, thigh * 0.35 ].max, 80).round(1)
       size.merge("leg_opening" => opening, "thigh" => [ thigh, opening ].max)
     end
+  end
+
+  # Men's pants numbered the European way, not by waist inches: French sizes (38 to 46 and on: none under 36,
+  # and none odd, as waist sizes have) are the waist in inches plus 10; Italian ones (from 44, running past
+  # 50) plus 16. { "44" => 34, ... } (waist inches), or nil for waist sizes.
+  def european_waists(names)
+    numbers = Array(names).filter_map { it.to_s.strip[/\A\d{2}\z/]&.to_i }.uniq.sort
+    return if numbers.size < 2 || numbers.min < 36 || numbers.any?(&:odd?)
+
+    less = numbers.min >= 42 && numbers.max > 50 ? 16 : 10
+    numbers.to_h { [ it.to_s, it - less ] }
   end
 
   # The waist (cm) men's pants in each letter size are made for.
@@ -620,7 +634,9 @@ class GarmentImport
     "top_women" => [ [ 86, 37, 58, 60 ], [ 5, 1.5, 1, 1.5 ] ],
     "top" => [ [ 96, 42, 61, 66 ], [ 6, 2, 1, 2 ] ],
     "jacket" => [ [ 100, 43, 62, 66 ], [ 6, 2, 1, 1.5 ] ],
+    "jacket_women" => [ [ 91, 37.5, 56, 57 ], [ 5, 1.5, 0.5, 1.5 ] ],
     "coat" => [ [ 104, 44, 62, 92 ], [ 6, 2, 1, 2 ] ],
+    "coat_women" => [ [ 100, 37.5, 56, 96 ], [ 5, 1.5, 0.5, 1.5 ] ],
     "dress" => [ [ 84, 36, 14, 95 ], [ 5, 1.5, 0.5, 1.5 ] ],
     "dress_long" => [ [ 84, 36, 58, 100 ], [ 5, 1.5, 1, 1.5 ] ]
   }.freeze
@@ -813,15 +829,17 @@ class GarmentImport
     # A skirt's cut, read as a dress's is (its length, how it flares, its cloth).
     skirt_cut = style == "skirt" ? DressCut.read(product).slice(:length, :fit, :stretch, :fabric, :printed, :details) : nil
     skirt_cut[:fit] = "pleated" if skirt_cut && product.values_at(:name, :description).join(" ").match?(/pleat/i)
-    # Pull-on pants: an elastic or drawcord waist, gathered in, which stretches to fit.
-    skirt_cut = { elastic: true } if kind == "trousers" && !%w[skirt joggers leggings].include?(style) && product.values_at(:name, :description).join(" ").match?(ELASTIC_WAIST)
+    # Pants: pull-on (an elastic or drawcord waist, gathered in, which stretches to fit), how loose the shop
+    # says they're cut, and whether they come unhemmed.
+    skirt_cut = bottoms_cut(product, style, chart) if kind == "trousers" && style != "skirt"
     if style == "dress"
       cut = DressCut.read(product)
       chart = chart.with(missing: chart.missing - DressCut.not_needed(cut))
       return dress_garment(product, chart, cut, source_url)
     end
-    # A top's cut, when its listing says it sits close (see top_cut).
-    fit_cut = kind == "top" ? top_cut(product) : nil
+    # A top's cut, when its listing says it sits close or is made oversized (see top_cut); a jacket's, when
+    # it's oversized or made to end at the waist (see jacket_cut).
+    fit_cut = kind == "top" ? top_cut(product) : kind == "jacket" ? jacket_cut(product) : nil
     {
       name: product[:name].presence || "Jacket",
       brand: product[:brand],
@@ -834,7 +852,7 @@ class GarmentImport
       source_url:,
       garment: kind,
       **(product[:women] ? { women: true } : {}),
-      **(kind == "top" && product.values_at(:name, :description).join(" ").match?(/crop(?:ped)?\b/i) ? { cropped: true } : {}),
+      **(%w[top jacket].include?(kind) && product.values_at(:name, :description).join(" ").match?(/crop(?:ped)?\b/i) ? { cropped: true } : {}),
       **(kind == "top" && chart.kind == "sizes" && baby_tee?(product) ? { snug: true } : {}),
       **(skirt_cut ? { cut: skirt_cut } : fit_cut ? { cut: fit_cut } : {}),
       **(kind == "top" && product[:shape] && sleeves_sewn(product[:shape]) == :low ? { dropped: true } : {}),
@@ -852,9 +870,51 @@ class GarmentImport
   # Nil for a top that says nothing about its fit (the usual).
   def top_cut(product)
     words = product.values_at(:name, :description).join(" ")
-    return unless words.match?(FITTED_TOP)
+    return oversized?(product, words) ? { fit: "oversized" } : nil unless words.match?(FITTED_TOP)
 
     { fit: "fitted", stretch: knitwear?(product) || words.match?(DressCut::STRETCH) }
+  end
+
+  # A top or jacket the shop says is made big (the fit engine then judges it by the room it's made with, see
+  # Fit#design), unless its photo shows it cut close.
+  OVERSIZED = /oversized|\bboxy\b|loose[- ]fit|relaxed[- ]fit|drop(?:ped)?[- ]shoulders?/i
+  def oversized?(product, words = product.values_at(:name, :description).join(" "))
+    words.match?(OVERSIZED) && !(product[:shape] && sleeves_sewn(product[:shape]) == :high)
+  end
+
+  # A jacket's cut: { fit: "oversized" } (see oversized?), { ends: "waist" } for one made to end at the waist
+  # (a track jacket, a blouson or bomber: its length is then where it ends, not right or wrong). Nil for neither.
+  WAIST_LENGTH = /\btrack\b|blouson|bomber|varsity|letterman|harrington|aviator|\bma-1\b|crop(?:ped)?\b/i
+  def jacket_cut(product)
+    cut = { **(oversized?(product) ? { fit: "oversized" } : {}), **(product[:name].to_s.match?(WAIST_LENGTH) ? { ends: "waist" } : {}) }
+    cut.presence
+  end
+
+  # How pants are made, as the fit engine and the 3D view read it: { elastic: true } for pull-on pants
+  # (joggers and leggings are already), { fit: "loose" } or "slim" by the shop's words, { hem: "unfinished" }
+  # for pants sold long, to be hemmed (see unfinished_hem). Nil for none of these.
+  LOOSE_BOTTOMS = /\b(?:baggy|wide(?:[- ]leg)?(?![- ]?(?:waist)?band)|relaxed|loose|oversized|pleat(?:s|ed)?|balloon|barrel)\b/i
+  SLIM_BOTTOMS = /\b(?:slim|skinny|tapered)\b/i
+  def bottoms_cut(product, style, chart)
+    words = product.values_at(:name, :description).join(" ")
+    loose, slim = words.match?(LOOSE_BOTTOMS), words.match?(SLIM_BOTTOMS)
+    cut = {}
+    cut[:elastic] = true if !%w[joggers leggings].include?(style) && words.match?(ELASTIC_WAIST)
+    cut[:fit] = loose ? "loose" : "slim" if style != "leggings" && loose != slim
+    cut[:hem] = "unfinished" if !%w[shorts leggings].include?(style) && unfinished_hem?(chart, words, product[:women])
+    cut.presence
+  end
+
+  # Pants sold unhemmed, for a tailor to finish to the wearer: the listing says so, or every size has the
+  # same inseam, far longer (12 cm) than a usual leg's. A raw hem is only a cut edge (frayed jeans) unless
+  # the leg is long too.
+  UNHEMMED = /unhemmed|un-hemmed|unfinished (?:hem|length|leg)|hem (?:is )?left unfinished|to be hemmed|hemmed to (?:order|length|your)/i
+  UNHEMMED_PAST = 12
+  def unfinished_hem?(chart, words, women)
+    leg = women ? 76 : 81
+    inseams = chart.sizes.map { it["inseam"] }
+    long = inseams.all? && inseams.size >= 2 && inseams.min > leg + UNHEMMED_PAST && inseams.max - inseams.min <= 2
+    long || words.match?(UNHEMMED) || (words.match?(/raw[- ]hem/i) && inseams.compact.any? && inseams.compact.min > leg + 6)
   end
 
   # A hoodie that zips all the way down the front (drawn with a zip; a half-zip pullover isn't).
@@ -955,10 +1015,27 @@ class GarmentImport
     from = chart.sleeve_from
     shoulders = chart.sizes.filter_map { it["shoulders"] }.sort
     women = product[:women] || (shoulders.any? && shoulders[shoulders.size / 2] < WOMEN_SHOULDERS)
-    from ||= "centre_back_guessed" if sleeves[sleeves.size / 2] > USUAL_ARM.fetch(women ? :women : :men) + SHOULDER_SLEEVE_PAST_ARM
+    from ||= "centre_back_guessed" if sleeves[sleeves.size / 2] > USUAL_ARM.fetch(women ? :women : :men) + SHOULDER_SLEEVE_PAST_ARM &&
+                                      !long_in_photo?(chart, product[:shape])
     return chart unless from
 
     chart.with(sizes: chart.sizes.map { it["sleeve"] ? it.merge("sleeve" => from_shoulder(it)) : it }, sleeve_from: from)
+  end
+
+  # Whether the shop photo shows sleeves as long as the chart's, read from the shoulder seam: past the
+  # threshold above, a sleeve is either from the centre back or made extra long (one that covers the hand,
+  # or bunches at the wrist), and only the photo tells. The photo gives the sleeve's reach and the body's
+  # length, each over the chest's width (see photo_shape); the middle size's sleeve over its length, read
+  # either way, is compared with that, and the nearer reading wins. Kith's Camilla Plunge Shirt: 70 cm
+  # sleeves on a 56 cm body, which the photo shows hanging well past the hem (a reach about 1.45 times
+  # the length), so from the shoulder (1.26), not the centre back (0.90).
+  def long_in_photo?(chart, shape)
+    reach, length = shape.to_h.values_at(:sleeve, :length)
+    return false unless reach && length&.positive?
+
+    size = chart.sizes.select { it["sleeve"] && it["length"] }.then { it[it.size / 2] } or return false
+    seen = reach / length
+    (size["sleeve"] / size["length"] - seen).abs < (from_shoulder(size) / size["length"] - seen).abs
   end
 
   # A size's sleeve from the shoulder seam, when the chart gives it from the centre back: less half the
