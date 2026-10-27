@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { BORDER, DEPTH_BIAS, FACING, LIGHT } from "lib/projection"
 
 // How draped cloth looks: each kind of cloth's surface (a normal map drawn here, tiling across the cloth at its
 // real size), how it catches the light, and the seams, stitching, zips and buttons drawn onto it from where
@@ -51,6 +52,134 @@ const SIZE = 256
 const textures = new Map()
 const BLANK = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat)
 BLANK.needsUpdate = true
+export const BLANK_TEXTURE = BLANK
+
+// A picture laid onto the cloth from the camera that took it (see stage.js#wearPhoto and lib/projection.js):
+// the AI's picture of this very view, with the stores' clothes painted on. Every point is projected by the
+// capture camera's view-projection (uCaptureVP) into the picture; it takes the picture's colour where it faces
+// that camera, is inside the frame and is what the camera saw (its depth against uCaptureDepth, the depth the
+// camera recorded, as a shadow map is read). The picture has the scene's light baked in, and the cloth is lit
+// again here, so the light is taken out first (uProjectedMode):
+//   0  the picture as it is (lit twice; to compare)
+//   1  the picture divided by a blurred copy of itself (uProjectedFlat), so only its texture stays, on the
+//      cloth's own colour (the way local_studio.js#keepDetails keeps a repaint's light): loses its colours
+//   2  the picture divided by the page's light there: the page's own photo of the same view (uProjectedBase)
+//      over the cloth's own colour at this point (as that photo was drawn from it). What the AI changed stays
+//      (its colours, prints, zip, light over dark), the page's light is taken out to be put back by the scene,
+//      and where the AI changed nothing the cloth is exactly the page's. The one used (see projection.js)
+// Where the picture can't reach (the back, the sides), the cloth is the page's own, tinted toward the
+// picture's overall colour shift (uProjectedTint) near where the picture stops, so there's no line.
+export function projectionUniforms() {
+  return {
+    uProjected: { value: BLANK },
+    uProjectedFlat: { value: BLANK },
+    uProjectedBase: { value: BLANK },
+    uProjectedOn: { value: 0 },
+    uProjectedMode: { value: 2 },
+    uProjectedTint: { value: new THREE.Vector3(1, 1, 1) },
+    uCaptureVP: { value: new THREE.Matrix4() },
+    uCaptureDepth: { value: BLANK },
+    uCaptureDepthOn: { value: 0 },
+    uCaptureNearFar: { value: new THREE.Vector2(0.1, 10) },
+    uCaptureSize: { value: new THREE.Vector2(1, 1) },
+    uCaptureDir: { value: new THREE.Vector3(0, 0, -1) }
+  }
+}
+
+export const PROJECTION = {
+  vertexDeclare: `
+    varying vec3 vProjWorldPos;
+    varying vec3 vProjWorldNormal;`,
+  // After project_vertex: `transformed` is the point in object space (skinned, morphed, stood off) and
+  // transformedNormal its normal in view space.
+  vertexAssign: `
+    vProjWorldPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+    vProjWorldNormal = inverseTransformDirection( transformedNormal, viewMatrix );`,
+  fragmentDeclare: `
+    #define PROJ_BORDER ${BORDER.toFixed(3)}
+    #define PROJ_FACING_FROM ${FACING.from.toFixed(3)}
+    #define PROJ_FACING_TO ${FACING.to.toFixed(3)}
+    #define PROJ_BIAS ${DEPTH_BIAS.toFixed(4)}
+    #define PROJ_DARK ${LIGHT.dark.toFixed(3)}
+    #define PROJ_LIGHT_MIN ${LIGHT.min.toFixed(3)}
+    #define PROJ_LIGHT_MAX ${LIGHT.max.toFixed(3)}
+    const vec3 PROJ_LUMA = vec3( 0.2126, 0.7152, 0.0722 );
+    uniform sampler2D uProjected;
+    uniform sampler2D uProjectedFlat;
+    uniform sampler2D uProjectedBase;
+    uniform float uProjectedOn;
+    uniform int uProjectedMode;
+    uniform vec3 uProjectedTint;
+    uniform mat4 uCaptureVP;
+    uniform sampler2D uCaptureDepth;
+    uniform float uCaptureDepthOn;
+    uniform vec2 uCaptureNearFar;
+    uniform vec2 uCaptureSize;
+    uniform vec3 uCaptureDir;
+    varying vec3 vProjWorldPos;
+    varying vec3 vProjWorldNormal;
+    float projLinearDepth( float d ) {
+      float n = uCaptureNearFar.x, f = uCaptureNearFar.y;
+      return 2.0 * n * f / ( f + n - ( 2.0 * d - 1.0 ) * ( f - n ) );
+    }
+    // How much of what the capture camera saw at uv is this point (its depth mine, in m): a 3 by 3 read of
+    // the depth the camera recorded, each tap 1 where this point is what it saw (within the bias).
+    float projUnoccluded( vec2 uv, float mine ) {
+      if ( uCaptureDepthOn < 0.5 ) return 1.0;
+      vec2 texel = 1.0 / uCaptureSize;
+      float seen = 0.0;
+      for ( int i = -1; i <= 1; i++ ) for ( int j = -1; j <= 1; j++ ) {
+        float stored = projLinearDepth( texture2D( uCaptureDepth, uv + vec2( float( i ), float( j ) ) * texel ).r );
+        seen += 1.0 - smoothstep( PROJ_BIAS, 2.0 * PROJ_BIAS, mine - stored );
+      }
+      return seen / 9.0;
+    }`,
+  // Applied to diffuseColor.rgb once the cloth's own colour (prints, stripes, stitching, the inside) is done.
+  fragmentApply: `
+    if ( uProjectedOn > 0.5 ) {
+      vec4 projClip = uCaptureVP * vec4( vProjWorldPos, 1.0 );
+      if ( projClip.w > 1e-6 ) {
+        vec3 projNdc = projClip.xyz / projClip.w;
+        vec2 projUv = projNdc.xy * 0.5 + 0.5;
+        float projFaceDir = gl_FrontFacing ? 1.0 : -1.0;
+        float projCos = dot( normalize( vProjWorldNormal ) * projFaceDir, -uCaptureDir );
+        float projFacing = smoothstep( PROJ_FACING_FROM, PROJ_FACING_TO, projCos );
+        float projInside = smoothstep( 0.0, PROJ_BORDER, projUv.x ) * smoothstep( 0.0, PROJ_BORDER, 1.0 - projUv.x )
+                         * smoothstep( 0.0, PROJ_BORDER, projUv.y ) * smoothstep( 0.0, PROJ_BORDER, 1.0 - projUv.y );
+        float projW = projFacing * projInside;
+        if ( projW > 0.001 ) projW *= projUnoccluded( projUv, projLinearDepth( projNdc.z * 0.5 + 0.5 ) );
+        vec3 projColor = texture2D( uProjected, projUv ).rgb;
+        if ( uProjectedMode == 1 ) {
+          vec3 projFlat = texture2D( uProjectedFlat, projUv ).rgb;
+          projColor = diffuseColor.rgb * clamp( projColor / max( projFlat, vec3( 0.02 ) ), 0.6, 1.6 );
+        } else if ( uProjectedMode == 2 ) {
+          // The page's light here: its photo over the cloth's own colour (per channel; from the brightness
+          // alone where a channel is too dark to divide by). The picture over that light is the AI's cloth.
+          vec3 projAlbedo = max( diffuseColor.rgb, vec3( 0.002 ) );
+          vec3 projBase = texture2D( uProjectedBase, projUv ).rgb;
+          float projLuma = dot( projBase, PROJ_LUMA ) / max( dot( projAlbedo, PROJ_LUMA ), 0.002 );
+          vec3 projLight = mix( vec3( projLuma ), projBase / projAlbedo, smoothstep( PROJ_DARK, 2.5 * PROJ_DARK, projAlbedo ) );
+          projColor = clamp( projColor / clamp( projLight, PROJ_LIGHT_MIN, PROJ_LIGHT_MAX ), 0.0, 1.0 );
+        }
+        // Where the picture doesn't reach, the page's cloth carries the picture's colour shift a little way
+        // round, so the picture doesn't stop at a line.
+        float projTint = smoothstep( PROJ_FACING_FROM - 0.25, PROJ_FACING_FROM, projCos ) * projInside;
+        vec3 projFallback = diffuseColor.rgb * mix( vec3( 1.0 ), uProjectedTint, projTint );
+        diffuseColor.rgb = mix( projFallback, projColor, projW );
+      }
+    }`
+}
+
+// Adds the projection's varyings to a material's vertex shader and its uniforms and functions to the fragment
+// shader; the caller puts PROJECTION.fragmentApply where the cloth's colour is finished.
+export function withProjection(shader, uniforms) {
+  Object.assign(shader.uniforms, uniforms)
+  shader.vertexShader = shader.vertexShader
+    .replace("#include <common>", `#include <common>${PROJECTION.vertexDeclare}`)
+    .replace("#include <project_vertex>", `#include <project_vertex>${PROJECTION.vertexAssign}`)
+  shader.fragmentShader = shader.fragmentShader
+    .replace("#include <common>", `#include <common>${PROJECTION.fragmentDeclare}`)
+}
 
 // A normal map for a surface, drawn once.
 function surfaceTexture(kind, renderer) {
@@ -216,13 +345,16 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uBackOn: { value: 0 },
     uPhotoOn: { value: 0 },
     // How much of a sheer part's colour shows (1: none of it is sheer).
-    uSheer: { value: details.sheer ?? 1 }
+    uSheer: { value: details.sheer ?? 1 },
+    // The AI's picture of this view, laid back on from its camera (see PROJECTION; stage.js#wearPhoto sets it).
+    ...projectionUniforms()
   }
   material.userData.uniforms = uniforms
   if (details.sheer && details.sheer < 1 && !fitMap) material.transparent = true
   material.customProgramCacheKey = () => `cloth-${fitMap}`
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms)
+    withProjection(shader, {})
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", `#include <common>
         attribute float aEdge;
@@ -401,7 +533,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         // other, so it's a little darker and rougher there (the photo's colour too, laid on above).
         float crease = clamp( vStrain + CREASE_FOLD * ( 1.0 - vShade ), 0.0, 1.0 ) * ( 1.0 - metal );
         diffuseColor.rgb *= 1.0 - CREASE_DARK * crease;
-        if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.55;   // the inside`)
+        if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.55;   // the inside
+        ${fitMap ? "" : PROJECTION.fragmentApply}`)
       .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
         roughnessFactor = mix( roughnessFactor, 0.28, metal );
         roughnessFactor = min( 1.0, roughnessFactor * ( 1.0 + CREASE_ROUGH * crease ) );`)

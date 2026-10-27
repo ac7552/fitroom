@@ -616,6 +616,7 @@ a { color: inherit; }
 .studio-bar p { flex: 1 1 160px; min-width: 0; margin: 0; color: #9aa0ab; }
 .studio-bar .segmented { border-color: #2c3037; background: rgb(15 16 19 / 0.6); }
 .studio-bar .button { flex: none; }
+.studio-bar .studio-take { flex: none; }
 
 /* Compare: store photo | our fit | AI finish, one row per item, the checks under the AI's picture. */
 .studio-compare { display: flex; flex-direction: column; gap: 12px; height: 100%; overflow: auto; color: #e9ebef; }
@@ -826,7 +827,7 @@ a { color: inherit; }
   .studio-bar .segmented label { flex: 1 1 auto; }
   .studio-bar .segmented span { display: block; text-align: center; }
   .studio-bar p { flex-basis: 100%; order: 1; }
-  .studio-bar .button { order: 2; flex: 1 1 0; text-align: center; }
+  .studio-bar .button, .studio-bar .studio-take { order: 2; flex: 1 1 0; text-align: center; }
   .stage-loading--ai .stage-loading-card { width: calc(100% - 40px); }
   .stage-toast { bottom: calc(var(--rows, 60px) + 16px); max-width: calc(100% - 24px); }
 }

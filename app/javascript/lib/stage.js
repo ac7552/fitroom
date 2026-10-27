@@ -11,6 +11,8 @@ import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepa
 import { bodyFrame } from "lib/garments/body"
 import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
+import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
+import { meanRatio } from "lib/projection"
 import { easeInOut, framing } from "lib/framing"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
@@ -229,6 +231,7 @@ export class FittingStage {
   // Returns the measurements the model couldn't reach, if any.
   setBody(body) {
     if (!this.model) { this.pendingBody = body; return [] }
+    if (this.worn && JSON.stringify(body) !== JSON.stringify(this.measures)) this.wearPhoto(null)
     this.measures = body
     this.fitted = fitBody(this.bodyCalibration, body)
     this.fitted.influences.women = this.bodyType === "women" && this.hasWomen ? 1 : 0
@@ -241,6 +244,7 @@ export class FittingStage {
 
   // "men" or "women": which body the mannequin has. Its measurements then start from that body's.
   setBodyType(type) {
+    if (this.worn && type !== this.bodyType) this.wearPhoto(null)
     this.bodyType = type
     if (!this.model) return
     const women = type === "women" && this.hasWomen
@@ -261,11 +265,14 @@ export class FittingStage {
   // items: [{ kind: "top" | "jacket" | "coat" | "trousers", size (cm), checks (the API's), color, fabric, style }]
   setOutfit(items) {
     this.outfit = items
+    // The AI's picture laid on the clothes (see wearPhoto) was of the outfit as it was: a change takes it off.
+    if (this.worn && this.worn.outfit !== outfitSignature(items)) this.wearPhoto(null)
     this.redraw()
   }
 
   // Whether the top is tucked into the pants or skirt. Only some tops tuck in (see canTuck).
   setTucked(on) {
+    if (this.worn && Boolean(on) !== this.tucked) this.wearPhoto(null)
     this.tucked = Boolean(on)
     this.redraw()
   }
@@ -299,6 +306,7 @@ export class FittingStage {
   }
 
   setPose(name) {
+    if (this.worn && name !== this.pose) this.wearPhoto(null)
     this.pose = name
     this.applyPose()
     // A draped garment follows by settling again in the new pose (see tick).
@@ -753,6 +761,7 @@ export class FittingStage {
     // usual gap clears it; more would stretch the jacket's hem round the hips, to spring back and ride up).
     if (slot === "outer" && this.slots.top && this.order !== TUCKED_LAYERS) frame.gap = 0.03
     const top = new DrapedTop({ item, body: rest.body, frame, field, measures: this.measures, renderer: this.renderer })
+    if (this.worn) for (const material of [top.materials.main, top.materials.rib]) this.projectOnto(material)
     top.mesh.visible = false
     this.scene.add(top.mesh)
     this.slots[slot] = { slot, key, top, rest: { ...rest, over }, frame, posedAs: null, posing: null, shown: false, bodyType: this.bodyType }
@@ -1212,13 +1221,17 @@ export class FittingStage {
   // A still picture of what's on screen, sharper than the screen: drawn once at `width` by `height` pixels
   // with finer shadows, then the view goes back as it was. Returns a PNG Blob. Nothing leaves the device.
   async photo({ width = 1600, height = 2000 } = {}) {
-    return (await this.photoPasses({ width, height, guides: false })).image
+    return (await this.photoPasses({ width, height, guides: false, record: false })).image
   }
 
   // The photo, and with `guides` two more pictures from the same camera for an image model to keep to:
   // depth (nearest white, farthest black, the figure only) and the figure's outline (white on black).
   // Returns { image, depth, mask } as PNG Blobs (depth and mask null without guides).
-  async photoPasses({ width = 1600, height = 2000, guides = true, front = false } = {}) {
+  // `record` (the default) keeps the camera that took it, with the depth it saw, as this.capture, so a picture
+  // painted from this photo can be laid back onto the clothes (see wearPhoto); a picture already worn comes
+  // off first, so the photo is the page's own.
+  async photoPasses({ width = 1600, height = 2000, guides = true, front = false, record = true } = {}) {
+    if (record) this.wearPhoto(null)
     this.wearBelt()
     this.wearScarf()
     this.wearCollars()
@@ -1228,7 +1241,7 @@ export class FittingStage {
     // zip, the print and the hood where a shop photo shows them). The camera goes back after.
     const facing = front ? this.faceFront() : null
     try {
-      return await this.photoPassesNow({ width, height, guides })
+      return await this.photoPassesNow({ width, height, guides, record })
     } finally {
       if (facing) { this.camera.position.copy(facing.position); this.controls.update() }
     }
@@ -1245,7 +1258,7 @@ export class FittingStage {
     return { position }
   }
 
-  async photoPassesNow({ width, height, guides }) {
+  async photoPassesNow({ width, height, guides, record = false }) {
     const renderer = this.renderer, camera = this.camera
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
     const { aspect, fov, near, far } = camera
@@ -1265,20 +1278,30 @@ export class FittingStage {
     this.effects?.composer.setPixelRatio(1)
     this.effects?.composer.setSize(width, height)
     this.draw()
-    const image = await withGrain(renderer.domElement)
+    const grained = withGrain(renderer.domElement)
+    const image = toBlob(grained)
     let depth = null, mask = null
+    // Depth over the figure's own span, so its near and far ends use the whole range.
+    const span = () => {
+      const sphere = new THREE.Box3().setFromObject(this.model).getBoundingSphere(new THREE.Sphere())
+      const distance = camera.position.distanceTo(sphere.center)
+      camera.near = Math.max(0.05, distance - sphere.radius * 1.25)
+      camera.far = distance + sphere.radius * 1.25
+      camera.updateProjectionMatrix()
+    }
+    if (record) {
+      span()
+      this.recordCapture(camera, width, height, grained)
+      camera.near = near
+      camera.far = far
+    }
     if (guides) {
       const stand = [this.pool, this.floor, this.contact].filter(Boolean)
       const background = this.scene.background
       const shown = stand.map(o => o.visible)
       stand.forEach(o => { o.visible = false })
       this.scene.background = new THREE.Color(0x000000)
-      // Depth over the figure's own span, so its near and far ends use the whole range of grey.
-      const sphere = new THREE.Box3().setFromObject(this.model).getBoundingSphere(new THREE.Sphere())
-      const distance = camera.position.distanceTo(sphere.center)
-      camera.near = Math.max(0.05, distance - sphere.radius * 1.25)
-      camera.far = distance + sphere.radius * 1.25
-      camera.updateProjectionMatrix()
+      span()
       const depthMaterial = new THREE.MeshDepthMaterial()
       this.scene.overrideMaterial = depthMaterial
       renderer.render(this.scene, camera)
@@ -1286,7 +1309,9 @@ export class FittingStage {
       const maskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
       this.scene.overrideMaterial = maskMaterial
       renderer.render(this.scene, camera)
-      mask = canvasBlob(renderer.domElement)
+      const maskCanvas = copyCanvas(renderer.domElement)
+      mask = toBlob(maskCanvas)
+      if (record && this.capture) this.capture.mask = maskCanvas
       this.scene.overrideMaterial = null
       depthMaterial.dispose()
       maskMaterial.dispose()
@@ -1307,7 +1332,121 @@ export class FittingStage {
     this.effects?.composer.setSize(size.x, size.y)
     camera.aspect = aspect
     camera.updateProjectionMatrix()
-    return { image, depth: await depth, mask: await mask }
+    return { image: await image, depth: await depth, mask: await mask }
+  }
+
+  // The camera that took the photo, kept for laying a picture painted from it back onto the clothes (see
+  // wearPhoto): its view and projection (near and far over the figure's span), its direction, the picture's
+  // size, the page's own photo (image, a canvas) and the depth the camera saw, drawn with the scene's own
+  // materials (so hidden skin and tucked cloth are left out, as in the photo) into a depth texture.
+  recordCapture(camera, width, height, image) {
+    const renderer = this.renderer
+    let depth = null
+    if (renderer.capabilities.isWebGL2) {
+      if (this.captureTarget && (this.captureTarget.width !== width || this.captureTarget.height !== height)) {
+        this.captureTarget.depthTexture?.dispose()
+        this.captureTarget.dispose()
+        this.captureTarget = null
+      }
+      if (!this.captureTarget) {
+        const depthTexture = new THREE.DepthTexture(width, height, THREE.UnsignedIntType)
+        this.captureTarget = new THREE.WebGLRenderTarget(width, height, { depthTexture, depthBuffer: true, stencilBuffer: false })
+      }
+      renderer.setRenderTarget(this.captureTarget)
+      renderer.render(this.scene, camera)
+      renderer.setRenderTarget(null)
+      depth = this.captureTarget.depthTexture
+    }
+    camera.updateMatrixWorld()
+    this.capture = {
+      viewMatrix: camera.matrixWorldInverse.clone(), projectionMatrix: camera.projectionMatrix.clone(),
+      near: camera.near, far: camera.far, direction: camera.getWorldDirection(new THREE.Vector3()),
+      width, height, image, mask: null, depth
+    }
+  }
+
+  // picture: a Blob, ImageBitmap or canvas of the last recorded photo (photoPasses) with the clothes painted
+  // over by the AI, or null to take it off. Laid onto every draped garment (and the model's jacket, coat or
+  // trousers when worn) from the camera that took the photo, so turning the figure shows the AI's clothes on
+  // the front, and the page's own cloth round the back (see fabric.js's PROJECTION). The page's light is
+  // taken out of the picture against the page's own photo, so the cloth is lit once, here. Never on the skin,
+  // the head or the floor. Comes off when the outfit, body or pose changes. onWearPhoto(on) is told.
+  async wearPhoto(picture) {
+    this.unwearPhoto()
+    if (!picture || !this.capture) return
+    const token = this.wearToken = Symbol("wear")
+    const source = picture instanceof Blob ? await createImageBitmap(picture) : picture
+    if (token !== this.wearToken) return
+    const capture = this.capture, { width, height } = capture
+    const draw = (from, blur = 0) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext("2d", { willReadFrequently: true })
+      if (blur) context.filter = `blur(${blur}px)`
+      context.drawImage(from, 0, 0, width, height)
+      return canvas
+    }
+    const pixels = canvas => canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, width, height).data
+    // The picture's blurred copy (its light, for mode 1) is blurred heavily.
+    const sharp = draw(source), flat = draw(source, Math.max(6, Math.round(width / 60))), base = draw(capture.image)
+    const tint = meanRatio(pixels(sharp), pixels(capture.image), capture.mask ? pixels(capture.mask) : null)
+    const textures = [sharp, flat, base].map((canvas, i) => {
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.colorSpace = THREE.SRGBColorSpace
+      texture.anisotropy = i === 0 ? 8 : 1
+      return texture
+    })
+    this.worn = { textures, tint, outfit: outfitSignature(this.outfit), mode: this.projectionMode ?? 2 }
+    for (const material of this.projectableMaterials()) this.projectOnto(material)
+    this.onWearPhoto?.(true)
+    this.start()
+  }
+
+  unwearPhoto() {
+    this.wearToken = null
+    const worn = this.worn
+    if (!worn) return
+    this.worn = null
+    for (const material of this.projectableMaterials()) this.projectOnto(material)
+    for (const texture of worn.textures) texture.dispose()
+    this.onWearPhoto?.(false)
+    this.start()
+  }
+
+  // The cloth materials a picture can be laid on: the draped garments' (not their fit maps) and the model's
+  // jacket, coat and trousers.
+  projectableMaterials() {
+    const list = []
+    for (const d of Object.values(this.slots)) if (d) list.push(d.top.materials.main, d.top.materials.rib)
+    if (this.materials) for (const kind of ["jacket", "coat", "trousers"]) list.push(this.materials[kind].cloth)
+    return list
+  }
+
+  // Sets one material's projection uniforms to the picture worn now (or clears them).
+  projectOnto(material) {
+    const u = material.userData.uniforms ?? material.userData.projection
+    if (!u?.uProjected) return
+    const worn = this.worn, c = this.capture
+    if (!worn || !c) {
+      u.uProjectedOn.value = 0
+      u.uProjected.value = u.uProjectedFlat.value = u.uProjectedBase.value = u.uCaptureDepth.value = BLANK_TEXTURE
+      u.uCaptureDepthOn.value = 0
+      return
+    }
+    const [sharp, flat, base] = worn.textures
+    u.uProjected.value = sharp
+    u.uProjectedFlat.value = flat
+    u.uProjectedBase.value = base
+    u.uProjectedOn.value = 1
+    u.uProjectedMode.value = worn.mode
+    u.uProjectedTint.value.set(...worn.tint)
+    u.uCaptureVP.value.multiplyMatrices(c.projectionMatrix, c.viewMatrix)
+    u.uCaptureDepth.value = c.depth ?? BLANK_TEXTURE
+    u.uCaptureDepthOn.value = c.depth ? 1 : 0
+    u.uCaptureNearFar.value.set(c.near, c.far)
+    u.uCaptureSize.value.set(c.width, c.height)
+    u.uCaptureDir.value.copy(c.direction)
   }
 
   // Left alone, the mannequin turns slowly, as a shop's turntable does, so the clothes are seen all round; a
@@ -1537,6 +1676,9 @@ export class FittingStage {
   dispose() {
     this.stopIdleTurn?.()
     cancelAnimationFrame(this.frameId)
+    this.unwearPhoto()
+    this.captureTarget?.depthTexture?.dispose()
+    this.captureTarget?.dispose()
     for (const slot of LAYERS) this.removeDraped(slot)
     this.resizeObserver.disconnect()
     this.intersectionObserver.disconnect()
@@ -1752,9 +1894,13 @@ function tintableFabric({ map, aoMap, normalMap, roughnessMap }, { clothOnly = f
   material.userData.tint = tint
   const inflate = { value: 0 }
   material.userData.inflate = inflate
+  // The AI's picture laid on (see FittingStage#wearPhoto).
+  const projection = projectionUniforms()
+  material.userData.projection = projection
   material.onBeforeCompile = shader => {
     shader.uniforms.fabricTint = tint
     standOut(shader, inflate)
+    withProjection(shader, projection)
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", "#include <common>\nuniform vec3 fabricTint;")
       .replace("#include <map_fragment>", `
@@ -1763,6 +1909,7 @@ function tintableFabric({ map, aoMap, normalMap, roughnessMap }, { clothOnly = f
         vec3 cloth = sampledDiffuseColor.rgb * fabricTint * 1.35;
         diffuseColor.rgb *= mix( sampledDiffuseColor.rgb, cloth, sampledDiffuseColor.a );
         if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.28;   // the lining
+        ${PROJECTION.fragmentApply}
       `)
   }
   return material
@@ -1843,13 +1990,28 @@ function paintFitMap(mesh, checks, regions) {
 // computer-made): a PNG Blob of the canvas.
 // The canvas as just drawn, as a PNG Blob (copied at once: a 3D canvas is cleared after it's shown).
 function canvasBlob(source) {
+  return toBlob(copyCanvas(source))
+}
+
+function copyCanvas(source) {
   const canvas = document.createElement("canvas")
   canvas.width = source.width
   canvas.height = source.height
   canvas.getContext("2d").drawImage(source, 0, 0)
+  return canvas
+}
+
+function toBlob(canvas) {
   return new Promise((resolve, reject) => canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error("no picture"))), "image/png"))
 }
 
+// What a picture worn on the clothes (see FittingStage#wearPhoto) was painted for: the outfit's pieces, sizes
+// and colours. Anything else changing takes it off.
+function outfitSignature(items) {
+  return JSON.stringify(items.map(item => [item.kind, item.style ?? null, item.size, item.color, item.fabric ?? null, Boolean(item.zip), item.cut ?? null]))
+}
+
+// The canvas as just drawn, with grain (a 2D canvas, which keeps its pixels).
 function withGrain(source, amount = 3.2) {
   const canvas = document.createElement("canvas")
   canvas.width = source.width
@@ -1865,7 +2027,7 @@ function withGrain(source, amount = 3.2) {
     d[i] = Math.min(255, Math.max(0, d[i] + g)); d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + g)); d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + g))
   }
   context.putImageData(image, 0, 0)
-  return new Promise(resolve => canvas.toBlob(resolve, "image/png"))
+  return canvas
 }
 
 // The contact shadow's shape: dark in an oval round the feet, fading out.
