@@ -93,6 +93,30 @@ def patch_rope(device):
     return True
 
 
+def patch_attention(device, chunk=1024):
+    """On Apple's GPU, attention a block of `chunk` queries at a time. The double and single blocks attend over
+    6912 tokens (the picture's and the garment's): in one go that's a 2 x 10 x 6912 x 6912 score matrix, 3.8 GB in
+    fp32, which on a 16 GB Mac pushes everything else into swap (the owner's smoke run sat in its first double
+    block for minutes). Each query's softmax is its own, so the result is the same, a few hundred MB at a time.
+    chunk 0 leaves attention as it is. Returns whether it patched."""
+    if device.type != "mps" or not chunk:
+        return False
+    import fashn_vton.tryon_mmdit as mmdit
+
+    if getattr(mmdit._attn_processor, "chunk", None) == chunk:
+        return True
+
+    def attend(q, k, v):
+        length = q.shape[-2]
+        if length <= chunk:
+            return F.scaled_dot_product_attention(q, k, v)
+        return torch.cat([F.scaled_dot_product_attention(q[..., i:i + chunk, :], k, v) for i in range(0, length, chunk)], dim=-2)
+
+    attend.chunk = chunk
+    mmdit._attn_processor = attend  # attention() looks `_attn_processor` up in the module each call
+    return True
+
+
 # hybrid ------------------------------------------------------------------------------------------------------
 
 def _layer_norm_fp32(self, x):

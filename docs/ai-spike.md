@@ -165,6 +165,9 @@ What differs from Kaggle and Modal, on purpose:
   precisions; they won't match Kaggle's pixel for pixel.
 - Apple's GPU has no float64, which FASHN's positional embedding uses (`tryon_mmdit.rope`): it's computed on the
   CPU and moved over. Without this FASHN would stop at its first step on a Mac.
+- Attention runs 1024 queries at a time on Apple's GPU (`--attention-chunk`; 0 for all at once). Over the
+  blocks' 6912 tokens, all at once is a 3.8 GB score matrix in fp32, and on a 16 GB Mac the first smoke run sat
+  in one attention call for minutes. Each query's softmax is its own, so the numbers are the same.
 - `PYTORCH_ENABLE_MPS_FALLBACK=1`: an operation the GPU lacks runs on the CPU instead of failing. Any that did
   are listed in `results.json` (`cpu_fallbacks`), as they slow a run down.
 - The gates' models run on the CPU (`--checker-device mps` to move them), so they never share the GPU with a

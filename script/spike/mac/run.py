@@ -87,6 +87,8 @@ def arguments(argv):
     p.add_argument("--checker-device", default="cpu", help="where the gates' models run (default cpu: off the clock)")
     p.add_argument("--no-checks", action="store_true", help="skip the gates and the likeness (times only)")
     p.add_argument("--no-warmup", action="store_true", help="skip the short untimed run after each load")
+    p.add_argument("--attention-chunk", type=int, default=1024,
+                   help="on Apple's GPU, attend this many queries at a time (default 1024; 0 = all at once)")
     return p.parse_args(argv)
 
 
@@ -330,6 +332,8 @@ def main(argv=None):
         sys.exit(1)
     if prec.patch_rope(device):
         say("positional embedding computed on the CPU (Apple's GPU has no float64)")
+    if prec.patch_attention(device, args.attention_chunk):
+        say(f"attention {args.attention_chunk} queries at a time (all at once is a 3.8 GB matrix in fp32)")
     say(f"{len(items)} item(s) x {len(configs)} run(s): {', '.join(c.name for c in configs)}; reference {baseline.name}")
 
     out = args.out or os.path.join(ROOT, "tmp", "spike", "mac", datetime.datetime.now().strftime("%Y%m%d-%H%M"))
@@ -351,6 +355,7 @@ def main(argv=None):
     results = {
         "machine": info,
         "settings": {"seed": args.seed, "device": str(device), "checker_device": args.checker_device,
+                     "attention_chunk": args.attention_chunk if device.type == "mps" else None,
                      "configs": [c.name for c in configs], "reference": baseline.name, "items": [i["name"] for i in items]},
         "precisions": notes,
         # Operations Apple's GPU lacked, run on the CPU instead (torch warns once per operation per process).
