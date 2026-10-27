@@ -19,6 +19,8 @@ import * as THREE from "three"
 //            photo, 2 its softened copy, 0 neither; see photo_map.js)
 //   aDown    how far down the garment it is (cm below the shoulders, as the shop photo shows it laid flat;
 //            see dress.js's heightsDown): a striped print is laid on every piece by this
+//   aAcross  how far across the garment it is (cm from the front's middle; see photo_map.js's widthsAcross):
+//            a vertically striped print is laid on every piece by this
 
 // Each cloth: the texture, its tile (metres of cloth one repeat covers), and its finish.
 const CLOTHS = {
@@ -202,6 +204,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uStripe: { value: BLANK },
     uStripeOn: { value: 0 },
     uStripeLength: { value: 70 },   // how far down the garment the strip reaches (cm)
+    // Vertical stripes (a striped button-up): x 1 for them, y half the photo's front width (cm), z where the
+    // strip starts across the front and w how much of it it spans (shares of its width). Laid by aAcross.
+    uStripeAcross: { value: new THREE.Vector4(0, 26, 0, 1) },
     // Pants' and skirts' shop photo, laid on the cloth where aPhoto says (see DrapedTop#setPhotoMap).
     uPhoto: { value: BLANK },
     uPhotoSoft: { value: BLANK },
@@ -230,6 +235,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aCover;
         attribute float aStrain;
         attribute float aDown;
+        attribute float aAcross;
+        varying float vAcross;
         varying float vCover;
         varying float vStrain;
         varying float vDown;
@@ -244,7 +251,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain; vDown = aDown;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain; vDown = aDown; vAcross = aAcross;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
     shader.fragmentShader = shader.fragmentShader
@@ -271,6 +278,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform sampler2D uStripe;
         uniform float uStripeOn;
         uniform float uStripeLength;
+        uniform vec4 uStripeAcross;
+        varying float vAcross;
         uniform sampler2D uPhoto;
         uniform sampler2D uPhotoSoft;
         uniform sampler2D uPhotoBack;
@@ -367,7 +376,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         // A striped knit is striped on its inside too, a little duller: where a long sleeve gathers and a fold
         // turns the cloth over, the fold shows stripes, not a plain band that reads as a tear.
         if ( uStripeOn > 0.5 && !backPhoto ) {
-          vec3 stripe = texture2D( uStripe, vec2( 0.5, 1.0 - clamp( vDown / uStripeLength, 0.0, 1.0 ) ) ).rgb;
+          vec2 at = uStripeAcross.x > 0.5
+            ? vec2( ( 0.5 + vAcross / ( 2.0 * uStripeAcross.y ) - uStripeAcross.z ) / uStripeAcross.w, 0.5 )
+            : vec2( 0.5, 1.0 - clamp( vDown / uStripeLength, 0.0, 1.0 ) );
+          vec3 stripe = texture2D( uStripe, at ).rgb;
           diffuseColor.rgb = gl_FrontFacing ? stripe : mix( diffuseColor.rgb, stripe, 0.8 );
         }
         if ( backPhoto && gl_FrontFacing ) {

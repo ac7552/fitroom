@@ -4,7 +4,7 @@ import { STYLES, draftTop } from "lib/garments/pattern"
 import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
-import { bottomsPhotoUV, heightsDown } from "lib/garments/photo_map"
+import { bottomsPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
 import { Drape } from "lib/garments/drape"
 import { clothMaterial } from "lib/garments/fabric"
 
@@ -470,6 +470,7 @@ export class DrapedTop {
     geometry.setAttribute("aCover", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("aStrain", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("aDown", new THREE.BufferAttribute(this.bottoms ? new Float32Array(n) : heightsDown(cloth, this.pattern), 1))
+    geometry.setAttribute("aAcross", new THREE.BufferAttribute(this.bottoms ? new Float32Array(n) : widthsAcross(cloth, this.pattern), 1))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -553,11 +554,14 @@ export class DrapedTop {
         uniforms.uTile.value.set(print.tile.across * front, print.tile.down * front, print.tile.from * front)
       }
       // Stripes go on every piece (the cuffs and hem too) by height down the garment, so they run on round
-      // the body and meet the sleeves' at the shoulder seams (see heightsDown).
+      // the body and meet the sleeves' at the shoulder seams (see heightsDown); vertical ones by how far
+      // across it each piece is (see widthsAcross), repeated mirrored past the photo's front, so a bigger
+      // size's wider back carries on striped without a jump.
       if (striped) {
         this.tileTexture = texture(print.strip)
         this.tileTexture.generateMipmaps = false
         this.tileTexture.minFilter = THREE.LinearFilter
+        if (print.vertical) this.tileTexture.wrapS = THREE.MirroredRepeatWrapping
       }
     }
     if (back) this.backTexture = uniforms.uBack.value = texture(back.image)
@@ -568,6 +572,8 @@ export class DrapedTop {
       const u = this.materials[key].userData.uniforms
       u.uStripeOn.value = striped ? 1 : 0
       u.uStripeLength.value = uniforms.uPrintLength.value * (print?.stripSpan ?? 1)
+      const across = print?.vertical ? print.stripAcross ?? { from: 0, span: 1 } : null
+      u.uStripeAcross.value.set(across ? 1 : 0, shown.chest / 4, across?.from ?? 0, across?.span ?? 1)
       if (striped) u.uStripe.value = this.tileTexture
     }
   }
