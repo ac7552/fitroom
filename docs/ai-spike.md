@@ -17,6 +17,7 @@ Files:
 | `script/colab/fitroom_tryon_spike.ipynb` | The same engine in a Google Colab notebook on a free T4, see "Running on Google Colab". |
 | `script/spike/inputs.mjs` | On the Mac, against the running app: store links in, `tmp/spike/spike.zip` of the sheet's inputs out, see "Making the inputs". Its pure parts (`script/spike/lib.mjs`): `node --test test/javascript/spike_inputs.test.mjs`. |
 | `script/spike/run.mjs`, `script/spike/kaggle/` | The one command: the inputs, then the whole sheet on a free Kaggle GPU and the results back in `tmp/spike/out/`, see "One command, free, on Kaggle". `kaggle/spike.py` is the kernel (the notebook's cells as one script), `kernel-metadata.json` its settings. Pure parts in `lib.mjs`: `node --test test/javascript/spike_run.test.mjs`. |
+| `script/spike/mac/` | FASHN on this Mac's own GPU at fewer steps and lower precision, timed, gated and compared with full quality on one sheet, see "On the Mac: steps x precision". `setup.sh` once, then `run.py`; the torch side is `precision.py`, the pure parts `plan.py`: `python3 -m unittest script/spike/mac/test_plan.py`. |
 | `script/modal/validate.py` | The three gates (shape, identity, print). Runs on a CPU; `python3 -m unittest script/modal/test_validate.py`. |
 | `script/modal/tryon_prep.py` | Pose conversion, letterboxing, the sheet. `python3 -m unittest script/modal/test_tryon_prep.py`. |
 | `app/models/try_on.rb` | Talks to the service (or, as a fallback, FASHN's API). `test/models/try_on_test.rb`. |
@@ -123,6 +124,54 @@ the gates, `wall_seconds` end to end).
 
 To run FASHN without its human parser (see the licence table): `FASHN_PARSER=off modal run ...` at build time.
 This bakes into the image; rebuild to change it.
+
+### On the Mac: steps x precision
+
+Whether the try-on can run on the Mac itself (free, nothing leaves the device) comes down to time. FASHN VTON
+1.5 is a 1B-parameter pixel-space transformer: 30 steps, each a forward pass on two copies of the picture (with
+and without the garment, for guidance). The engine runs it in fp32 on Apple's GPU. This spike times it at fewer
+steps and at lower precision, and checks what that costs in looks:
+
+```sh
+script/spike/mac/setup.sh                                  # once: tmp/venv-mac, FASHN at the pinned commit, ~3 GB of weights
+tmp/venv-mac/bin/python script/spike/mac/run.py --smoke    # every precision at 2 steps on one item: does it all work?
+tmp/venv-mac/bin/python script/spike/mac/run.py --quick    # one item: fp32 30 and 20, fp16 20, hybrid 20 and 12
+tmp/venv-mac/bin/python script/spike/mac/run.py            # both items, the whole grid (below)
+tmp/venv-mac/bin/python script/spike/mac/run.py --configs fp16:16,hybrid:16   # anything else, as precision:steps
+```
+
+The inputs are the spike's own (`tmp/spike`, from `inputs.mjs`); the results go to `tmp/spike/mac/<time>/`:
+`sheet.png` (store photo, render, then a column per run), `summary.md`, `results.json` (the Mac's chip and
+memory, every run's numbers) and each picture. The whole grid is 9 runs on each item:
+
+| Precision | Steps | What it is |
+|---|---|---|
+| `fp32` | 30, 20 | Today's Mac path. fp32 at 30 is the reference every other run is compared with. |
+| `fp16` | 30, 20, 12 | Everything in 16-bit, as the Kaggle T4 ran it (and passed). Half the memory traffic. |
+| `bf16` | 20 | FASHN's own choice on newer NVIDIA cards. Needs a recent macOS; skipped, with the reason, where it isn't. |
+| `hybrid` | 30, 20, 12 | fp16 weights and maths, with fp32 where fp16 loses most: the picture the sampler carries between steps, the time embedding (in fp16, 1000·t rounds to half steps), the layer norms and the last layer; and each block's output held inside fp16's range so an overflow can't turn the picture black. |
+
+Each run is timed on the GPU alone (`sample_seconds`, the number the summary ranks by) and as the whole call
+(`wall_seconds`, with DWPose on the CPU); each precision gets a short untimed run after loading, as Apple's GPU
+compiles its kernels on first use. Then, off the clock, every picture goes through the validator's three
+gates and is compared with the reference picture of the same item over the figure: DINOv2 cosine (does it look
+like the same thing) and SSIM (are the details where they were). `summary.md` ends with a pick: the fastest run
+that came out on every item, passed the gates and looks the same (DINOv2 at least 0.90, a starting point like
+the gates' thresholds). The sheet is the judge: look at the knit's stripes, the zip and the print.
+
+What differs from Kaggle and Modal, on purpose:
+
+- Every run starts from the same noise (drawn on the CPU from the seed), so the pictures line up across
+  precisions; they won't match Kaggle's pixel for pixel.
+- Apple's GPU has no float64, which FASHN's positional embedding uses (`tryon_mmdit.rope`): it's computed on the
+  CPU and moved over. Without this FASHN would stop at its first step on a Mac.
+- `PYTORCH_ENABLE_MPS_FALLBACK=1`: an operation the GPU lacks runs on the CPU instead of failing. Any that did
+  are listed in `results.json` (`cpu_fallbacks`), as they slow a run down.
+- The gates' models run on the CPU (`--checker-device mps` to move them), so they never share the GPU with a
+  timed run.
+
+Keep the Mac plugged in and leave it alone while it runs: a laptop slows down as it warms, and the runs are one
+after another (fp32 first).
 
 ### The sheet folder
 
