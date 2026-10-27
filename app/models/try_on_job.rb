@@ -84,10 +84,10 @@ class TryOnJob
     rescue TryOn::Cancelled
       update(id, status: "cancelled", finished: TryOn.now)
     rescue TryOn::Error, KeyError => e
-      Rails.logger.error("[try-on] #{e.class}")
+      Rails.logger.error("[try-on] #{e.class}: #{e.message.to_s[0, 300]}")
       update(id, status: "failed", finished: TryOn.now, message: e.message.include?("too long") ? "The AI took too long this time. Here's our own." : "The AI picture didn't work this time. Here's our own.")
     rescue StandardError => e
-      Rails.logger.error("[try-on] #{e.class}")
+      Rails.logger.error("[try-on] #{e.class}: #{e.message.to_s[0, 300]}")
       update(id, status: "failed", finished: TryOn.now, message: "The AI picture didn't work this time. Here's our own.")
     end
 

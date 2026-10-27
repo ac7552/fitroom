@@ -51,6 +51,9 @@ except ImportError:
 WEIGHTS = "/weights"
 MAX_GPUS = int(os.environ.get("TRYON_MAX_GPUS", "2"))
 IDLE_SECONDS = int(os.environ.get("TRYON_IDLE_SECONDS", "60"))
+# GPUs to try, in order: Modal runs on the first one it has free. L4 alone can wait minutes for capacity
+# ("waiting to be scheduled on a GPU_L4 worker"); A10G and L40S are Ampere/Ada too (bf16), so FASHN runs the same.
+GPUS = [g.strip() for g in os.environ.get("TRYON_GPUS", "L4,A10G,L40S").split(",") if g.strip()]
 PAINT_SECONDS = int(os.environ.get("TRYON_PAINT_SECONDS", "180"))
 SNAPSHOT = os.environ.get("TRYON_SNAPSHOT", "cpu")
 if SNAPSHOT not in ("cpu", "gpu", "off"):
@@ -128,7 +131,7 @@ if SNAPSHOT == "gpu":
 
 
 @app.cls(
-    gpu="L4",
+    gpu=GPUS,
     volumes={WEIGHTS: weights},
     # The weights are all in the Volume; and the container reads TRYON_SNAPSHOT too, so `load` agrees with
     # how the class was deployed.
