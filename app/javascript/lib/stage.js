@@ -874,9 +874,11 @@ export class FittingStage {
       if (drape.tuck) drape.tuck = { ...drape.tuck, table: frame.torso }
       // Pants stay off the feet where the feet now are.
       const feet = drape.feet ? frame.feet : null
-      // And a top's sleeves stop at the hands where the arms now are.
+      // And a top's sleeves stop at the hands where the arms now are. Pants stay on the body's side of the
+      // hands hanging beside them (their collision field leaves the arms out).
       const arms = drape.arms ? frame.arms : null
-      if (!before) drape.repose(posed, field, envelope, feet, arms)
+      const hands = d.slot === "bottom" ? frame.hands : null
+      if (!before) drape.repose(posed, field, envelope, feet, arms, hands)
       else {
         for (let i = 0; i < posed.length; i++) drape.x[i] += posed[i] - before[i]
         drape.v.fill(0)
@@ -884,6 +886,7 @@ export class FittingStage {
         drape.envelope = envelope
         drape.feet = feet
         drape.arms = arms
+        drape.hands = hands
       }
       before = posed
       if (s < steps) { yield* drape.settle(14, 6); continue }

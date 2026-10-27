@@ -96,8 +96,9 @@ export function bodyFrame({ positions, normals, index, skinIndex, skinWeight, bo
   }
 
   const feet = legs ? { L: footHull(positions, part, joints, floor, "L"), R: footHull(positions, part, joints, floor, "R") } : null
+  const hands = { L: handShape(positions, part, 1, arms.L, torso.centreAt), R: handShape(positions, part, 2, arms.R, torso.centreAt) }
 
-  return { count, part, joints, floor, top, torso, arms, legs, feet, shoulderTop, head, hps, armpitY, crotch, neckSide, measures }
+  return { count, part, joints, floor, top, torso, arms, legs, feet, hands, shoulderTop, head, hps, armpitY, crotch, neckSide, measures }
 }
 
 // Where the legs meet: the lowest point of the pelvis on the body's middle line. (Not of the whole body: with
@@ -411,6 +412,81 @@ function legReach(positions, part, joints, side) {
       }
     }
   }
+}
+
+// A hand, as the cloth of pants it hangs beside sees it: the slab it fills, from the wrist to its far end, in
+// its own frame. along: the hand's direction (wrist to fingertips); inward: level, across it, toward the
+// body's middle line; across: the third way (front to back). Per cm down the hand from the wrist: inner and
+// outer (how far it reaches toward the body and away from it, from its middle line), lo and hi (how far it
+// reaches either way across). Null without a hand.
+// which: the arm's part (1 left, 2 right); arm: its armReach; centreAt: the body's middle (z) by height.
+export function handShape(positions, part, which, arm, centreAt) {
+  const wrist = arm.chain[2], end = arm.chain[3]
+  if (!wrist || !end) return null
+  const length = norm(sub(end, wrist))
+  if (length < 0.02) return null
+  const along = normalize(sub(end, wrist))
+  const toMiddle = [-wrist[0], 0, centreAt(wrist[1]) - wrist[2]]
+  const inward = normalize(sub(toMiddle, scale(along, dot(toMiddle, along))))
+  const across = normalize(cross(along, inward))
+  const steps = Math.ceil(length / 0.01) + 1
+  const inner = new Float32Array(steps).fill(-Infinity), outer = new Float32Array(steps).fill(Infinity)
+  const lo = new Float32Array(steps).fill(Infinity), hi = new Float32Array(steps).fill(-Infinity)
+  const n = positions.length / 3
+  for (let i = 0; i < n; i++) {
+    if (part[i] !== which) continue
+    const r = sub(vec(positions, i), wrist)
+    const t = dot(r, along)
+    if (t < 0 || t > length + 0.005) continue
+    const s = Math.min(steps - 1, Math.round(t / 0.01)), a = dot(r, inward), b = dot(r, across)
+    inner[s] = Math.max(inner[s], a); outer[s] = Math.min(outer[s], a)
+    lo[s] = Math.min(lo[s], b); hi[s] = Math.max(hi[s], b)
+  }
+  // Each step takes in its neighbours (a slice a centimetre thick can miss a knuckle), and a step with no
+  // vertices takes the nearest one's.
+  const widen = (values, pick) => values.map((_, s) => pick(...[-1, 0, 1].map(d => values[Math.min(Math.max(s + d, 0), steps - 1)])))
+  const shape = { wrist, along, inward, across, length, inner: widen(inner, Math.max), outer: widen(outer, Math.min), lo: widen(lo, Math.min), hi: widen(hi, Math.max) }
+  if (!shape.inner.some(Number.isFinite)) return null
+  for (const key of ["inner", "outer", "lo", "hi"]) {
+    const values = shape[key]
+    for (let s = 0; s < steps; s++) {
+      if (Number.isFinite(values[s])) continue
+      let k = 1
+      while (!Number.isFinite(values[Math.max(0, s - k)]) && !Number.isFinite(values[Math.min(steps - 1, s + k)])) k++
+      values[s] = Number.isFinite(values[Math.max(0, s - k)]) ? values[Math.max(0, s - k)] : values[Math.min(steps - 1, s + k)]
+    }
+  }
+  return shape
+}
+
+// Pants' cloth stays on the body's side of the hands hanging beside them, as a hand rests against a pocket:
+// cloth in a hand's slab (or lying over its outside, up to `reach` m out) goes in past its inner face, by the
+// cloth's thickness. Pants' collision leaves the arms out (an arm swinging down into a pose would trap the
+// cloth against the hips), so without this, wide pants end up over the hands. p: positions, changed in
+// place; hands: bodyFrame's hands. Returns how many points moved.
+export function keepOffHands(p, hands, thick, reach = 0.02) {
+  let moved = 0
+  const n = p.length / 3
+  for (const hand of [hands?.L, hands?.R]) {
+    if (!hand) continue
+    const { wrist, along, inward, across, length, inner, outer, lo, hi } = hand
+    const far = length + 0.08
+    for (let i = 0; i < n; i++) {
+      const rx = p[3 * i] - wrist[0], ry = p[3 * i + 1] - wrist[1], rz = p[3 * i + 2] - wrist[2]
+      if (Math.abs(rx) > far || Math.abs(ry) > far || Math.abs(rz) > far) continue
+      const t = rx * along[0] + ry * along[1] + rz * along[2]
+      if (t < 0 || t > length + 0.01) continue
+      const s = Math.min(inner.length - 1, Math.round(t / 0.01))
+      const b = rx * across[0] + ry * across[1] + rz * across[2]
+      if (b < lo[s] - thick || b > hi[s] + thick) continue
+      const a = rx * inward[0] + ry * inward[1] + rz * inward[2]
+      if (a >= inner[s] + thick || a < outer[s] - reach) continue
+      const push = inner[s] + thick - a
+      p[3 * i] += inward[0] * push; p[3 * i + 1] += inward[1] * push; p[3 * i + 2] += inward[2] * push
+      moved++
+    }
+  }
+  return moved
 }
 
 // Where a point falls along a polyline (distance from its start) and how far it is from it.
