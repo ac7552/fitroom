@@ -169,3 +169,34 @@ export function heightsDown(cloth, pattern) {
     return Math.max(0, -y)
   })
 }
+
+// How far across a top each cloth point is, as its shop photo shows it laid flat: cm from the front's middle
+// toward the wearer's left, per point. Vertical stripes are laid by this (see DrapedTop#setPrint): the back
+// mirrored, so its stripes meet the front's at the side seams; a sleeve across its own width, from its
+// middle (the top of the cap); a cuff round from the sleeve's hem it's sewn to; the hem band round from the
+// front's hem and the back's, as they're sewn to it; anything else across its own piece.
+export function widthsAcross(cloth, pattern) {
+  const m = pattern.measures
+  const wide = name => {
+    const xs = pattern.panels[name]?.edges.flatMap(e => e.points.map(p => p[0])) ?? [0]
+    return [Math.min(...xs), Math.max(...xs)]
+  }
+  const spans = {}
+  for (const name of cloth.panels) spans[name] = wide(name)
+  return Float32Array.from(cloth.points, ([x], i) => {
+    const name = cloth.panels[cloth.panel[i]]
+    if (name === "back") return -x
+    if (name.startsWith("cuff")) {
+      // Sewn to the sleeve's hem, the cuff's far end to the hem's +x end.
+      const [, width] = spans[name], half = (m.opening ?? m.bicep - 3) / 2
+      return (x / width) * 2 * half - half
+    }
+    if (name === "waistband") {
+      // Its first half is sewn to the front's hem (from its -x end), its second to the back's.
+      const [, width] = spans[name], half = (m.hem ?? m.chest) / 4, t = x / (width / 2)
+      return t <= 1 ? -half + t * 2 * half : half - (t - 1) * 2 * half
+    }
+    if (name === "collar") return x - (spans[name][0] + spans[name][1]) / 2
+    return x
+  })
+}

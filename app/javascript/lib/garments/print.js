@@ -42,9 +42,12 @@ export function loadImage(src) {
 // Returns { color: "#rrggbb", print } or null when the photo can't be read. print is null, or { image (a
 // canvas: the front of the garment, collar to hem, with everything but the print transparent), coverage
 // (share of the front that's print), tile (an all-over print's cloth, see allOverTile), stripes (true for
-// horizontal stripes right across the front), strip (then a canvas a few pixels wide: the cloth's colour at
-// each row from the shoulders to the hem and on down any sleeves hanging below it, laid on the sleeves and
-// back by height), stripSpan (the strip's height over the front's, 1 or more) }.
+// stripes right across the front or down it), vertical (true for stripes down it), strip (then a canvas a few
+// pixels wide: the cloth's colour at each row from the shoulders to the hem and on down any sleeves hanging
+// below it, laid on the sleeves and back by height; or, for vertical stripes, a few pixels tall: its colour
+// at each column across the front, laid on every piece by how far across it is), stripSpan (a horizontal
+// strip's height over the front's, 1 or more), stripAcross (a vertical strip's { from, span }: where it starts
+// across the front and how much of it it spans, as shares of the front's width) }.
 export async function readPhoto(src, { shape = null } = {}) {
   const image = await loadImage(src).catch(() => null)
   if (!image) return null
@@ -77,19 +80,30 @@ export async function readPhoto(src, { shape = null } = {}) {
     out.width = found.print.width
     out.height = found.print.height
     out.getContext("2d").putImageData(new ImageData(found.print.data, found.print.width, found.print.height), 0, 0)
-    print = { image: out, coverage: found.print.coverage, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes, strip: found.print.strip ? stripCanvas(found.print.strip) : null, stripSpan: found.print.strip?.span ?? 1 }
+    const strip = found.print.strip
+    print = {
+      image: out, coverage: found.print.coverage, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes,
+      strip: strip ? stripCanvas(strip) : null, vertical: Boolean(strip?.vertical),
+      stripSpan: strip && !strip.vertical ? strip.span : 1, stripAcross: strip?.vertical ? { from: strip.from, span: strip.span } : null
+    }
   }
   return { color: found.color, print }
 }
 
-// A striped front's colours row by row, as a texture a few pixels wide (the same column repeated).
+// A striped front's colours row by row, as a texture a few pixels wide (the same column repeated); a
+// vertically striped one's column by column, a few pixels tall (the same row repeated).
 function stripCanvas(strip) {
-  const columns = 4
+  const repeat = 4
   const canvas = document.createElement("canvas")
-  canvas.width = columns
-  canvas.height = strip.height
-  const pixels = new ImageData(columns, strip.height)
-  for (let y = 0; y < strip.height; y++) for (let x = 0; x < columns; x++) pixels.data.set(strip.data.subarray(4 * y, 4 * y + 4), 4 * (y * columns + x))
+  canvas.width = strip.vertical ? strip.width : repeat
+  canvas.height = strip.vertical ? repeat : strip.height
+  const pixels = new ImageData(canvas.width, canvas.height)
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const k = strip.vertical ? x : y
+      pixels.data.set(strip.data.subarray(4 * k, 4 * k + 4), 4 * (y * canvas.width + x))
+    }
+  }
   canvas.getContext("2d").putImageData(pixels, 0, 0)
   return canvas
 }
@@ -269,8 +283,19 @@ export function findPrint(data, w, h, shape = null) {
   if (coverage > 0.25) {
     for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   }
-  const strip = coverage > 0.25 ? stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last) : null
-  const print = coverage > 0.01 ? { data: out, width: pw, height: ph, coverage, allOver: coverage > 0.25, stripes: Boolean(strip), strip } : null
+  // Stripes: horizontal ones right across (a striped knit), or vertical ones down the front (a striped
+  // button-up). Both at once is a check: that's laid as the photo's print, not as stripes. Faint stripes (pale
+  // blue on white) are read too, though they're too close to the cloth's colour to count as print above.
+  const strong = coverage > 0.25
+  const down = stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last, strong)
+  const across = stripeColumns(data, lab, garment.mask, w, x0, x1, top, bottom, strong)
+  const strip = down && across ? null : down ?? across
+  // A striped or checked front is laid whole, as photographed (the placket, the pocket and the collar's
+  // shadow with it); a check's cloth repeats over the other pieces as an all-over print's does.
+  const patterned = Boolean(down || across)
+  if (patterned && !strong) for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
+  const allOver = strong || patterned
+  const print = coverage > 0.01 || patterned ? { data: out, width: pw, height: ph, coverage, allOver, stripes: Boolean(strip), strip } : null
   return { color, print, rect: [x0, top, x1, bottom] }
 }
 
@@ -335,7 +360,7 @@ export function garmentRows(mask, w, h) {
 // the hem, and on down the sleeves where they hang below it, to `last`) when the front is striped, else
 // null; its `span` is its height over the body's (shoulders to hem). x0..x1: the middle of the body; the
 // zip, a drawcord or a small logo in a row is left out by taking each row's middle value.
-export function stripeStrip(data, lab, mask, w, x0, x1, top, bottom, last = bottom) {
+export function stripeStrip(data, lab, mask, w, x0, x1, top, bottom, last = bottom, strong = true) {
   const ph = bottom - top + 1, tall = Math.max(ph, last - top + 1)
   const rowsLab = [], within = [], strip = new Uint8ClampedArray(4 * tall), filled = new Uint8Array(tall)
   for (let y = 0; y < tall; y++) {
@@ -356,18 +381,7 @@ export function stripeStrip(data, lab, mask, w, x0, x1, top, bottom, last = bott
     rowsLab.push(row)
     within.push(median(L.map((l, k) => Math.abs(l - row[0]) + 0.6 * Math.hypot(A[k] - row[1], B[k] - row[2]))))
   }
-  if (rowsLab.length < 12) return null
-  // How much the rows differ: each from the row a little way below it.
-  const step = Math.max(1, Math.round(ph * 0.01))
-  const between = []
-  for (let k = 0; k + step < rowsLab.length; k++) {
-    const a = rowsLab[k], b = rowsLab[k + step]
-    between.push(Math.abs(a[0] - b[0]) + 0.6 * Math.hypot(a[1] - b[1], a[2] - b[2]))
-  }
-  between.sort((p, q) => p - q)
-  const changes = between[Math.round((between.length - 1) * 0.8)]   // the rows at a stripe's edge
-  const spread = median(within)
-  if (!(changes > 10 && changes > 2.5 * spread)) return null
+  if (!striped(rowsLab, within, ph, strong)) return null
   // Rows with no cloth across the middle (none, or the neck opening) take the nearest row's colour.
   let lastFilled = -1
   for (let y = 0; y < tall; y++) {
@@ -378,6 +392,102 @@ export function stripeStrip(data, lab, mask, w, x0, x1, top, bottom, last = bott
     if (from >= 0) strip.set(strip.subarray(4 * from, 4 * from + 4), 4 * y)
   }
   return { data: strip, width: 1, height: tall, span: tall / ph }
+}
+
+// Whether lines of a front (its rows' or columns' middle colours, in Lab, in order; within: how much each
+// varies along itself) are stripes: neighbouring lines differ a lot more than each line varies along itself.
+// Bold stripes need only that, when strong (the front reads as print all over); faint ones (or any, when the
+// front hardly reads as print) must also come and go again and again, at least three times across: a fold's
+// shadow, a placket or a pocket does once.
+export function striped(lines, within, length, strong = true) {
+  if (lines.length < 12) return false
+  // How much the lines differ: each from the one a little way on (the lines at a stripe's edge). How far on
+  // is tried a few ways: narrow stripes have few lines at their edges a whole step apart.
+  const base = Math.max(1, Math.round(length * 0.01))
+  let changes = 0
+  for (let step = 1; step <= Math.max(4, 3 * base); step++) {
+    const between = []
+    for (let k = 0; k + step < lines.length; k++) {
+      const a = lines[k], b = lines[k + step]
+      between.push(Math.abs(a[0] - b[0]) + 0.6 * Math.hypot(a[1] - b[1], a[2] - b[2]))
+    }
+    between.sort((p, q) => p - q)
+    if (between.length) changes = Math.max(changes, between[Math.round((between.length - 1) * 0.8)])
+  }
+  const spread = median(within)
+  if (!(changes > 2.5 * spread)) return false
+  if (strong && changes > 10) return true
+  return changes > 4 && crossings(lines, Math.max(1.5, changes * 0.3)) >= 6
+}
+
+// How many times lines' colours swing from one side of their local average to the other (by more than
+// `margin` each way), along the direction they vary most (lightness for pale blue on white; hue for red on
+// green of the same lightness).
+function crossings(lines, margin) {
+  const n = lines.length, r = Math.max(3, Math.round(n * 0.06))
+  const weighted = lines.map(([l, a, b]) => [l, 0.6 * a, 0.6 * b])
+  const off = weighted.map((line, k) => {
+    const mean = [0, 0, 0]
+    let count = 0
+    for (let j = Math.max(0, k - r); j <= Math.min(n - 1, k + r); j++) { for (let c = 0; c < 3; c++) mean[c] += weighted[j][c]; count++ }
+    return line.map((v, c) => v - mean[c] / count)
+  })
+  // The direction they vary most: a few rounds of the power method on their spread.
+  const cov = [0, 1, 2].map(i => [0, 1, 2].map(j => off.reduce((sum, d) => sum + d[i] * d[j], 0)))
+  let dir = [1, 0.3, 0.3]
+  for (let k = 0; k < 20; k++) {
+    const next = cov.map(row => row[0] * dir[0] + row[1] * dir[1] + row[2] * dir[2])
+    const size = Math.hypot(...next) || 1
+    dir = next.map(v => v / size)
+  }
+  let side = 0, count = 0
+  for (const d of off) {
+    const s = d[0] * dir[0] + d[1] * dir[1] + d[2] * dir[2]
+    const now = s > margin ? 1 : s < -margin ? -1 : 0
+    if (now && now !== side) { if (side) count++; side = now }
+  }
+  return count
+}
+
+// Vertical stripes down a front (a striped button-up): each column is much the same colour down it, and the
+// columns differ from one another again and again across. The mirror of stripeStrip, over the front's rows
+// below the collar and above the hem; x0..x1: the front's width. A button, the pocket or a fold's shadow is
+// left out by taking each column's middle value. Returns one row of pixels (the cloth's colour column by
+// column across the middle of the front, its sides' shade left off) when it's striped, else null: { data,
+// width, height: 1, vertical: true, from, span } (from: where it starts across the front, and span: how much
+// of the front it spans, as shares of the front's width).
+export function stripeColumns(data, lab, mask, w, x0, x1, top, bottom, strong = true) {
+  const pw = x1 - x0 + 1, ph = bottom - top + 1
+  const trim = Math.round(pw * 0.06), a = x0 + trim, b = x1 - trim, wide = b - a + 1
+  const y0 = top + Math.round(ph * 0.22), y1 = bottom - Math.round(ph * 0.06)
+  if (wide < 12 || y1 - y0 < 8) return null
+  const colsLab = [], within = [], row = new Uint8ClampedArray(4 * wide), filled = new Uint8Array(wide)
+  for (let c = 0; c < wide; c++) {
+    const L = [], A = [], B = [], R = [], G = [], Bl = []
+    for (let y = y0; y <= y1; y++) {
+      const i = y * w + a + c
+      if (!mask[i]) continue
+      L.push(lab[3 * i]); A.push(lab[3 * i + 1]); B.push(lab[3 * i + 2])
+      R.push(data[4 * i]); G.push(data[4 * i + 1]); Bl.push(data[4 * i + 2])
+    }
+    if (L.length < (y1 - y0 + 1) * 0.4) continue
+    const col = [median(L), median(A), median(B)]
+    row.set([Math.round(median(R)), Math.round(median(G)), Math.round(median(Bl)), 255], 4 * c)
+    filled[c] = 1
+    colsLab.push(col)
+    within.push(median(L.map((l, k) => Math.abs(l - col[0]) + 0.6 * Math.hypot(A[k] - col[1], B[k] - col[2]))))
+  }
+  if (colsLab.length < wide * 0.7 || !striped(colsLab, within, pw, strong)) return null
+  // Columns with too little cloth down them take the nearest column's colour.
+  let lastFilled = -1
+  for (let c = 0; c < wide; c++) {
+    if (filled[c]) { lastFilled = c; continue }
+    let next = c
+    while (next < wide && !filled[next]) next++
+    const from = next < wide && (lastFilled < 0 || next - c < c - lastFilled) ? next : lastFilled
+    if (from >= 0) row.set(row.subarray(4 * from, 4 * from + 4), 4 * c)
+  }
+  return { data: row, width: wide, height: 1, vertical: true, from: trim / pw, span: wide / pw }
 }
 
 // The areas a print covers (0 to 1, soft at the edge): its marks joined up across small gaps (a closing:

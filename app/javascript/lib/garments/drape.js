@@ -3,7 +3,7 @@
 // split into small steps; in each, the cloth moves, then each constraint (its threads can't stretch much, it
 // bends only so easily, seams pull together) nudges the points back, and any point inside the skin is pushed
 // out onto it. Pure JavaScript over typed arrays, so it runs in a Web Worker or in Node.
-import { SkinField } from "lib/garments/body"
+import { SkinField, keepOffHands } from "lib/garments/body"
 
 // How each kind of cloth behaves: compliance to stretching and to bending (higher is softer), how heavily
 // it's damped, and how far it sits off the skin (m).
@@ -58,7 +58,10 @@ export class Drape {
   // leg, a stiff, heavy strip hinged on softer cloth rolls outwards like a turned-up cuff.
   // arms: bodyFrame's arms, for a top: a sleeve's cuff can't slip further down the arm than the base of the
   // hand (see stayOnArms); a sleeve longer than the arm gathers above its cuff.
-  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, tuck = null, hemStrip = true, arms = null } = {}) {
+  // hands: bodyFrame's hands, for pants: the cloth stays on the body's side of them (see body.js's
+  // keepOffHands), as the arms aren't in their collision field.
+  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, tuck = null, hemStrip = true, arms = null, hands = null } = {}) {
+    this.hands = hands
     this.hemStrip = hemStrip
     this.snug = snug
     this.tuck = tuck
@@ -322,6 +325,7 @@ export class Drape {
     if (this.tuck) this.stayTucked()
     if (this.feet) this.stayOffFeet()
     if (this.arms) this.stayOnArms()
+    if (this.hands) keepOffHands(p, this.hands, thick)
     if (this.floor !== null) {
       // On the floor, cloth stays put rather than sliding (it rests on it).
       for (let i = 0; i < n; i++) {
@@ -524,13 +528,15 @@ export class Drape {
   // garment skinned into another pose, to settle there.
   // envelope: the new body's (see the constructor), to keep a skirt round both legs there too, or null.
   // arms: the new body's arms, when the sleeves' cuffs are held above the hands (see stayOnArms).
-  repose(positions, field, envelope = null, feet = null, arms = null) {
+  // hands: the new body's hands, when pants stay on the body's side of them (see keepOffHands).
+  repose(positions, field, envelope = null, feet = null, arms = null, hands = null) {
     this.x.set(positions)
     this.v.fill(0)
     this.field = field
     this.envelope = envelope
     this.feet = feet
     this.arms = arms
+    this.hands = hands
   }
 
   // Settles it where it is, a frame at a time (see phases), calming it at the end.

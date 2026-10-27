@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, stripeStrip, stripeColumns, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
 import "./support/lib.mjs"
 
 const { bottomsPhotoUV } = await import("lib/garments/photo_map")
@@ -362,4 +362,119 @@ test("stripes are laid by height, so a sleeve's meet the body's at the shoulder 
   const loose = draftTop("hoodie", { chest: 86, shoulders: 38, sleeve: 60, length: 52 }, { chest: 91, waist: 74, shoulders: 39.5, arm: 58, height: 165, armpit: 18, bicep: 28, wrist: 15, neck: 36, head: 55 }, { closure: "zip" })
   assert.ok(m.bicep < loose.measures.bicep - 3 && m.opening < loose.measures.opening - 2 && m.armhole < loose.measures.armhole, "closer sleeves and armholes")
   assert.equal(m.chest, 86)
+})
+
+// A button-up shirt laid flat (as shops photograph one): short sleeves out to the sides, a white collar at the
+// top, a placket with buttons down the middle, a chest pocket, and two soft fold shadows down the front.
+// stripes: [colour, colour, period, width of the first] for vertical stripes; check: the same, both ways.
+function buttonUp({ stripes = null, check = false, plain = [240, 242, 245] } = {}) {
+  const w = 320, h = 360, data = new Uint8ClampedArray(4 * w * h)
+  const shoulders = 60, hem = 330, x0 = 90, x1 = 230
+  const cloth = (x, y) => {
+    if (!stripes) return plain
+    const [a, b, period, first] = stripes
+    const across = (x - x0) % period < first
+    if (!check) return across ? a : b
+    const down = (y - shoulders) % period < first
+    return across && down ? a.map(v => v - 40) : across || down ? a : b
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = [244, 244, 242]
+      const body = x >= x0 && x < x1 && y >= shoulders && y < hem
+      const sleeves = ((x >= x0 - 50 && x < x0) || (x >= x1 && x < x1 + 50)) && y >= shoulders + (Math.abs(x - 160) - 70) * 0.5 && y < shoulders + 70
+      if (body || sleeves) {
+        c = cloth(x, y)
+        // Soft fold shadows down the front.
+        for (const [fx, depth] of [[125, 0.08], [196, 0.06]]) c = c.map(v => v * (1 - depth * Math.max(0, 1 - Math.abs(x - fx) / 6)))
+      }
+      if (body && Math.abs(x - 160) <= 4) c = cloth(x + 3, y)   // the placket, a little off the body's stripes
+      if (body && Math.abs(x - 160) <= 2 && (y - shoulders) % 30 < 4) c = [250, 250, 248]   // buttons
+      if (x >= 180 && x < 212 && y >= 90 && y < 130) c = cloth(x + 5, y)   // the pocket, its stripes off
+      if (y >= shoulders - 6 && y < shoulders + 18 && Math.abs(x - 160) < 26 - (y - shoulders + 6) * 0.6) c = [247, 248, 250]   // collar
+      data.set([...c.map(Math.round), 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h, x0, x1, cloth }
+}
+
+test("a button-up with faint vertical stripes is read as stripes down it: a row of its colours across the front", () => {
+  const blue = [196, 211, 231], white = [238, 240, 243]
+  const { data, w, h, x0, x1, cloth } = buttonUp({ stripes: [blue, white, 9, 5] })
+  const found = findPrint(data, w, h)
+  assert.ok(found.print, "a print is read (the stripes are too faint to count as print on their own)")
+  assert.equal(found.print.stripes, true)
+  assert.equal(found.print.allOver, true)
+  const { strip } = found.print
+  assert.equal(strip.vertical, true)
+  assert.equal(strip.height, 1)
+  // It spans the middle of the front, its sides left off; from and span say where, as shares of its width.
+  const [fx0, , fx1] = found.rect
+  assert.ok(Math.abs(fx0 - x0) <= 2 && Math.abs(fx1 - (x1 - 1)) <= 2, `front ${fx0}..${fx1}`)
+  const pw = fx1 - fx0 + 1
+  assert.ok(strip.from > 0 && strip.from < 0.1 && Math.abs(strip.from * pw + strip.width - pw * (1 - strip.from)) <= 1, `from ${strip.from}, width ${strip.width}`)
+  assert.ok(Math.abs(strip.span - strip.width / pw) < 1e-6)
+  // Each column's colour is the stripe's there (the placket, buttons, pocket and folds left out).
+  let right = 0
+  for (let c = 0; c < strip.width; c++) {
+    const x = fx0 + Math.round(strip.from * pw) + c, want = cloth(x, 200)
+    const got = [...strip.data.slice(4 * c, 4 * c + 3)]
+    if (got.every((v, k) => Math.abs(v - want[k]) <= 12)) right++
+  }
+  assert.ok(right > strip.width * 0.85, `${right} of ${strip.width} columns match`)
+  // The front is laid whole, as photographed.
+  const { data: pixels, width, height } = found.print
+  assert.equal(pixels[4 * (Math.round(height / 2) * width + 20) + 3], 255)
+})
+
+test("bold vertical stripes are read as stripes down, not across", () => {
+  const { data, w, h } = buttonUp({ stripes: [[180, 40, 50], [232, 232, 226], 12, 4] })
+  const found = findPrint(data, w, h)
+  assert.equal(found.print.stripes, true)
+  assert.equal(found.print.strip.vertical, true)
+})
+
+test("a check (stripes both ways) isn't laid as stripes: it falls back to the photo's print", () => {
+  const { data, w, h } = buttonUp({ stripes: [[150, 170, 205], [238, 240, 243], 12, 6], check: true })
+  const found = findPrint(data, w, h)
+  assert.ok(found.print, "the photo's print")
+  assert.equal(found.print.stripes, false)
+  assert.equal(found.print.strip, null)
+  assert.equal(found.print.allOver, true)
+})
+
+test("a plain button-up's placket, buttons, pocket and fold shadows aren't stripes", () => {
+  for (const plain of [[240, 242, 245], [40, 60, 110]]) {
+    const { data, w, h } = buttonUp({ plain })
+    const found = findPrint(data, w, h)
+    assert.ok(!found.print?.stripes, `plain ${plain} read as stripes`)
+  }
+  // Nor are a striped hoodie's horizontal stripes read as vertical ones.
+  const hoodie = stripedHoodie()
+  assert.equal(findPrint(hoodie.data, hoodie.w, hoodie.h).print.strip.vertical, undefined)
+})
+
+test("vertical stripes are laid by how far across: the back's meet the front's at the side seams, the cuffs and hem band carry on the sleeves' and body's", async () => {
+  const { draftTop } = await import("lib/garments/pattern")
+  const { widthsAcross } = await import("lib/garments/photo_map")
+  const pattern = draftTop("shirt", { chest: 116, shoulders: 48, sleeve: 64, length: 74 }, { chest: 101.6, waist: 86.4, shoulders: 45.5, arm: 65.5, height: 178, armpit: 20, bicep: 32, wrist: 17, neck: 39, head: 57 })
+  const cloth = buildCloth(pattern, 1.6)
+  const across = widthsAcross(cloth, pattern)
+  const m = pattern.measures
+  const points = name => cloth.points.map((_, i) => i).filter(i => cloth.panels[cloth.panel[i]] === name)
+  const range = name => { const v = points(name).map(i => across[i]); return [Math.min(...v), Math.max(...v)] }
+  // The front from its middle; the back mirrored, so at each side seam both are the same distance across.
+  assert.deepEqual(range("front").map(Math.round), [-Math.round(m.chest / 4), Math.round(m.chest / 4)])
+  const sideOf = (panel, edge) => cloth.edges[`${panel}/${edge}`].map(i => across[i])
+  for (const side of ["L", "R"]) {
+    const f = sideOf("front", `side_${side}`), b = sideOf("back", `side_${side}`)
+    assert.ok(Math.abs(Math.sign(f[0]) - Math.sign(b[0])) < 1e-6 && Math.abs(Math.abs(f[0]) - Math.abs(b[0])) < 1.5, `side ${side}: front ${f[0]}, back ${b[0]}`)
+  }
+  // A sleeve across its own width, from its middle; its cuff across the same width as the sleeve's hem.
+  const sleeve = range("sleeve_L"), cuff = range("cuff_L")
+  assert.ok(Math.abs(sleeve[0] + sleeve[1]) < 0.5 && Math.abs(sleeve[1] - m.bicep / 2) < 0.5, `sleeve ${sleeve}`)
+  assert.ok(Math.abs(cuff[0] + m.opening / 2) < 0.5 && Math.abs(cuff[1] - m.opening / 2) < 0.5, `cuff ${cuff}`)
+  // The hem band: as far across as the front's and back's hems it's sewn to.
+  const band = range("waistband")
+  assert.ok(Math.abs(band[0] + m.hem / 4) < 0.5 && Math.abs(band[1] - m.hem / 4) < 0.5, `band ${band}`)
 })
