@@ -90,6 +90,8 @@ def arguments(argv):
     p.add_argument("--checker-device", default="cpu", help="where the gates' models run (default cpu: off the clock)")
     p.add_argument("--no-checks", action="store_true", help="skip the gates and the likeness (times only)")
     p.add_argument("--no-warmup", action="store_true", help="skip the short untimed run after each load")
+    p.add_argument("--batch-guidance", action="store_true",
+                   help="a guided step's two passes side by side (batch 2, FASHN's way) rather than one after the other")
     p.add_argument("--attention-chunk", type=int, default=1024,
                    help="on Apple's GPU, attend this many queries at a time (default 1024; 0 = all at once)")
     return p.parse_args(argv)
@@ -213,6 +215,7 @@ def make_runs(items, configs, baseline, device, args, out):
                                  "steps": config.steps, "error": "load failed", "finite": False})
             prec.free(device)
             continue
+        pipe.split_guidance = not args.batch_guidance
         notes[precision] = {"load_seconds": round(time.time() - began, 1)}
         say(f"{precision} loaded in {notes[precision]['load_seconds']} s")
         if not args.no_warmup:
@@ -362,6 +365,7 @@ def main(argv=None):
         "machine": info,
         "settings": {"seed": args.seed, "device": str(device), "checker_device": args.checker_device,
                      "attention_chunk": args.attention_chunk if device.type == "mps" else None,
+                     "guidance_passes": "batch 2" if args.batch_guidance else "one after the other",
                      "configs": [c.name for c in configs], "reference": baseline.name, "items": [i["name"] for i in items]},
         "precisions": notes,
         # Operations Apple's GPU lacked, run on the CPU instead (torch warns once per operation per process).

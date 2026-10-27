@@ -171,6 +171,9 @@ def spike_pipeline(weights_dir, device, precision, seed=7):
             self.spike_precision = precision
             self.noise_seed = seed
             self.guided_steps = None  # None: FASHN's own, guidance on every step but the last
+            # A guided step's two passes one after the other (batch 1 each) rather than side by side (batch 2):
+            # on the owner's M2 Pro a batch-2 step took ~25 s against ~7 s for one batch-1 pass.
+            self.split_guidance = True
             self.last_sample = None
             super().__init__(weights_dir=weights_dir, device=str(device))
 
@@ -220,7 +223,14 @@ def spike_pipeline(weights_dir, device, precision, seed=7):
             guided = num_timesteps - skip_cfg_last_n_steps if self.guided_steps is None else self.guided_steps
             for i, (t_curr, t_prev) in enumerate(zip(timesteps[:-1], timesteps[1:])):
                 t_vec = torch.full((batch,), t_curr, dtype=carry, device=dev)
-                if i < guided:
+                if i < guided and self.split_guidance:
+                    # forward_for_cfg's two halves as two calls: with the garment (no mask), then without (a
+                    # mask of False drops the picture, poses, garment and category, as its second half does).
+                    x = images.to(dtype)
+                    v_c = model(x, t_vec, **kwargs)["x"].to(carry)
+                    v_u = model(x, t_vec, mask=torch.zeros(batch, dtype=torch.bool, device=dev), **kwargs)["x"].to(carry)
+                    v = v_u + guidance_scale * (v_c - v_u)
+                elif i < guided:
                     pred = model.forward_for_cfg(images.to(dtype), t_vec, **kwargs)
                     v_c, v_u = pred["v_c"].to(carry), pred["v_u"].to(carry)
                     v = v_u + guidance_scale * (v_c - v_u)
