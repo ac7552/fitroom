@@ -21,7 +21,7 @@ bin/rails test                            # fit math, link importer, the API and
 node --test test/javascript/*.test.mjs    # pattern drafting, photo reading, body solver
 ```
 
-Optional settings are environment variables, listed in `.env.example`. Fitroom runs without any of them.
+Optional settings are environment variables, listed in `.env.example`; copy it to `.env` and `bin/dev` loads it. Fitroom runs without any of them.
 
 ## How to use it
 

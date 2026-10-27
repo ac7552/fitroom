@@ -1,2 +1,13 @@
 #!/usr/bin/env ruby
+# Loads .env (the optional settings in .env.example) into the server's environment, then starts Rails.
+# Lines are KEY=value; blank lines and # comments are skipped; the shell's own values win.
+env_file = File.expand_path("../.env", __dir__)
+if File.exist?(env_file)
+  File.foreach(env_file) do |line|
+    next if line.strip.empty? || line.lstrip.start_with?("#")
+    key, value = line.chomp.split("=", 2)
+    next unless key && value
+    ENV[key.strip] ||= value.strip.delete_prefix('"').delete_suffix('"')
+  end
+end
 exec "./bin/rails", "server", *ARGV
