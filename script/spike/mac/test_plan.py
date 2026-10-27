@@ -135,6 +135,13 @@ class Summary(unittest.TestCase):
         configs, baseline, _ = plan.with_baseline(plan.parse_configs("fp32:30,fp16:20"))
         self.assertEqual(plan.recommend(plan.summarize(runs, configs, baseline), baseline)["pick"], "fp32-30")
 
+    def test_without_likeness_the_fastest_clean_picture_with_a_warning(self):
+        runs = [run("a", "fp32-30", 300, checks=False), run("a", "fp16-20", 100, checks=False)]
+        configs, baseline, _ = plan.with_baseline(plan.parse_configs("fp32:30,fp16:20"))
+        pick = plan.recommend(plan.summarize(runs, configs, baseline), baseline)
+        self.assertEqual(pick["pick"], "fp16-20")
+        self.assertIn("likeness not measured", pick["why"])
+
     def test_nothing_when_everything_failed(self):
         runs = [run("a", "fp32-30", 300, error="x"), run("a", "fp16-20", 100, finite=False)]
         configs, baseline, _ = plan.with_baseline(plan.parse_configs("fp32:30,fp16:20"))

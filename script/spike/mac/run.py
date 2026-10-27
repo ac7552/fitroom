@@ -44,10 +44,32 @@ LOG = []
 faulthandler.enable()  # a hard crash in the GPU code still prints where Python was
 
 
+LIVE = {"log": None, "stacks": None}
+WARNED = set()
+QUIET_SECONDS = 90  # this long without a line, and where Python is goes into stacks.txt (again every 90 s)
+
+
 def say(message):
+    """A line on the terminal and, once the out folder exists, in its log.txt at once (so a run that stalls
+    or is stopped still leaves its story). Each line restarts the quiet-time clock for stacks.txt."""
     line = f"[{time.time() - BEGAN:7.1f} s] {message}"
     print(line, flush=True)
     LOG.append(line)
+    if LIVE["log"]:
+        LIVE["log"].write(line + "\n")
+        LIVE["log"].flush()
+    if LIVE["stacks"]:
+        faulthandler.cancel_dump_traceback_later()
+        faulthandler.dump_traceback_later(QUIET_SECONDS, repeat=True, file=LIVE["stacks"])
+
+
+def go_live(out):
+    LIVE["log"] = open(os.path.join(out, "log.txt"), "w")
+    LIVE["log"].write("\n".join(LOG) + "\n")
+    LIVE["log"].flush()
+    LIVE["stacks"] = open(os.path.join(out, "stacks.txt"), "w")
+    faulthandler.enable(file=LIVE["stacks"])
+    faulthandler.dump_traceback_later(QUIET_SECONDS, repeat=True, file=LIVE["stacks"])
 
 
 def arguments(argv):
@@ -128,12 +150,23 @@ def one_run(pipe, item, seed, steps):
     """One try-on: the picture and its numbers (the whole call, the sampling alone, any CPU fallbacks)."""
     import tryon_engine as engine
 
+    caught = []
+
+    def shown(message, category, filename, lineno, file=None, line=None):
+        # Said as it happens (a fallback to the CPU is the likeliest reason a run crawls), and kept.
+        text = str(message).strip()
+        caught.append(text)
+        if text not in WARNED:
+            WARNED.add(text)
+            say(f"warning: {text.splitlines()[0][:220] if text else category.__name__}")
+
     began = time.perf_counter()
-    with warnings.catch_warnings(record=True) as caught:
+    with warnings.catch_warnings():
         warnings.simplefilter("always")
+        warnings.showwarning = shown
         picture = engine.run_fashn(pipe, item["person"], item["garment"], item["category"], flat_lay=True, seed=seed, steps=steps)
     sample = pipe.last_sample or {}
-    fallbacks = sorted({str(w.message).split(" is not")[0] for w in caught if "MPS" in str(w.message) and "fall back" in str(w.message)})
+    fallbacks = sorted({m.split(" is not")[0] for m in caught if "MPS" in m and "fall back" in m})
     return picture, {
         "wall_seconds": round(time.perf_counter() - began, 2),
         "sample_seconds": sample.get("seconds"),
@@ -294,6 +327,8 @@ def main(argv=None):
 
     out = args.out or os.path.join(ROOT, "tmp", "spike", "mac", datetime.datetime.now().strftime("%Y%m%d-%H%M"))
     os.makedirs(out, exist_ok=True)
+    go_live(out)
+    say(f"writing to {out} (log.txt as it goes; stacks.txt if it goes quiet for {QUIET_SECONDS} s)")
     runs, pictures, notes = make_runs(items, configs, baseline, device, args, out)
     if not args.no_checks:
         say("checking the pictures (off the clock)...")
@@ -329,8 +364,8 @@ def main(argv=None):
         say("smoke run: 2 steps make a rough picture, so REFUSED is expected; what matters is that every precision "
             "made one (no 'failed', no NaN). Next: --quick")
     say(f"wrote {out}/sheet.png, summary.md and results.json")
-    with open(os.path.join(out, "log.txt"), "w") as f:
-        f.write("\n".join(LOG) + "\n")
+    faulthandler.cancel_dump_traceback_later()
+    LIVE["log"].close()
 
 
 if __name__ == "__main__":

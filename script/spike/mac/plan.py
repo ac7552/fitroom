@@ -186,6 +186,14 @@ def summarize(runs, configs, baseline):
 def recommend(rows, baseline, looks_same=LOOKS_SAME):
     """The fastest config that came out on every item (run_ok) and looks the same as the baseline (DINOv2 at
     or above `looks_same`). Returns {"pick": name or None, "why": words}."""
+    if all(r["dino"] is None for r in rows if r["config"] != baseline.name):
+        # --no-checks: nothing was compared, so only speed and a clean picture can count.
+        ran = [r for r in rows if r["ok"] and r["seconds"]]
+        if not ran:
+            return {"pick": None, "why": "nothing came out on every item; see the errors"}
+        best = min(ran, key=lambda r: r["seconds"])
+        return {"pick": best["config"], "why": f"the fastest that made a picture every time ({best['seconds']} s); "
+                                               "likeness not measured, so check the sheet"}
     qualified = [r for r in rows if r["ok"] and r["seconds"] and (r["config"] == baseline.name or (r["dino"] is not None and r["dino"] >= looks_same))]
     if not qualified:
         return {"pick": None, "why": "nothing came out right on every item; see the errors and the sheet"}
