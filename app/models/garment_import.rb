@@ -1066,10 +1066,11 @@ class GarmentImport
     [ product[:category], source_url ].join(" ").match?(OUTERWEAR) ? "zip" : "tailored"
   end
 
-  # The first of the texts (the product's colour, its description, its name) that names a colour.
+  # The first of the texts (the product's colour, its description, its name) that names a colour, and the
+  # colour it names first: "White / Brown" is a white garment with brown on it.
   def color_hex(texts)
     texts.compact.each do |text|
-      found = COLORS.find { |name, _| text.match?(/\b#{name}\b/i) }
+      found = COLORS.filter_map { |name, hex| (at = text =~ /\b#{name}\b/i) && [ at, -name.length, hex ] }.min
       return found.last if found
     end
     DEFAULT_COLOR

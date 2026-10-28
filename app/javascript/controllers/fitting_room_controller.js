@@ -1772,8 +1772,12 @@ function escape(text) {
 const NEUTRALS = /\b(white|off[- ]white|ivory|cream|ecru|black|grey|gray|heather|charcoal|silver)\b/i
 function asNamed(color, name, named) {
   if (!color || !NEUTRALS.test(name ?? "") || !/^#[0-9a-f]{6}$/i.test(named ?? "")) return color
+  // Only a plain neutral ("Black", "Off White"), not one of two colours ("White / Brown": the brown's hue
+  // laid on a cream photo is pink), and only toward a neutral.
+  if (/\/|&|\band\b|multi/i.test(name)) return color
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
   const [r, g, b] = rgb(color), [nr, ng, nb] = rgb(named)
+  if (Math.max(nr, ng, nb) - Math.min(nr, ng, nb) > 30) return color
   const light = (r + g + b) / 3, namedLight = (nr + ng + nb) / 3
   return "#" + [nr, ng, nb].map(v => Math.round(Math.min(255, Math.max(0, v - namedLight + light))).toString(16).padStart(2, "0")).join("")
 }

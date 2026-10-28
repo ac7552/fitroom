@@ -1,7 +1,7 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, garmentRows, stripeStrip, stripeColumns, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, garmentRows, sidesFromCuffs, stripeStrip, stripeColumns, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
 import "./support/lib.mjs"
 
 const { bottomsPhotoUV } = await import("lib/garments/photo_map")
@@ -535,4 +535,49 @@ test("a T-shirt's shoulders, sloping out from its collar to sleeves held out sid
   const rows = garmentRows(mask, w, h)
   assert.equal(rows.hood, null)
   assert.ok(rows.top < 70, `the front starts at the shoulders, not down at row ${rows.top}`)
+})
+
+// A shirt laid flat: long sleeves down its sides, touching the body, their cuffs hanging on below the hem, a
+// brown trim down each sleeve and a cream body.
+function overshirtFlatLay({ label = false } = {}) {
+  const w = 300, h = 320, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = [235, 235, 235]
+      const body = x >= 100 && x < 200 && y >= 40 && y < 260
+      // The sleeves: from the shoulders out and down the sides, 30 wide, to below the hem.
+      const leftSleeve = y >= 50 && y < 290 && x >= 70 && x < 100, rightSleeve = y >= 50 && y < 290 && x >= 200 && x < 230
+      const shoulders = y >= 40 && y < 50 && x >= 70 && x < 230
+      if (body || leftSleeve || rightSleeve || shoulders) c = [227, 221, 202]
+      if ((leftSleeve && x >= 80 && x < 88) || (rightSleeve && x >= 212 && x < 220)) c = [110, 70, 40]
+      // A small chest logo, and (optionally) a size label in the neck.
+      if (x >= 160 && x < 176 && y >= 90 && y < 104) c = [190, 150, 40]
+      if (label && x >= 145 && x < 155 && y >= 43 && y < 48) c = [250, 250, 250]
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h }
+}
+
+test("long sleeves laid down a shirt's sides, cuffs below the hem, aren't part of its front", () => {
+  const { data, w, h } = overshirtFlatLay()
+  const found = findPrint(data, w, h)
+  const [x0, , x1] = found.rect
+  assert.ok(x0 >= 97 && x1 <= 203, `the front is the body only: ${x0}..${x1}`)
+  // So the sleeves' trim isn't laid on the chest: only the logo is print.
+  assert.ok(found.look.box && found.look.box.left > 0.5, `the graphic is the logo: ${JSON.stringify(found.look.box)}`)
+})
+
+test("the body's sides from the cuffs need sleeves hanging below the hem", () => {
+  const w = 100, h = 100, mask = new Uint8Array(w * h)
+  for (let y = 10; y < 90; y++) for (let x = 20; x < 80; x++) mask[y * w + x] = 1
+  const rows = garmentRows(mask, w, h)
+  assert.equal(sidesFromCuffs(mask, w, rows, 20, 79), null)
+})
+
+test("a size label in the neck isn't print on the front", () => {
+  const { data, w, h } = overshirtFlatLay({ label: true })
+  const found = findPrint(data, w, h)
+  const { box } = found.look
+  assert.ok(box && box.top > 0.15, `the graphic starts at the logo, not the label: ${JSON.stringify(box)}`)
 })

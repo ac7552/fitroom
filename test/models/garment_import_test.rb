@@ -88,6 +88,13 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "trousers", pants[:garment]
   end
 
+  test "a two-colour name is the colour it names first" do
+    import = GarmentImport.new
+    assert_equal GarmentImport::COLORS["white"], import.send(:color_hex, [ "White / Brown" ])
+    assert_equal GarmentImport::COLORS["navy"], import.send(:color_hex, [ "Navy/Grey" ])
+    assert_equal GarmentImport::COLORS["black"], import.send(:color_hex, [ nil, "Black cotton jersey" ])
+  end
+
   test "a blend is its main fibre" do
     import = GarmentImport.new
     assert_equal "wool", import.send(:fabric_of, { name: "Mulberry IV Wool Jersey Tee", fabric: "80% Wool / 20% Nylon" }, "top")

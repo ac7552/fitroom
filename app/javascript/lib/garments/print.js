@@ -171,6 +171,12 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   if (runs.length < 3) return null
   let x0 = Math.round(median(runs.map(r => r[0]))), x1 = Math.round(median(runs.map(r => r[1])))
   if (x1 - x0 < w * 0.15) return null
+  // Long sleeves laid down the body's sides, touching it, with their cuffs hanging on below the hem (a shirt
+  // or an overshirt laid flat): across the middle the outline is the body and both sleeves, so the front
+  // would take in strips of sleeve (and a sleeve's print, laid on the chest). Below the hem only the sleeves
+  // are left, and their inner edges are the body's sides.
+  const sides = sidesFromCuffs(garment.mask, w, rows, x0, x1)
+  if (sides) [x0, x1] = sides
   // The hem, from the garment's shape, when its chart gives one.
   // Something else showing below it (trousers on a mannequin) makes it look far too long for its chart.
   if (shape && bottom - top > (x1 - x0) * shape * 1.45) {
@@ -282,6 +288,8 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   // lettering), with a soft edge. Cut out mark by mark, a photo print fading into a dark cloth falls apart
   // into specks.
   const whole = printAreas(alpha, gap, pw, ph)
+  // The size label printed inside the back of the neck, seen through the neck opening: not on the front.
+  dropNeckLabel(alpha, whole, pw, ph)
   let covered = 0
   const out = new Uint8ClampedArray(4 * pw * ph)
   for (let k = 0; k < pw * ph; k++) {
@@ -442,6 +450,62 @@ export function sleevePrint(data, lab, mask, w, h, front, rows, baseLab, way) {
 
 // A long sleeve hanging below the hem on its side: { start (the shoulder point, its axis's top), end (the
 // cuff's middle), wide: [its width at the top, at the cuff] (px), inside(x, y) } or null.
+// The body's sides [x0, x1] from long sleeves hanging on below the hem, down its sides: the inner edges of
+// the two cuffs, just below the hem. Null when the sleeves don't hang below it, or the gap between them isn't
+// a body's width a little narrower than the outline's (x0..x1).
+export function sidesFromCuffs(mask, w, rows, x0, x1) {
+  const { top, bottom, last, centre } = rows
+  const tall = bottom - top + 1
+  if (last - bottom < tall * 0.03) return null
+  const lefts = [], rights = []
+  for (let y = bottom + 3; y <= Math.min(last, bottom + tall * 0.12); y++) {
+    // Something under the middle (trousers on a mannequin) isn't a sleeve's end.
+    if (mask[y * w + centre]) continue
+    let a = centre, b = centre
+    while (a > 0 && !mask[y * w + a]) a--
+    while (b < w - 1 && !mask[y * w + b]) b++
+    if (mask[y * w + a] && mask[y * w + b]) { lefts.push(a); rights.push(b) }
+  }
+  if (lefts.length < 3) return null
+  const left = Math.round(median(lefts)) + 1, right = Math.round(median(rights)) - 1
+  const share = (right - left) / Math.max(1, x1 - x0)
+  if (share < 0.55 || share > 0.93 || left < x0 || right > x1) return null
+  return [left, right]
+}
+
+// A neck label (a size and brand printed inside the back of the neck, seen through the neck opening): a
+// small piece of print high up in the middle, above where any graphic on the front starts. Painted out of
+// the print (alpha, and the print's filled areas, whole) in place.
+export function dropNeckLabel(alpha, whole, pw, ph) {
+  const on = new Float32Array(pw * ph)
+  let total = 0
+  for (let k = 0; k < pw * ph; k++) if (Math.max(alpha[k], whole[k]) >= 0.5) { on[k] = 1; total++ }
+  if (!total) return
+  const reach = Math.max(2, Math.round(Math.min(pw, ph) * 0.02))
+  const grown = boxBlur(on, pw, ph, reach)
+  const label = new Int32Array(pw * ph).fill(-1)
+  for (let k = 0; k < pw * ph; k++) {
+    if (grown[k] <= 0 || label[k] >= 0) continue
+    const members = [], stack = [k]
+    let marks = 0, left = pw, right = -1, bottom = -1
+    label[k] = k
+    while (stack.length) {
+      const i = stack.pop(), x = i % pw, y = (i - x) / pw
+      members.push(i)
+      if (on[i]) { marks++; left = Math.min(left, x); right = Math.max(right, x); bottom = Math.max(bottom, y) }
+      for (const j of [x > 0 ? i - 1 : -1, x < pw - 1 ? i + 1 : -1, i - pw, i + pw]) {
+        if (j < 0 || j >= pw * ph || label[j] >= 0 || grown[j] <= 0) continue
+        label[j] = k
+        stack.push(j)
+      }
+    }
+    const middle = (left + right) / 2
+    if (marks && bottom < ph * 0.14 && Math.abs(middle - pw / 2) < pw * 0.12 && marks < pw * ph * 0.004) {
+      for (const i of members) { alpha[i] = 0; whole[i] = 0 }
+    }
+  }
+}
+
 function hangingSleeve(mask, w, h, front, rows, way) {
   const { top, bottom } = front, { rowMin, rowMax, last, centre } = rows
   // Below the hem, the cloth on this side of the middle: the sleeve's end.
