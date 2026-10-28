@@ -1,7 +1,9 @@
 import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
+import { findPrint, readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
+import { compareLooks, nextReading, PLAIN } from "lib/garments/look_check"
+import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
 import { knockoutPhoto } from "lib/garments/knockout"
@@ -62,7 +64,7 @@ export default class extends Controller {
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
-    "loading", "loadingLabel", "loadingBar", "scene", "stage", "aiButton", "stageToast", "seeIn3d",
+    "loading", "loadingLabel", "loadingBar", "loadingActions", "scene", "stage", "aiButton", "stageToast", "seeIn3d",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
     "bodyPhotoFront", "bodyPhotoSide", "bodyPhotoFrontLabel", "bodyPhotoSideLabel", "bodyPhotoButton", "bodyPhotoStatus", "bodyPhotoResult"
   ]
@@ -80,7 +82,10 @@ export default class extends Controller {
     this.floatSwitches()
     this.watchInsets()
     // One garment done isn't the outfit done: the loader goes when the stage says everything is on.
-    this.stage.onDrape = phase => this.showLoading(phase === "done" ? null : DRAPE_TEXT[phase] ?? this.loadingLabelTarget.textContent)
+    this.stage.onDrape = phase => {
+      if (phase === "done") this.queueLookCheck()
+      this.showLoading(phase === "done" ? null : DRAPE_TEXT[phase] ?? this.loadingLabelTarget.textContent)
+    }
     this.outfit = {}
     this.tiles = new Map()
     this.addItem(this.garmentValue)
@@ -202,19 +207,28 @@ export default class extends Controller {
       // The photo's garment colour, and any print on its front, which the 3D view lays on the cloth. Pants
       // and skirts take the whole photo: their wash and fading, pockets and seams, as photographed.
       const bottoms = kind === "trousers"
+      // A top's 3D view is checked against its photo before it's shown (checkLook): it waits for the reading.
+      if (kind === "top") {
+        garment.lookPending = true
+        garment.listingColor ??= garment.color
+        warmLikeness()
+      }
       // First with anything that isn't the garment (a hand, a bag, a hanger) painted out (see segment.js).
       const part = bottoms ? "trousers" : "top"
+      let frontPhoto = garment.photo
       const reading = cleanPhoto(garment.photo, part).then(front => {
         garment.cleaned = front !== garment.photo
+        frontPhoto = front
         return bottoms ? readBottomPhoto(front) : readPhoto(front, { shape: frontShape(garment.chart) })
       })
       reading.then(async read => {
         const color = read?.color ?? await clothColor(garment.photo)
-        if (!color || this.outfit[kind] !== item) return
+        if (!color || this.outfit[kind] !== item) { garment.lookPending = false; this.queueLookCheck(); return }
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
         // The shop's photo of the back, read the same way, goes on the back.
         const backPhoto = garment.back_photo && read ? await cleanPhoto(garment.back_photo, part) : null
         if (backPhoto) garment.backCleaned = backPhoto !== garment.back_photo
+        if (kind === "top") garment.lookPhotos = { front: frontPhoto, back: backPhoto }
         let back = backPhoto ? await (bottoms ? readBottomPhoto(backPhoto) : readPhoto(backPhoto)).catch(() => null) : null
         // Not the same garment's back after all (a close-up, or a photo on a model): a different colour, or a
         // top that's plain in front showing a print all over its back.
@@ -223,22 +237,158 @@ export default class extends Controller {
         if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
         // printed gets the photo's print.
-        else {
-          const printed = !(garment.style === "dress" && garment.cut && !garment.cut.printed)
-          garment.print = printed ? read?.print ?? null : null
-          garment.backPrint = printed && back?.print ? { image: back.print.image } : null
-          // The sleeves' graphics, by the wearer's side: the front photo shows the right sleeve on its left,
-          // the back photo the left one; the front photo shows each sleeve's front half, the back its back.
-          const front = read?.sleeves, behind = back?.sleeves
-          garment.sleevePrint = printed && (front || behind) ? {
-            right: { front: front?.left ?? null, back: behind?.right ?? null },
-            left: { front: front?.right ?? null, back: behind?.left ?? null }
-          } : null
-        }
+        else this.applyTopReading(garment, read, back)
+        garment.lookPending = false
         this.renderOutfit()
         if (item.fit) this.render()
-      })
+        this.queueLookCheck()
+      }).catch(() => { garment.lookPending = false; this.queueLookCheck() })
     }
+  }
+
+  // A top's reading of its shop photos (print.js's readPhoto, front and back) laid on it: the front's print,
+  // the back's, and the sleeves' graphics.
+  applyTopReading(garment, read, back) {
+    // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
+    // printed gets the photo's print.
+    const printed = !(garment.style === "dress" && garment.cut && !garment.cut.printed)
+    garment.print = printed ? read?.print ?? null : null
+    garment.backPrint = printed && back?.print ? { image: back.print.image } : null
+    // The sleeves' graphics, by the wearer's side: the front photo shows the right sleeve on its left,
+    // the back photo the left one; the front photo shows each sleeve's front half, the back its back.
+    const front = read?.sleeves, behind = back?.sleeves
+    garment.sleevePrint = printed && (front || behind) ? {
+      right: { front: front?.left ?? null, back: behind?.right ?? null },
+      left: { front: front?.right ?? null, back: behind?.left ?? null }
+    } : null
+  }
+
+  // The 3D view's check against the shop's photo (look_check.js), for the top: it runs once the clothes are
+  // on (and the photo is read), behind the veil, which stays until it passes. A reading that doesn't match is
+  // tried again another way (nextReading), up to three tries; then the person is told, and offered the fit in
+  // plain colour or the AI picture. Once per garment: a new size or body doesn't need it again.
+  queueLookCheck() {
+    const item = this.outfit.top, garment = item?.garment
+    // A top that couldn't be matched and has since been taken off (or swapped) no longer holds the veil.
+    if (this.lookStuckOn && this.lookStuckOn !== garment) this.lookStuckOn = null
+    if (!garment?.photo || garment.lookDone || !item.fit) {
+      if (!this.lookStuckOn && (!this.lookRunning || this.lookRunning !== garment)) this.setLookWords(null)
+      return
+    }
+    if (this.lookStuckOn === garment) return
+    this.setLookWords(this.lookWords ?? "Checking it against the store photo…")
+    if (garment.lookPending || !this.stage.settled || this.lookRunning === garment) return
+    this.lookRunning = garment
+    this.runLookCheck(garment).catch(error => {
+      // A check that can't run (no WebGL readback, say) mustn't keep the clothes hidden.
+      console.warn("[look] check didn't run:", error)
+      garment.lookDone = true
+      this.setLookWords(null)
+    }).finally(() => { if (this.lookRunning === garment) this.lookRunning = null })
+  }
+
+  async runLookCheck(garment) {
+    const current = () => this.outfit.top?.garment === garment
+    for (let attempt = 1; ; ) {
+      await this.lookReady()
+      if (!current()) return
+      const result = await this.lookResult(garment)
+      if (!current()) return
+      garment.lookChecks = result
+      if (!result || result.ok) break
+      rememberLookFailure(garment, attempt, result)
+      const reading = nextReading(++attempt, result.failed)
+      if (!reading) { this.lookStuck(garment); return }
+      this.setLookWords(`Adjusting the print (try ${attempt} of 3)…`)
+      await this.rereadTop(garment, reading)
+      if (!current()) return
+    }
+    garment.lookDone = true
+    this.setLookWords(null)
+  }
+
+  // Until the clothes are on and drawn (a texture laid on is uploaded on the next frame).
+  async lookReady() {
+    for (let i = 0; i < 1200 && !this.stage.settled; i++) await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  }
+
+  // The checks, front (and back, when a back print is laid on): both the shop's photo and the 3D view's
+  // picture of the garment alone read the plain way (look_check.js's PLAIN). Null when it can't be checked.
+  async lookResult(garment) {
+    const photos = garment.lookPhotos
+    if (!photos?.front) return null
+    const shape = frontShape(garment.chart)
+    garment.lookPlain ??= {}
+    garment.lookPlain.front ??= (await readPhoto(photos.front, { shape, ...PLAIN }))?.look ?? null
+    const shot = await this.stage.lookShot("top")
+    if (!shot || !garment.lookPlain.front) return null
+    const named = namedColour(garment)
+    // The AI's likeness of the two, when its model is there in time (it's loaded while the clothes drape).
+    garment.lookPixels ??= await pixelsOf(photos.front, 480).catch(() => null)
+    const alike = garment.lookPixels ? await likeness(garment.lookPixels, shot) : null
+    const renderLook = findPrint(shot.data, shot.width, shot.height, null, PLAIN)?.look
+    const front = compareLooks(garment.lookPlain.front, renderLook, { named, likeness: alike })
+    // Both readings go with the result, for the failure log and the look audit (script/spike/look_audit.mjs).
+    front.looks = { photo: garment.lookPlain.front, render: renderLook }
+    if (!garment.backPrint || !photos.back) return front
+    garment.lookPlain.back ??= (await readPhoto(photos.back, PLAIN))?.look ?? null
+    const backShot = await this.stage.lookShot("top", { back: true })
+    if (!backShot || !garment.lookPlain.back) return front
+    const back = compareLooks(garment.lookPlain.back, findPrint(backShot.data, backShot.width, backShot.height, null, PLAIN)?.look)
+    return { ok: front.ok && back.ok, failed: [...new Set([...front.failed, ...back.failed])], checks: front.checks, back: back.checks, looks: front.looks }
+  }
+
+  // The top's photos read again another way (nextReading) and laid on.
+  async rereadTop(garment, reading) {
+    const photos = garment.lookPhotos, shape = frontShape(garment.chart)
+    const options = { shape, hood: reading.hood, patterns: reading.patterns, sleeves: reading.sleeves }
+    const read = await readPhoto(photos.front, options).catch(() => null)
+    let back = reading.back && photos.back ? await readPhoto(photos.back, options).catch(() => null) : null
+    if (back && read && colorGap(back.color, read.color) > 40) back = null
+    const colour = reading.listingColour && namedColour(garment) ? garment.listingColor : read?.color ? asNamed(read.color, garment.color_name, garment.listingColor ?? garment.color) : garment.color
+    garment.color = garment.photoColor = colour
+    this.applyTopReading(garment, read, back)
+    this.renderOutfit()
+    this.render()
+  }
+
+  // Three tries and none matched: the veil stays, saying so, with the two ways on.
+  lookStuck(garment) {
+    this.lookStuckOn = garment
+    this.setLookWords("We can't show this item's look accurately.")
+    if (this.hasLoadingActionsTarget) this.loadingActionsTarget.hidden = false
+    this.loadingTarget.classList.add("is-stuck")
+  }
+
+  // The fit, in the cloth's plain colour (the listing's, when it names one): the sizes are still right; only
+  // the print was in doubt.
+  plainLook() {
+    const garment = this.lookStuckOn ?? this.outfit.top?.garment
+    if (garment) {
+      garment.print = garment.backPrint = garment.sleevePrint = null
+      if (namedColour(garment)) garment.color = garment.photoColor = garment.listingColor
+      garment.lookDone = true
+    }
+    this.lookStuckOn = null
+    this.setLookWords(null)
+    this.renderOutfit()
+    this.render()
+    this.toast("Shown in plain colour: we couldn't match the store's print.")
+  }
+
+  // The AI picture instead: it paints the shop's own clothes on, so the plain fit goes under it.
+  aiFromStuck() {
+    this.plainLook()
+    this.aiPicture()
+  }
+
+  // The check's words on the veil (null: the check is done, the veil can go when the drape is).
+  setLookWords(words) {
+    this.lookWords = words
+    if (!words && this.hasLoadingActionsTarget) this.loadingActionsTarget.hidden = true
+    if (!words) this.loadingTarget?.classList.remove("is-stuck")
+    if (this.stage?.settled || words) this.showLoading(this.stage?.settled ? null : this.loadingLabelTarget.textContent)
   }
 
   // Just a photo: the page works out what it is (it stays here), and Fitroom gives that kind of thing its
@@ -1052,7 +1202,7 @@ export default class extends Controller {
     const box = this.loadingTarget
     clearTimeout(this.loadingTimer)
     box.classList.add("stage-loading--ai")
-    box.classList.remove("is-done")
+    box.classList.remove("is-done", "stage-loading--veil", "is-checking")
     box.hidden = false
     // The bar slides on its own here (there's no progress to show), so the drape's width is let go of.
     this.loadingBarTarget.style.transform = ""
@@ -1364,7 +1514,8 @@ export default class extends Controller {
       onePiece: Boolean(garment.one_piece),
       buckle: garment.buckle ?? null
     })))
-    // Nothing to sew (shoes alone, or the same outfit again): no loader.
+    // Nothing to sew (shoes alone, or the same outfit again): no loader, once any check of the top is done.
+    this.queueLookCheck()
     if (this.stage.settled) this.showLoading(null)
     this.tuckTarget.hidden = !this.stage.canTuck() || this.stage.onePiece
 
@@ -1433,6 +1584,9 @@ export default class extends Controller {
     // The AI's veil has the loader until the picture is in (or given up on); the drape's words wait.
     if (this.veilWords) return
     const box = this.loadingTarget
+    // Once the clothes are on, the check against the shop's photo holds the veil until it passes.
+    const checking = !words && Boolean(this.lookWords)
+    if (checking) words = this.lookWords
     if (!words) {
       if (!box.hidden) box.classList.add("is-done")
       clearTimeout(this.loadingTimer)
@@ -1441,9 +1595,12 @@ export default class extends Controller {
     }
     clearTimeout(this.loadingTimer)
     box.classList.remove("is-done", "stage-loading--ai")
+    // Nothing half-made shows: the figure is under the blurred veil while it's sewn and checked.
+    box.classList.add("stage-loading--veil")
+    box.classList.toggle("is-checking", checking)
     box.hidden = false
     if (this.loadingLabelTarget.textContent !== words) this.loadingLabelTarget.textContent = words
-    this.loadingBarTarget.style.transform = `scaleX(${Math.max(0.04, this.stage.progress()).toFixed(3)})`
+    if (!checking) this.loadingBarTarget.style.transform = `scaleX(${Math.max(0.04, this.stage.progress()).toFixed(3)})`
   }
 
   renderStageNote() {
@@ -1623,6 +1780,36 @@ function accessoryFit(garment, selected) {
 }
 
 // How far apart two "#rrggbb" colours are (0 to about 440).
+// A photo's pixels, at most `most` across, as ImageData.
+async function pixelsOf(src, most) {
+  const image = await loadImage(src)
+  const scale = Math.min(1, most / Math.max(image.naturalWidth, image.naturalHeight))
+  const canvas = document.createElement("canvas")
+  canvas.width = Math.round(image.naturalWidth * scale)
+  canvas.height = Math.round(image.naturalHeight * scale)
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  return context.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+// The colour the listing names, as a colour (the server's guess from its words), when it's a plain one the
+// photo can be held to: black, white, grey, cream, navy. Null otherwise.
+function namedColour(garment) {
+  return garment.listingColor && /\b(black|white|off[- ]white|ivory|cream|ecru|grey|gray|charcoal|heather|navy)\b/i.test(garment.color_name ?? "") ? garment.listingColor : null
+}
+
+// A top whose 3D view didn't match its photo: kept on this device only (nothing about the person; the item's
+// link, the try and what failed), so a pattern of misreadings can be found later. Best effort.
+function rememberLookFailure(garment, attempt, result) {
+  const entry = { at: new Date().toISOString(), item: garment.source_url ?? garment.name, attempt, failed: result.failed, checks: result.checks, back: result.back ?? null, looks: result.looks ?? null }
+  console.info("[look]", entry)
+  try {
+    const log = JSON.parse(localStorage.getItem("fitroom.lookFailures") ?? "[]")
+    log.push(entry)
+    localStorage.setItem("fitroom.lookFailures", JSON.stringify(log.slice(-50)))
+  } catch {}
+}
+
 function colorGap(a, b) {
   const rgb = hex => [1, 3, 5].map(i => parseInt(String(hex).slice(i, i + 2), 16) || 0)
   const [p, q] = [rgb(a), rgb(b)]

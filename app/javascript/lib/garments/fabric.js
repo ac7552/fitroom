@@ -350,6 +350,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // only so many textures a material may read, and the cloth's are nearly all spoken for.
     uSleeveOn: { value: 0 },
     uSleeves: { value: BLANK },
+    // For the 3D view's check (stage.js's lookShot): only the body's outside is drawn (no sleeves, nor the
+    // cloth's inside seen through the neck), as a flat shop photo shows the front.
+    uLookOnly: { value: 0 },
     uSleeveHave: { value: new THREE.Vector4() },
     uSleeveSize: { value: new THREE.Vector3(16, 12, 60) },
     uPhotoOn: { value: 0 },
@@ -428,6 +431,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uBackOn;
         uniform float uSleeveOn;
         uniform sampler2D uSleeves;
+        uniform float uLookOnly;
         uniform vec4 uSleeveHave;
         uniform vec3 uSleeveSize;
         uniform float uPhotoOn;
@@ -463,6 +467,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           return d;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+        if ( uLookOnly > 0.5 && ( vPiece > 2.5 || !gl_FrontFacing ) ) discard;
         if ( vHide > 0.0 || vHole > 0.0 || vCover > 0.5 ) discard;
         diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).

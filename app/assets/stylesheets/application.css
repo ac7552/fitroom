@@ -573,6 +573,26 @@ a { color: inherit; }
 .stage-loading--ai .stage-loading-stop { display: inline-block; margin-top: 4px; }
 .stage--studio .stage-loading--ai .stage-loading-stop, .stage--daylight .stage-loading--ai .stage-loading-stop { --ink: #101216; --bg: #ebe8e2; }
 @media (prefers-reduced-motion: reduce) { .stage-loading--ai .stage-loading-track i { animation: none; left: 0; right: 0; } }
+/* While the clothes are sewn and then checked against the store photo: the same veil, so nothing half-made
+   shows, but under the controls and size rows (they stay usable), with the drape's own progress on the bar.
+   When the look can't be matched, the veil keeps the figure covered and offers two ways on. */
+.stage-loading--veil {
+  background: var(--veil, rgb(21 23 27 / 0.84));
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.stage--studio .stage-loading--veil { --veil: rgb(235 232 226 / 0.84); }
+.stage--daylight .stage-loading--veil { --veil: rgb(220 216 209 / 0.84); }
+.stage-loading--veil .stage-loading-card {
+  top: 50%; bottom: auto; transform: translate(-50%, -50%);
+  width: min(360px, calc(100% - 48px)); gap: 14px;
+}
+.stage-loading--veil .stage-loading-label { white-space: normal; text-align: center; line-height: 1.6; }
+.stage-loading--veil.is-checking .stage-loading-track i { transform: none; width: 34%; animation: stage-loading-slide 1.4s ease-in-out infinite alternate; transition: none; }
+.stage-loading-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; pointer-events: auto; }
+.stage-loading-actions[hidden] { display: none; }
+.stage-loading--veil.is-stuck .stage-loading-track { display: none; }
+.stage--studio .stage-loading-actions .button, .stage--daylight .stage-loading-actions .button { --ink: #101216; --bg: #ebe8e2; }
+@media (prefers-reduced-motion: reduce) { .stage-loading--veil.is-checking .stage-loading-track i { animation: none; left: 0; right: 0; } }
 /* A short word over the 3D view when something didn't happen (the AI said no, or there's nothing to paint). */
 .stage-toast {
   position: absolute; left: 50%; bottom: calc(var(--rows, 60px) + 24px); z-index: 3; transform: translateX(-50%);

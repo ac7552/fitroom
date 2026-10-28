@@ -48,7 +48,10 @@ export function loadImage(src) {
 // at each column across the front, laid on every piece by how far across it is), stripSpan (a horizontal
 // strip's height over the front's, 1 or more), stripAcross (a vertical strip's { from, span }: where it starts
 // across the front and how much of it it spans, as shares of the front's width) }.
-export async function readPhoto(src, { shape = null } = {}) {
+// guesses: { hood, patterns, sleeves } (all true by default): whether to look for a hood standing above the
+// shoulders, stripes or an all-over print, and graphics on the sleeves. The 3D view's check (look_check.js)
+// turns them off one by one when a reading doesn't match the photo.
+export async function readPhoto(src, { shape = null, hood = true, patterns = true, sleeves: sleeveGuess = true } = {}) {
   const image = await loadImage(src).catch(() => null)
   if (!image) return null
   const read = (sx, sy, sw, sh) => {
@@ -59,7 +62,7 @@ export async function readPhoto(src, { shape = null } = {}) {
     canvas.height = h
     const context = canvas.getContext("2d", { willReadFrequently: true })
     context.drawImage(image, sx, sy, sw, sh, 0, 0, w, h)
-    const found = findPrint(context.getImageData(0, 0, w, h).data, w, h, shape)
+    const found = findPrint(context.getImageData(0, 0, w, h).data, w, h, shape, { hood, patterns, sleeves: sleeveGuess })
     return found && { ...found, scale }
   }
   const W = image.naturalWidth, H = image.naturalHeight
@@ -97,7 +100,7 @@ export async function readPhoto(src, { shape = null } = {}) {
     return c
   }
   const sleeves = found.sleeves && (found.sleeves.left || found.sleeves.right) ? { left: canvas(found.sleeves.left), right: canvas(found.sleeves.right) } : null
-  return { color: found.color, print, sleeves }
+  return { color: found.color, print, sleeves, look: found.look }
 }
 
 // A striped front's colours row by row, as a texture a few pixels wide (the same column repeated); a
@@ -143,7 +146,7 @@ function allOverTile(print) {
 // background. stripes: the front is horizontal stripes right across; strip is then one column of pixels, the
 // cloth's colour at each row from the shoulders to the hem (to lay on the sleeves and back by height, so
 // the stripes meet at the seams).
-export function findPrint(data, w, h, shape = null) {
+export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, patterns = true, sleeves: sleeveGuess = true } = {}) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
   const { lab, bg, garment, far } = cut
@@ -151,7 +154,7 @@ export function findPrint(data, w, h, shape = null) {
   // Its rows from the shoulders to the hem (not a hood standing up above them, nor sleeves hanging below
   // it), and the torso: as wide as the garment is near its hem (the sleeves stick out higher up), centred
   // where it is there.
-  const rows = garmentRows(garment.mask, w, h)
+  const rows = garmentRows(garment.mask, w, h, { hood: hoodGuess })
   if (!rows) return null
   let { top, bottom, widest, rowMin, rowMax, centre, hood } = rows
   let tall = bottom - top + 1
@@ -290,7 +293,7 @@ export function findPrint(data, w, h, shape = null) {
   }
   const coverage = covered / (pw * ph)
   // An all-over print: the whole front, as photographed.
-  if (coverage > 0.25) {
+  if (coverage > 0.25 && patterns) {
     for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   }
   // Stripes: horizontal ones right across (a striped knit), or vertical ones down the front (a striped
@@ -299,8 +302,8 @@ export function findPrint(data, w, h, shape = null) {
   const strong = coverage > 0.25
   // Stripes run right across, to the side seams (or right down, to the hem); a big chest graphic (a logo's
   // bold letters over a line of text) has rows of its own colours too, but plain cloth either side of it.
-  let down = stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last, strong)
-  let across = stripeColumns(data, lab, garment.mask, w, x0, x1, top, bottom, strong)
+  let down = patterns ? stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last, strong) : null
+  let across = patterns ? stripeColumns(data, lab, garment.mask, w, x0, x1, top, bottom, strong) : null
   // (Both ways at once is a check, which is laid whole anyway.)
   if (down && !across && !reachesEdges(lab, garment.mask, w, x0, x1, top, bottom, "rows")) down = null
   if (across && !down && !reachesEdges(lab, garment.mask, w, x0, x1, top, bottom, "columns")) across = null
@@ -309,14 +312,63 @@ export function findPrint(data, w, h, shape = null) {
   // shadow with it); a check's cloth repeats over the other pieces as an all-over print's does.
   const patterned = Boolean(down || across)
   if (patterned && !strong) for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
-  const allOver = strong || patterned
+  const allOver = (strong && patterns) || patterned
   const print = coverage > 0.01 || patterned ? { data: out, width: pw, height: ph, coverage, allOver, stripes: Boolean(strip), strip } : null
   // A graphic on a sleeve (an all-over print or stripes already cover them).
-  const sleeves = allOver ? { left: null, right: null } : {
+  const sleeves = allOver || !sleeveGuess ? { left: null, right: null } : {
     left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
     right: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, 1)
   }
-  return { color, print, rect: [x0, top, x1, bottom], sleeves }
+  return { color, print, rect: [x0, top, x1, bottom], sleeves, look: lookOf(out, pw, ph, coverage, allOver, color) }
+}
+
+// What a reading says the garment looks like, in numbers a render read the same way can be held to (see
+// look_check.js): its colour, how much of the front is graphic (and whether it's an all-over print or stripes),
+// and where the graphic sits on the front, as shares of its width and length (left, right, top, bottom), or
+// null when there's none. The collar's top band is left out: a label in the neck, or the cloth's inside seen
+// through the neck of a render, isn't the graphic.
+export function lookOf(out, pw, ph, coverage, allOver, color) {
+  // The graphic's extent: its marks grown a little so a word's letters join up, then the pieces that are only
+  // specks (a fold's shadow, a crease by the hem) left out. Thin lettering stays; it's part of a word.
+  const on = new Uint8Array(pw * ph), y0 = Math.round(ph * 0.08)
+  let total = 0
+  for (let y = y0; y < ph; y++) for (let x = 0; x < pw; x++) if (out[4 * (y * pw + x) + 3] >= 128) { on[y * pw + x] = 1; total++ }
+  let box = null
+  if (!allOver && total > pw * ph * 0.004) {
+    const reach = Math.max(2, Math.round(Math.min(pw, ph) * 0.02))
+    const grown = boxBlur(Float32Array.from(on), pw, ph, reach)
+    const label = new Int32Array(pw * ph).fill(-1), pieces = []
+    for (let k = 0; k < pw * ph; k++) {
+      if (grown[k] <= 0 || label[k] >= 0) continue
+      const piece = { marks: 0, left: pw, right: -1, top: ph, bottom: -1 }, stack = [k]
+      label[k] = pieces.length
+      while (stack.length) {
+        const i = stack.pop(), x = i % pw, y = (i - x) / pw
+        if (on[i]) {
+          piece.marks++
+          if (x < piece.left) piece.left = x
+          if (x > piece.right) piece.right = x
+          if (y < piece.top) piece.top = y
+          if (y > piece.bottom) piece.bottom = y
+        }
+        for (const j of [x > 0 ? i - 1 : -1, x < pw - 1 ? i + 1 : -1, i - pw, i + pw]) {
+          if (j < 0 || j >= pw * ph || label[j] >= 0 || grown[j] <= 0) continue
+          label[j] = pieces.length
+          stack.push(j)
+        }
+      }
+      pieces.push(piece)
+    }
+    const kept = pieces.filter(piece => piece.marks >= total * 0.03)
+    if (kept.length) {
+      const left = Math.min(...kept.map(q => q.left)), right = Math.max(...kept.map(q => q.right))
+      const top = Math.min(...kept.map(q => q.top)), bottom = Math.max(...kept.map(q => q.bottom))
+      box = { left: left / pw, right: (right + 1) / pw, top: top / ph, bottom: (bottom + 1) / ph }
+      // Its shape (width over height, in pixels), which doesn't depend on how wide the front was taken to be.
+      box.shape = (right + 1 - left) / Math.max(1, bottom + 1 - top)
+    }
+  }
+  return { color, coverage: allOver ? 1 : coverage, allOver, box }
 }
 
 // A graphic on one sleeve of a photo (`way` -1: the photo's left one, +1 its right), as a strip of pixels
@@ -440,7 +492,7 @@ function clearSleeve(mask, w, h, front, way) {
 // worn up is wider than a hook, about half the body, for a good way above the shoulders, in one piece (a
 // dress's two straps aren't): the shoulder line is then where the body reaches its full width below it.
 // The hem is where the body (the middle of the garment) ends; sleeves may hang on below it.
-export function garmentRows(mask, w, h) {
+export function garmentRows(mask, w, h, { hood: hoodGuess = true } = {}) {
   let first = -1, last = -1, widest = 0
   const rowMin = new Int32Array(h).fill(w), rowMax = new Int32Array(h).fill(-1)
   for (let y = 0; y < h; y++) {
@@ -476,7 +528,7 @@ export function garmentRows(mask, w, h) {
   const widestAbove = above.reduce((best, y) => width(y) > width(best) ? y : best, above[0])
   const belowCrown = above.filter(y => y > widestAbove)
   const pinched = belowCrown.length > 0 && Math.min(...belowCrown.map(width)) < width(widestAbove) * 0.92
-  if (above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6 && pinched) {
+  if (hoodGuess && above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6 && pinched) {
     // Dropped shoulders slope on out below the shoulder line, so the body's full width comes a good way
     // down it: the shoulders are where the outline leaps out from the hood's narrow neck instead.
     const lower = above.slice(Math.round(above.length * 0.5))

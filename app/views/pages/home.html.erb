@@ -290,6 +290,10 @@
             <span class="stage-loading-label" data-fitting-room-target="loadingLabel"></span>
             <span class="stage-loading-track" aria-hidden="true"><i data-fitting-room-target="loadingBar"></i></span>
             <button type="button" class="button button--dark stage-loading-stop" data-action="fitting-room#closeStudio">Stop</button>
+            <div class="stage-loading-actions" data-fitting-room-target="loadingActions" hidden>
+              <button type="button" class="button button--dark" data-action="fitting-room#plainLook">See the fit in plain colour</button>
+              <button type="button" class="button" data-action="fitting-room#aiFromStuck">Try the AI picture</button>
+            </div>
           </div>
         </div>
         <p class="stage-toast mono" role="status" aria-live="polite" data-fitting-room-target="stageToast" hidden></p>

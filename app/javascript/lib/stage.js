@@ -107,6 +107,8 @@ const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
 
 // The camera's angle for a "front" photo: a touch off straight on, as lookbooks shoot.
 const FRONT_ANGLE = 0.12
+// The plain backdrop a garment is photographed on to be checked (lookShot): a shop photo's pale grey.
+const LOOK_BACKDROP = 0xeeeeec
 
 export class FittingStage {
   constructor(canvas) {
@@ -1346,6 +1348,52 @@ export class FittingStage {
     camera.aspect = aspect
     camera.updateProjectionMatrix()
     return { image: await image, depth: await depth, mask: await mask }
+  }
+
+  // One garment alone, close up, straight on from in front (or behind), on a plain backdrop: the mannequin,
+  // the other clothes, the floor and its shadow hidden, so it can be read as a shop's photo is and held to the
+  // shop's (look_check.js). Returns ImageData, or null when nothing is on in that slot.
+  async lookShot(slot = "top", { back = false, width = 480, height = 720 } = {}) {
+    const d = this.slots[slot]
+    if (!d?.top?.mesh) return null
+    if (d.fade) this.finishFade(d)
+    const keep = d.top.mesh, shown = keep.visible
+    const hidden = this.scene.children.filter(o => o !== keep && !o.isLight && o.visible)
+    for (const o of hidden) o.visible = false
+    keep.visible = true
+    const background = this.scene.background, position = this.camera.position.clone()
+    this.scene.background = new THREE.Color(LOOK_BACKDROP)
+    // The sleeves' graphics off: a worn sleeve hangs beside the body, where it would be read as part of the
+    // front's graphic (a flat photo's sleeves lie clear of it, or are left out of it).
+    const sleeves = d.top.materials?.main?.userData?.uniforms?.uSleeveOn
+    const sleevesOn = sleeves?.value ?? 0
+    if (sleeves) sleeves.value = 0
+    // Only the body's outside: no sleeves (a worn sleeve hangs inside the front as it's measured), and not
+    // the inside of the back seen through the neck (the mannequin isn't there to hide it).
+    const lookOnly = Object.values(d.top.materials ?? {}).map(m => m.userData?.uniforms?.uLookOnly).filter(Boolean)
+    for (const u of lookOnly) u.value = 1
+    try {
+      this.faceFront()
+      this.turnCamera(FRONT_ANGLE + (back ? Math.PI : 0))
+      this.controls.update()
+      const { image } = await this.photoPassesNow({ width, height, guides: false, record: false, close: true })
+      const bitmap = await createImageBitmap(image)
+      const canvas = document.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext("2d", { willReadFrequently: true })
+      context.drawImage(bitmap, 0, 0)
+      return context.getImageData(0, 0, width, height)
+    } finally {
+      for (const o of hidden) o.visible = true
+      keep.visible = shown
+      if (sleeves) sleeves.value = sleevesOn
+      for (const u of lookOnly) u.value = 0
+      this.scene.background = background
+      this.camera.position.copy(position)
+      this.controls.update()
+      this.draw()
+    }
   }
 
   // Where the figure (the mannequin and everything it wears; not the floor, its shadow or the lights) sits in
