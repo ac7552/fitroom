@@ -80,3 +80,18 @@ test("a plain photo's render may not carry a graphic, but a graphic's share of a
   const withGraphic = compareLooks(photo, { ...photo, coverage: photo.coverage * 2.2 })
   assert.equal(withGraphic.checks.printed.pass, true)
 })
+
+test("a graphic across most of the front isn't held to its shape (a worn front shows less of its width)", () => {
+  const wide = { color: "#17181a", coverage: 0.13, allOver: false, box: { left: 0.08, right: 0.89, top: 0.35, bottom: 0.87, shape: 1.03 } }
+  const worn = { ...wide, box: { left: 0.07, right: 0.92, top: 0.33, bottom: 0.86, shape: 0.6 } }
+  assert.equal(compareLooks(wide, worn).ok, true, JSON.stringify(compareLooks(wide, worn)))
+  // A chest graphic still is.
+  const chest = { ...wide, box: { left: 0.3, right: 0.7, top: 0.2, bottom: 0.4, shape: 1.5 } }
+  assert.ok(compareLooks(chest, { ...chest, box: { ...chest.box, shape: 0.6 } }).failed.includes("place"))
+})
+
+test("a small logo reading just under the size that's placed isn't missing; one that's gone is", () => {
+  const logo = { color: "#1d1a1d", coverage: 0.0037, allOver: false, box: { left: 0.63, right: 0.73, top: 0.27, bottom: 0.32, shape: 1.5 } }
+  assert.equal(compareLooks(logo, { ...logo, coverage: 0.002, box: null }).ok, true)
+  assert.ok(compareLooks(logo, { ...logo, coverage: 0.0002, box: null }).failed.includes("place"))
+})

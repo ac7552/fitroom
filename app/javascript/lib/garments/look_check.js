@@ -65,12 +65,19 @@ export function compareLooks(photo, render, { likeness = null, named = null, bar
     const p = photo.box, r = render.box
     const top = Math.abs(p.top - r.top), middle = Math.abs((p.left + p.right) / 2 - (r.left + r.right) / 2)
     const size = (r.bottom - r.top) / Math.max(1e-3, p.bottom - p.top)
-    const shape = p.shape && r.shape ? r.shape / p.shape : 1
+    // A graphic running most of the way across the front (a wide scene, a print to the side seams) is as
+    // wide as the front: a worn front shows less of its width than a flat one, so its shape isn't held.
+    const across = p.right - p.left > 0.7
+    const shape = p.shape && r.shape && !across ? r.shape / p.shape : 1
     checks.place = {
       score: round(Math.max(top, middle)), size: round(size), shape: round(shape),
       pass: top <= bars.place && middle <= bars.place && size <= bars.size && size >= 1 / bars.size && shape <= bars.shape && shape >= 1 / bars.shape
     }
-  } else if (photo.box && !render.box) checks.place = { score: "missing", pass: false }
+  } else if (photo.box && !render.box) {
+    // A small logo can read just under the size a graphic needs to have its place found (lookOf): it's
+    // missing only when the render has next to none of the photo's graphic.
+    checks.place = { score: "missing", pass: render.coverage >= photo.coverage * 0.3 && photo.coverage < 0.01 }
+  }
   else checks.place = { score: null, pass: true }
 
   if (typeof likeness === "number") checks.likeness = { score: round(likeness), pass: likeness >= bars.likeness }
