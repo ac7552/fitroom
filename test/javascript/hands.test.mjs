@@ -94,3 +94,29 @@ test("a leg deeper in than the field reaches still stops the cloth at the skin",
   keepOffHands(p, hands, thick, 0.02, field)
   assert.ok(p[0] >= 0.23 + thick - 1e-6, `on the skin, not deep in the leg: ${p[0]}`)
 })
+
+test("a layer of cloth's field has what's straight in under it inside, not what's past its edge", async () => {
+  const { SkinField } = await import("lib/garments/body")
+  // A square of cloth 20 cm across at z = 0, facing +z (outwards), made of a 10 x 10 grid.
+  const positions = [], normals = [], index = []
+  for (let j = 0; j <= 10; j++) for (let i = 0; i <= 10; i++) { positions.push(i * 0.02 - 0.1, j * 0.02 - 0.1, 0); normals.push(0, 0, 1) }
+  for (let j = 0; j < 10; j++) for (let i = 0; i < 10; i++) { const a = j * 11 + i; index.push(a, a + 1, a + 12, a, a + 12, a + 11) }
+  const args = [Float32Array.from(positions), Float32Array.from(normals), Uint32Array.from(index)]
+  const loose = new SkinField(...args), strict = new SkinField(...args, { strict: true })
+  // Under the middle: inside, either way.
+  assert.ok(strict.at(0, 0, -0.01) < 0 && loose.at(0, 0, -0.01) < 0)
+  // Past the edge and a little behind it: inside only to the loose field.
+  assert.ok(loose.at(0.115, 0, -0.004) < 0, `${loose.at(0.115, 0, -0.004)}`)
+  assert.ok(strict.at(0.115, 0, -0.004) > 0, `${strict.at(0.115, 0, -0.004)}`)
+})
+
+test("pants' cloth stays on the body's side of a forearm's lower half, with room for the sleeve on it", () => {
+  const left = hangingHand(1)
+  const forearm = handShape(left.positions, left.part, 1, left.arm, () => 0, { from: 1, to: 2, start: 0.5, pad: 0.015 })
+  const thick = 0.003
+  // The forearm runs from the elbow (1.15 m up) to the wrist (0.9 m); its lower half is below 1.025 m.
+  const p = Float32Array.from([0.22, 0.98, 0.02, 0.22, 1.1, 0.02])
+  assert.equal(keepOffHands(p, { forearmL: forearm }, thick), 1)
+  assert.ok(Math.abs(p[0] - (0.215 - 0.015 - thick)) < 0.002, `past the sleeve's room: ${p[0]}`)
+  assert.ok(Math.abs(p[3] - 0.22) < 1e-6, "the upper half is left alone")
+})

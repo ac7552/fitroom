@@ -117,12 +117,13 @@ const HAND_HEEL = 0.06   // m past the wrist: the heel of the hand, which a cuff
 
 export function collisionBody(body, frame, egg, bodyCount = body.positions.length / 3, { arms = true } = {}) {
   const n = body.positions.length / 3
-  const keep = new Uint8Array(n)
+  const keep = new Uint8Array(n), worn = new Uint8Array(n)
   const knee = frame.floor + 0.1
   for (let i = 0; i < n; i++) {
     const p = body.positions
     if (p[3 * i + 1] < knee) continue
     if (i >= bodyCount) {
+      worn[i] = 1
       // What's worn under (pants): not right by the hands, where a sleeve's cuff hangs beside the thigh; the
       // pants there would push the cuff off the wrist. A sleeve may lie against them a little instead.
       if (arms && nearHand(frame, p, 3 * i)) continue
@@ -138,7 +139,14 @@ export function collisionBody(body, frame, egg, bodyCount = body.positions.lengt
     }
     keep[i] = 1
   }
-  return new SkinField(body.positions, body.normals, body.index, { keep, ellipsoids: egg ? [egg] : [] })
+  const field = new SkinField(body.positions, body.normals, body.index, { keep, ellipsoids: egg ? [egg] : [] })
+  // What's worn under on its own, as well (the pants under a top), all of it, by the hands too: the field
+  // above leaves the pants out beside the hands (for the sleeves' cuffs), and in it the nearer surface wins,
+  // so a sweatshirt's sides that slip in between the pants and the hips there read as just outside the skin
+  // and stay, the pants showing through. Alone, the pants' field has them inside the pants, and the drape
+  // puts the garment's body (not its sleeves) back over them (see Drape#collide).
+  if (worn.some(Boolean)) field.layers = new SkinField(body.positions, body.normals, body.index, { keep: worn, strict: true })
+  return field
 }
 
 // The look of a style in a shop's fabric: the drape's cloth is the style's, the surface the fabric's when it

@@ -96,7 +96,10 @@ export function bodyFrame({ positions, normals, index, skinIndex, skinWeight, bo
   }
 
   const feet = legs ? { L: footHull(positions, part, joints, floor, "L"), R: footHull(positions, part, joints, floor, "R") } : null
-  const hands = { L: handShape(positions, part, 1, arms.L, torso.centreAt), R: handShape(positions, part, 2, arms.R, torso.centreAt) }
+  // And the lower half of each forearm, with room round it for a sleeve: a forearm hangs beside the hip, where
+  // wide pants would otherwise lie out over the sleeve on it.
+  const forearm = (which, arm) => handShape(positions, part, which, arm, torso.centreAt, { from: 1, to: 2, start: 0.5, pad: 0.015 })
+  const hands = { L: handShape(positions, part, 1, arms.L, torso.centreAt), R: handShape(positions, part, 2, arms.R, torso.centreAt), forearmL: forearm(1, arms.L), forearmR: forearm(2, arms.R) }
 
   return { count, part, joints, floor, top, torso, arms, legs, feet, hands, shoulderTop, head, hps, armpitY, crotch, neckSide, measures }
 }
@@ -420,8 +423,11 @@ function legReach(positions, part, joints, side) {
 // outer (how far it reaches toward the body and away from it, from its middle line), lo and hi (how far it
 // reaches either way across). Null without a hand.
 // which: the arm's part (1 left, 2 right); arm: its armReach; centreAt: the body's middle (z) by height.
-export function handShape(positions, part, which, arm, centreAt) {
-  const wrist = arm.chain[2], end = arm.chain[3]
+// from, to: the stretch of the arm's chain (2 to 3, the wrist to the hand's end; 1 to 2, the forearm), named
+// wrist and end whichever it is; start: the share of its length the slab starts at; pad: room kept round it
+// (a sleeve's).
+export function handShape(positions, part, which, arm, centreAt, { from = 2, to = 3, start = 0, pad = 0 } = {}) {
+  const wrist = arm.chain[from], end = arm.chain[to]
   if (!wrist || !end) return null
   const length = norm(sub(end, wrist))
   if (length < 0.02) return null
@@ -445,7 +451,7 @@ export function handShape(positions, part, which, arm, centreAt) {
   // Each step takes in its neighbours (a slice a centimetre thick can miss a knuckle), and a step with no
   // vertices takes the nearest one's.
   const widen = (values, pick) => values.map((_, s) => pick(...[-1, 0, 1].map(d => values[Math.min(Math.max(s + d, 0), steps - 1)])))
-  const shape = { wrist, along, inward, across, length, inner: widen(inner, Math.max), outer: widen(outer, Math.min), lo: widen(lo, Math.min), hi: widen(hi, Math.max) }
+  const shape = { wrist, along, inward, across, length, start: start * length, pad, inner: widen(inner, Math.max), outer: widen(outer, Math.min), lo: widen(lo, Math.min), hi: widen(hi, Math.max) }
   if (!shape.inner.some(Number.isFinite)) return null
   for (const key of ["inner", "outer", "lo", "hi"]) {
     const values = shape[key]
@@ -459,7 +465,8 @@ export function handShape(positions, part, which, arm, centreAt) {
   return shape
 }
 
-// Pants' cloth stays on the body's side of the hands hanging beside them, as a hand rests against a pocket:
+// Pants' cloth stays on the body's side of the hands hanging beside them, as a hand rests against a pocket
+// (and of the forearms above them, with room for a sleeve: hands' shapes with a pad):
 // cloth in a hand's slab (or lying over its outside, up to `reach` m out) goes in past its inner face, by the
 // cloth's thickness. Pants' collision leaves the arms out (an arm swinging down into a pose would trap the
 // cloth against the hips), so without this, wide pants end up over the hands. p: positions, changed in
@@ -472,21 +479,22 @@ const STEP = 0.004
 export function keepOffHands(p, hands, thick, reach = 0.02, field = null) {
   let moved = 0
   const n = p.length / 3
-  for (const hand of [hands?.L, hands?.R]) {
+  for (const hand of Object.values(hands ?? {})) {
     if (!hand) continue
     const { wrist, along, inward, across, length, inner, outer, lo, hi } = hand
+    const from = hand.start ?? 0, room = thick + (hand.pad ?? 0)
     const far = length + 0.08
     for (let i = 0; i < n; i++) {
       const rx = p[3 * i] - wrist[0], ry = p[3 * i + 1] - wrist[1], rz = p[3 * i + 2] - wrist[2]
       if (Math.abs(rx) > far || Math.abs(ry) > far || Math.abs(rz) > far) continue
       const t = rx * along[0] + ry * along[1] + rz * along[2]
-      if (t < 0 || t > length + 0.01) continue
+      if (t < from || t > length + 0.01) continue
       const s = Math.min(inner.length - 1, Math.round(t / 0.01))
       const b = rx * across[0] + ry * across[1] + rz * across[2]
-      if (b < lo[s] - thick || b > hi[s] + thick) continue
+      if (b < lo[s] - room || b > hi[s] + room) continue
       const a = rx * inward[0] + ry * inward[1] + rz * inward[2]
-      if (a >= inner[s] + thick || a < outer[s] - reach) continue
-      let push = inner[s] + thick - a
+      if (a >= inner[s] + room || a < outer[s] - reach) continue
+      let push = inner[s] + room - a
       // Walked in a few millimetres at a time and stopped at the skin: the field only knows a couple of
       // centimetres either side of it (deeper in the leg reads as far outside), and a hand's curled fingers
       // reach in further than that.
@@ -628,7 +636,9 @@ function headShape(positions, part, joints) {
 // three do), to leave out what the cloth can't reach. ellipsoids: [{ centre, radii }] solid shapes added to
 // the skin (a display mannequin's egg head).
 export class SkinField {
-  constructor(positions, normals, index, { cell = 0.01, band = 0.025, keep = null, ellipsoids = [] } = {}) {
+  // strict: inside only straight in under the surface, not round its edge (a garment's open waist or hem:
+  // what's beside the edge, past it, isn't inside it), for a layer of cloth.
+  constructor(positions, normals, index, { cell = 0.01, band = 0.025, keep = null, ellipsoids = [], strict = false } = {}) {
     const n = positions.length / 3
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
     for (let i = 0; i < n; i++) {
@@ -681,7 +691,8 @@ export class SkinField {
             const l = Math.hypot(mx, my, mz) || 1
             mx /= l; my /= l; mz /= l
             const d = Math.sqrt(d2)
-            distance[g] = dx * mx + dy * my + dz * mz >= 0 ? d : -d
+            const along = dx * mx + dy * my + dz * mz
+            distance[g] = along >= 0 || (strict && -along < 0.7 * d) ? d : -d
             normal[3 * g] = Math.round(mx * 127); normal[3 * g + 1] = Math.round(my * 127); normal[3 * g + 2] = Math.round(mz * 127)
           }
         }

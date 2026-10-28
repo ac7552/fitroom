@@ -321,6 +321,19 @@ export class Drape {
       qx -= tx * (1 - keep); qy -= ty * (1 - keep); qz -= tz * (1 - keep)
       p[3 * i] = qx; p[3 * i + 1] = qy; p[3 * i + 2] = qz
     }
+    // Over what's worn under (a top over pants): its body back out over it when it has slipped in under it.
+    // (A sleeve's cuff may lie against the pants by the hand; see collisionBody.)
+    const layers = field.layers
+    if (layers) {
+      const side = this.sleeveSides()
+      for (let i = 0; i < n; i++) {
+        if (side[i]) continue
+        const d = layers.at(p[3 * i], p[3 * i + 1], p[3 * i + 2])
+        if (d >= thick) continue
+        const h = layers.hit, push = thick - d
+        p[3 * i] += h[0] * push; p[3 * i + 1] += h[1] * push; p[3 * i + 2] += h[2] * push
+      }
+    }
     if (this.envelope) this.stayOutside()
     if (this.tuck) this.stayTucked()
     if (this.feet) this.stayOffFeet()
@@ -441,14 +454,20 @@ export class Drape {
   // longer than the arm gathers above it (as a long knit sleeve scrunches) instead of sliding on over the
   // hand. Sleeve and cuff points past the wrist by more than CUFF_PAST_WRIST come back up the arm to there,
   // and stay put, as a hem does on the floor.
-  stayOnArms() {
-    const { p, x } = this
+  // Which arm each simulated point's piece goes on (1 the left, -1 the right, 0 not a sleeve).
+  sleeveSides() {
     const map = this.map
-    if (map && !this.simArmSide) {
+    if (!map) return this.armSide
+    if (!this.simArmSide) {
       this.simArmSide = new Int8Array(this.x.length / 3)
       for (let i = 0; i < map.length; i++) if (this.armSide[i]) this.simArmSide[map[i]] = this.armSide[i]
     }
-    const side = map ? this.simArmSide : this.armSide
+    return this.simArmSide
+  }
+
+  stayOnArms() {
+    const { p, x } = this
+    const side = this.sleeveSides()
     const n = p.length / 3
     for (let i = 0; i < n; i++) {
       if (!side[i]) continue
