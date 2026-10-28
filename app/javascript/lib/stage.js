@@ -108,7 +108,7 @@ const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
 // The camera's angle for a "front" photo: a touch off straight on, as lookbooks shoot.
 const FRONT_ANGLE = 0.12
 // The plain backdrop a garment is photographed on to be checked (lookShot): a shop photo's pale grey.
-const LOOK_BACKDROP = 0xeeeeec
+const LOOK_BACKDROP = 0xeeeeec, LOOK_BACKDROP_DARK = 0x8a8a88
 
 export class FittingStage {
   constructor(canvas) {
@@ -1362,7 +1362,11 @@ export class FittingStage {
     for (const o of hidden) o.visible = false
     keep.visible = true
     const background = this.scene.background, position = this.camera.position.clone()
-    this.scene.background = new THREE.Color(LOOK_BACKDROP)
+    // A backdrop that stands apart from the cloth (drawn unlit, a white shirt has no shaded edge to tell it
+    // from a pale one): mid grey behind light cloth, a shop photo's pale grey behind anything darker.
+    const cloth = d.top.materials?.main?.color
+    const light = cloth ? 0.2126 * cloth.r + 0.7152 * cloth.g + 0.0722 * cloth.b > 0.45 : false
+    this.scene.background = new THREE.Color(light ? LOOK_BACKDROP_DARK : LOOK_BACKDROP)
     // The sleeves' graphics off: a worn sleeve hangs beside the body, where it would be read as part of the
     // front's graphic (a flat photo's sleeves lie clear of it, or are left out of it).
     const sleeves = d.top.materials?.main?.userData?.uniforms?.uSleeveOn
@@ -1372,6 +1376,7 @@ export class FittingStage {
     // the inside of the back seen through the neck (the mannequin isn't there to hide it).
     const lookOnly = Object.values(d.top.materials ?? {}).map(m => m.userData?.uniforms?.uLookOnly).filter(Boolean)
     for (const u of lookOnly) u.value = 1
+    this.plainDraw = true
     try {
       this.faceFront()
       this.turnCamera(FRONT_ANGLE + (back ? Math.PI : 0))
@@ -1389,6 +1394,7 @@ export class FittingStage {
       keep.visible = shown
       if (sleeves) sleeves.value = sleevesOn
       for (const u of lookOnly) u.value = 0
+      this.plainDraw = false
       this.scene.background = background
       this.camera.position.copy(position)
       this.controls.update()
@@ -1601,7 +1607,8 @@ export class FittingStage {
   // is left half-way.
   draw() {
     if (!this.frameId) this.finishMoves()
-    if (this.effects) this.effects.composer.render()
+    // (The check's picture is drawn plain: no screen-space shading, see lookShot.)
+    if (this.effects && !this.plainDraw) this.effects.composer.render()
     else this.renderer.render(this.scene, this.camera)
   }
 

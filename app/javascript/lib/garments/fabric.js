@@ -584,6 +584,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         reflectedLight.indirectDiffuse *= vShade;
         reflectedLight.indirectSpecular *= vShade;
         if ( !gl_FrontFacing ) { reflectedLight.indirectSpecular *= 0.3; reflectedLight.directSpecular *= 0.3; }`)
+      // The check's picture is the cloth's own colours, unlit: a fold's shadow isn't read as a print, and the
+      // colour is the cloth's, not the light's (stage.js's lookShot).
+      .replace("#include <colorspace_fragment>", `if ( uLookOnly > 0.5 ) gl_FragColor = vec4( diffuseColor.rgb, 1.0 );
+        #include <colorspace_fragment>`)
   }
   return material
 }

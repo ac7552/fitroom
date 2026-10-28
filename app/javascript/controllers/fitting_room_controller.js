@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { formatAbout, toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
 import { findPrint, readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
-import { compareLooks, nextReading, PLAIN } from "lib/garments/look_check"
+import { compareLooks, croppedLengths, nextReading, PLAIN } from "lib/garments/look_check"
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
@@ -238,6 +238,12 @@ export default class extends Controller {
         // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
         // printed gets the photo's print.
         else this.applyTopReading(garment, read, back)
+        // A cropped top on a guessed chart: its lengths from the photo, and the fit and drape done again.
+        const cropped = kind === "top" ? croppedLengths(garment.chart, read?.look) : null
+        if (cropped) {
+          garment.chart = { ...garment.chart, sizes: cropped }
+          this.update()
+        }
         garment.lookPending = false
         this.renderOutfit()
         if (item.fit) this.render()
@@ -1795,8 +1801,12 @@ async function pixelsOf(src, most) {
 // The colour the listing names, as a colour (the server's guess from its words), when it's a plain one the
 // photo can be held to: black, white, grey, cream, navy. Null otherwise.
 function namedColour(garment) {
-  return garment.listingColor && /\b(black|white|off[- ]white|ivory|cream|ecru|grey|gray|charcoal|heather|navy)\b/i.test(garment.color_name ?? "") ? garment.listingColor : null
+  const name = garment.color_name ?? ""
+  // One colour only: "Black / White", a two-tone, names a pattern's colours, not the cloth's.
+  if (/\/|&|\band\b|\bmulti/i.test(name)) return null
+  return garment.listingColor && /\b(black|white|off[- ]white|ivory|cream|ecru|grey|gray|charcoal|heather|navy)\b/i.test(name) ? garment.listingColor : null
 }
+
 
 // A top whose 3D view didn't match its photo: kept on this device only (nothing about the person; the item's
 // link, the try and what failed), so a pattern of misreadings can be found later. Best effort.

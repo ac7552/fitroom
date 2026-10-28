@@ -313,13 +313,17 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   const patterned = Boolean(down || across)
   if (patterned && !strong) for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   const allOver = (strong && patterns) || patterned
-  const print = coverage > 0.01 || patterned ? { data: out, width: pw, height: ph, coverage, allOver, stripes: Boolean(strip), strip } : null
+  // A small logo or a line of text counts: 0.3% of the front (a chest patch is about 1%).
+  const print = coverage > 0.003 || patterned ? { data: out, width: pw, height: ph, coverage, allOver, stripes: Boolean(strip), strip } : null
   // A graphic on a sleeve (an all-over print or stripes already cover them).
   const sleeves = allOver || !sleeveGuess ? { left: null, right: null } : {
     left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
     right: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, 1)
   }
-  return { color, print, rect: [x0, top, x1, bottom], sleeves, look: lookOf(out, pw, ph, coverage, allOver, color) }
+  const look = lookOf(out, pw, ph, coverage, allOver, color)
+  // The front's length over its width, shoulders to hem (a cropped top is about 0.5 to 1; a tee about 1.4).
+  look.proportion = (bottom - top + 1) / Math.max(1, x1 - x0 + 1)
+  return { color, print, rect: [x0, top, x1, bottom], sleeves, look }
 }
 
 // What a reading says the garment looks like, in numbers a render read the same way can be held to (see
@@ -334,7 +338,7 @@ export function lookOf(out, pw, ph, coverage, allOver, color) {
   let total = 0
   for (let y = y0; y < ph; y++) for (let x = 0; x < pw; x++) if (out[4 * (y * pw + x) + 3] >= 128) { on[y * pw + x] = 1; total++ }
   let box = null
-  if (!allOver && total > pw * ph * 0.004) {
+  if (!allOver && total > pw * ph * 0.003) {
     const reach = Math.max(2, Math.round(Math.min(pw, ph) * 0.02))
     const grown = boxBlur(Float32Array.from(on), pw, ph, reach)
     const label = new Int32Array(pw * ph).fill(-1), pieces = []

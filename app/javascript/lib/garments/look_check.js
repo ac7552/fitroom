@@ -23,15 +23,12 @@ export const BARS = {
   named: 35,
   // Where the graphic sits: its top edge, as a share of the front's length, and its middle, of its width.
   place: 0.08,
-  // Its height over the garment's length, against the photo's: within 1/1.3 to 1.3 times.
-  size: 1.3,
+  // Its height over the garment's length, against the photo's: within 1/1.35 to 1.35 times (good renders of the
+  // test tee read about 1.2, one with its graphic half as big again about 1.5).
+  size: 1.35,
   // Its shape (width over height) against the photo's: a worn front curves round the body, so it reads a
   // little narrower.
   shape: 1.4,
-  // How much of the front is graphic, over the photo's: within 1/1.8 to 1.8 times (when the photo has one). A
-  // worn front curves round the body, so less of it is seen from in front and a graphic is a bigger share of
-  // it: a good render reads about 1.4.
-  printed: 1.8,
   // A render with no graphic in the photo may still read a little (folds, the collar's shadow).
   stray: 0.06,
   // DINOv2 likeness of the two garments (cosine): a flat photo and a worn render are rarely above 0.7, a
@@ -53,13 +50,13 @@ export function compareLooks(photo, render, { likeness = null, named = null, bar
     checks.named = { score: round(gap), pass: gap <= bars.named }
   }
 
-  // How much is printed: an all-over print or stripes against a graphic is the clearest misreading.
+  // How much is printed: an all-over print or stripes against a graphic is the clearest misreading, and a
+  // plain photo's render mustn't have a graphic of its own. (The share of the front that's graphic isn't held
+  // to the photo's: a worn front wraps round the body, so less of it shows and a graphic is a bigger share of
+  // it, by more the looser it is. Its size is checked by its height instead, below.)
   if (photo.allOver !== render.allOver) checks.printed = { score: render.allOver ? "all over" : "not all over", pass: false }
-  else if (photo.allOver) checks.printed = { score: null, pass: true }
-  else if (photo.coverage > 0.015) {
-    const ratio = render.coverage / photo.coverage
-    checks.printed = { score: round(ratio), pass: ratio <= bars.printed && ratio >= 1 / bars.printed }
-  } else checks.printed = { score: round(render.coverage), pass: render.coverage <= bars.stray }
+  else if (photo.allOver || photo.box) checks.printed = { score: round(render.coverage / Math.max(1e-3, photo.coverage)), pass: true }
+  else checks.printed = { score: round(render.coverage), pass: render.coverage <= bars.stray }
 
   // Where the graphic sits and how big it is: its top edge and middle (what moves when the front's top is
   // misread), its height over the garment's length (what grows when it's laid too big: the length is the same
@@ -95,6 +92,16 @@ export function nextReading(attempt, failed) {
     return reading
   }
   return { hood: false, patterns: false, sleeves: false, back: false, listingColour: failed.includes("colour") || failed.includes("named") }
+}
+
+// A top the store gives no length for (its sizes are guessed from usual ones) whose photo shows it short (a
+// cropped hoodie, a cropped polo): its length from the photo's own proportions, so it isn't drawn to the hip.
+// Tops of usual length keep the usual lengths: the photo's proportion is only trusted where it says cropped.
+export function croppedLengths(chart, look) {
+  const proportion = look?.proportion
+  if (!["body", "sizes"].includes(chart?.kind) || !(proportion > 0.3 && proportion < 1.05)) return null
+  const sizes = chart.sizes.map(size => size.chest > 0 ? { ...size, length: Math.round((size.chest / 2) * proportion) } : size)
+  return sizes.some((size, i) => size.length !== chart.sizes[i].length) ? sizes : null
 }
 
 // ΔE between two "#rrggbb" colours in Lab, lightness counted at half.

@@ -16,7 +16,7 @@ test("a graphic blown up and pushed under the collar fails on place", () => {
   const render = { ...photo, coverage: 0.36, box: { left: 0.05, right: 0.97, top: 0.06, bottom: 0.48 } }
   const result = compareLooks(photo, render)
   assert.ok(result.failed.includes("place"))
-  assert.ok(result.failed.includes("printed"))
+  assert.ok(result.checks.place.size > BARS.size, JSON.stringify(result.checks.place))
 })
 
 test("a chest graphic laid as stripes all round fails on how much is printed", () => {
@@ -65,4 +65,18 @@ test("a look's graphic box is where most of the graphic is, a speck by the hem l
   const look = lookOf(out, pw, ph, 0.15, false, "#ffffff")
   assert.ok(Math.abs(look.box.top - 0.2) < 0.03 && Math.abs(look.box.bottom - 0.45) < 0.03, JSON.stringify(look.box))
   assert.ok(look.box.right < 0.85, JSON.stringify(look.box))
+})
+
+test("a cropped top on a guessed chart takes its length from the photo; a usual one, or a real chart, doesn't", async () => {
+  const { croppedLengths } = await import("../../app/javascript/lib/garments/look_check.js")
+  const chart = { kind: "sizes", sizes: [{ name: "S", chest: 100, length: 70 }, { name: "M", chest: 110, length: 72 }] }
+  assert.deepEqual(croppedLengths(chart, { proportion: 0.6 }).map(s => s.length), [30, 33])
+  assert.equal(croppedLengths(chart, { proportion: 1.4 }), null)
+  assert.equal(croppedLengths({ ...chart, kind: "chart" }, { proportion: 0.6 }), null)
+  assert.equal(croppedLengths(chart, null), null)
+})
+
+test("a plain photo's render may not carry a graphic, but a graphic's share of a worn front isn't held to the flat photo's", () => {
+  const withGraphic = compareLooks(photo, { ...photo, coverage: photo.coverage * 2.2 })
+  assert.equal(withGraphic.checks.printed.pass, true)
 })

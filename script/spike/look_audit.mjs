@@ -3,7 +3,8 @@
 //
 //   bin/dev                                   # the app, on http://localhost:3000
 //   node script/spike/look_audit.mjs [--out tmp/look_audit] [--base http://localhost:3000] [--limit N]
-//                                    [--links handle-or-url,...] [--resume]
+//                                    [--links handle-or-url,...] [--only] [--resume]
+// (--only: just the --links.)
 //
 // The tops are every handle in docs/outfits.json (men's and women's) plus --links; anything that imports as
 // something other than a top is skipped after its import. For each top, on the men's example body: the
@@ -31,15 +32,16 @@ const OUTFITS_FILE = fileURLToPath(new URL("../../docs/outfits.json", import.met
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 export function parseLookArgs(argv) {
-  const options = { base: "http://localhost:3000", out: "tmp/look_audit", limit: Infinity, links: [], resume: false }
+  const options = { base: "http://localhost:3000", out: "tmp/look_audit", limit: Infinity, links: [], resume: false, only: false }
   for (let i = 0; i < argv.length; i++) {
     const [flag, value] = [argv[i], argv[i + 1]]
     if (flag === "--resume") options.resume = true
+    else if (flag === "--only") options.only = true
     else if (flag === "--base") { options.base = value; i++ }
     else if (flag === "--out") { options.out = value; i++ }
     else if (flag === "--limit") { options.limit = Number(value); i++ }
     else if (flag === "--links") { options.links = value.split(",").map(s => s.trim()).filter(Boolean); i++ }
-    else throw new Error(`Unknown option ${flag}. Usage: node script/spike/look_audit.mjs [--out DIR] [--base URL] [--limit N] [--links a,b] [--resume]`)
+    else throw new Error(`Unknown option ${flag}. Usage: node script/spike/look_audit.mjs [--out DIR] [--base URL] [--limit N] [--links a,b] [--only] [--resume]`)
   }
   return options
 }
@@ -115,7 +117,8 @@ const SIDE_BY_SIDE = `(async () => {
 
 export async function lookAudit(options, say = console.log) {
   const outfits = JSON.parse(fs.readFileSync(OUTFITS_FILE, "utf8")).outfits
-  const handles = handlesFor(outfits, options.links).slice(0, options.limit)
+  // --only: just the --links, not the outfits' tops too.
+  const handles = handlesFor(options.only ? [] : outfits, options.links).slice(0, options.limit)
   await checkAppRunning(options.base)
   const { chromium } = loadPlaywright()
   fs.mkdirSync(options.out, { recursive: true })
