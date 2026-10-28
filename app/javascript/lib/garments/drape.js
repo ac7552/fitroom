@@ -325,7 +325,7 @@ export class Drape {
     if (this.tuck) this.stayTucked()
     if (this.feet) this.stayOffFeet()
     if (this.arms) this.stayOnArms()
-    if (this.hands) keepOffHands(p, this.hands, thick)
+    if (this.hands) keepOffHands(p, this.hands, thick, 0.02, field)
     if (this.floor !== null) {
       // On the floor, cloth stays put rather than sliding (it rests on it).
       for (let i = 0; i < n; i++) {

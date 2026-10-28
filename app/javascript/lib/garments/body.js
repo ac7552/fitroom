@@ -464,7 +464,11 @@ export function handShape(positions, part, which, arm, centreAt) {
 // cloth's thickness. Pants' collision leaves the arms out (an arm swinging down into a pose would trap the
 // cloth against the hips), so without this, wide pants end up over the hands. p: positions, changed in
 // place; hands: bodyFrame's hands. Returns how many points moved.
-export function keepOffHands(p, hands, thick, reach = 0.02) {
+// field: the body's collision field (SkinField), when there is one: a hand hanging against the thigh leaves
+// no room between them, and cloth pushed in past the hand's inner face would go into the leg, where the
+// leg shows through it (a pale patch by the pocket). It goes no further in than the skin: there the hand
+// rests on the cloth, its fingers into it a little, as a hand pressed on a pocket does.
+export function keepOffHands(p, hands, thick, reach = 0.02, field = null) {
   let moved = 0
   const n = p.length / 3
   for (const hand of [hands?.L, hands?.R]) {
@@ -482,7 +486,16 @@ export function keepOffHands(p, hands, thick, reach = 0.02) {
       const a = rx * inward[0] + ry * inward[1] + rz * inward[2]
       if (a >= inner[s] + thick || a < outer[s] - reach) continue
       const push = inner[s] + thick - a
-      p[3 * i] += inward[0] * push; p[3 * i + 1] += inward[1] * push; p[3 * i + 2] += inward[2] * push
+      let qx = p[3 * i] + inward[0] * push, qy = p[3 * i + 1] + inward[1] * push, qz = p[3 * i + 2] + inward[2] * push
+      if (field) {
+        const d = field.at(qx, qy, qz)
+        if (d < thick) {
+          const out = thick - d, hit = field.hit
+          qx += hit[0] * out; qy += hit[1] * out; qz += hit[2] * out
+        }
+      }
+      if (Math.hypot(qx - p[3 * i], qy - p[3 * i + 1], qz - p[3 * i + 2]) < 1e-6) continue
+      p[3 * i] = qx; p[3 * i + 1] = qy; p[3 * i + 2] = qz
       moved++
     }
   }

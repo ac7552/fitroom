@@ -65,3 +65,19 @@ test("pants' cloth over or through a hand goes to the body's side of it; cloth e
   assert.equal(keepOffHands(p, hands, thick), 0)
   assert.equal(keepOffHands(p, null, thick), 0)
 })
+
+test("cloth pushed in behind a hand that's against the leg goes no further in than the skin", () => {
+  const left = hangingHand(1)
+  const hands = { L: handShape(left.positions, left.part, 1, left.arm, () => 0), R: null }
+  const thick = 0.003
+  // The leg's side is at x = 0.199: just inside the hand's inner face (0.2), so there's no room between.
+  const field = { hit: [0, 0, 0], at(x) { this.hit = [1, 0, 0]; return x - 0.199 } }
+  const p = Float32Array.from([0.215, 0.8, 0])
+  assert.equal(keepOffHands(p, hands, thick, 0.02, field), 1)
+  assert.ok(p[0] >= 0.199 + thick - 1e-6, `on the skin, not in the leg: ${p[0]}`)
+  // A leg well in from the hand leaves the cloth by the hand's inner face, as before.
+  const far = { hit: [0, 0, 0], at(x) { this.hit = [1, 0, 0]; return x - 0.15 } }
+  const q = Float32Array.from([0.215, 0.8, 0])
+  keepOffHands(q, hands, thick, 0.02, far)
+  assert.ok(Math.abs(q[0] - (0.2 - thick)) < 1e-4, `${q[0]}`)
+})
