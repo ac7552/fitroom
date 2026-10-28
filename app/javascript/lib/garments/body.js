@@ -468,6 +468,7 @@ export function handShape(positions, part, which, arm, centreAt) {
 // no room between them, and cloth pushed in past the hand's inner face would go into the leg, where the
 // leg shows through it (a pale patch by the pocket). It goes no further in than the skin: there the hand
 // rests on the cloth, its fingers into it a little, as a hand pressed on a pocket does.
+const STEP = 0.004
 export function keepOffHands(p, hands, thick, reach = 0.02, field = null) {
   let moved = 0
   const n = p.length / 3
@@ -485,7 +486,17 @@ export function keepOffHands(p, hands, thick, reach = 0.02, field = null) {
       if (b < lo[s] - thick || b > hi[s] + thick) continue
       const a = rx * inward[0] + ry * inward[1] + rz * inward[2]
       if (a >= inner[s] + thick || a < outer[s] - reach) continue
-      const push = inner[s] + thick - a
+      let push = inner[s] + thick - a
+      // Walked in a few millimetres at a time and stopped at the skin: the field only knows a couple of
+      // centimetres either side of it (deeper in the leg reads as far outside), and a hand's curled fingers
+      // reach in further than that.
+      if (field) {
+        const x0 = p[3 * i], y0 = p[3 * i + 1], z0 = p[3 * i + 2]
+        for (let k = STEP; k < push + STEP; k += STEP) {
+          const t = Math.min(k, push)
+          if (field.at(x0 + inward[0] * t, y0 + inward[1] * t, z0 + inward[2] * t) < thick) { push = Math.max(0, t - STEP); break }
+        }
+      }
       let qx = p[3 * i] + inward[0] * push, qy = p[3 * i + 1] + inward[1] * push, qz = p[3 * i + 2] + inward[2] * push
       if (field) {
         const d = field.at(qx, qy, qz)

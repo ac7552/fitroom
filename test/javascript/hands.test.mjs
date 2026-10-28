@@ -81,3 +81,16 @@ test("cloth pushed in behind a hand that's against the leg goes no further in th
   keepOffHands(q, hands, thick, 0.02, far)
   assert.ok(Math.abs(q[0] - (0.2 - thick)) < 1e-4, `${q[0]}`)
 })
+
+test("a leg deeper in than the field reaches still stops the cloth at the skin", () => {
+  const left = hangingHand(1)
+  const hands = { L: handShape(left.positions, left.part, 1, left.arm, () => 0), R: null }
+  const thick = 0.003, band = 0.025
+  // The leg's side at x = 0.23, under the hand's outer half (fingers pressed into it), as a field 2.5 cm
+  // deep: further in reads as far outside.
+  const field = { hit: [1, 0, 0], at(x) { const d = x - 0.23; return d < -band ? band : Math.min(d, band) } }
+  // Lying over the hand's outside: past its inner face (0.2) would be 3.3 cm into the leg.
+  const p = Float32Array.from([0.236, 0.8, 0.03])
+  keepOffHands(p, hands, thick, 0.02, field)
+  assert.ok(p[0] >= 0.23 + thick - 1e-6, `on the skin, not deep in the leg: ${p[0]}`)
+})
