@@ -72,9 +72,12 @@ export function compareLooks(photo, render, { likeness = null, named = null, bar
     // wide as the front: a worn front shows less of its width than a flat one, so its shape isn't held.
     const wide = p.right - p.left > 0.7
     const shape = p.shape && r.shape && !wide ? r.shape / p.shape : 1
+    // And for the same reason its middle across is allowed twice as far: a scene to one side of a wide
+    // print sits further out on the curve of a worn front (a good render of one read 0.11 off).
+    const sideways = wide ? bars.place * 2 : bars.place
     checks.place = {
-      score: round(Math.max(top, middle)), size: round(size), shape: round(shape),
-      pass: top <= bars.place && middle <= bars.place && size <= bars.size && size >= 1 / bars.size && shape <= bars.shape && shape >= 1 / bars.shape
+      score: round(Math.max(top, middle)), top: round(top), middle: round(middle), size: round(size), shape: round(shape),
+      pass: top <= bars.place && middle <= sideways && size <= bars.size && size >= 1 / bars.size && shape <= bars.shape && shape >= 1 / bars.shape
     }
   } else if (photo.box && !render.box) {
     // A small logo can read just under the size a graphic needs to have its place found (lookOf): it's

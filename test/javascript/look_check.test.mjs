@@ -109,3 +109,11 @@ test("a scrap of print at one side, read in one picture and not the other, doesn
   assert.ok(render.box.left - photo.box.left > 0.3, "the boxes differ a lot")
   assert.equal(compareLooks(photo, render).checks.place.pass, true, JSON.stringify(compareLooks(photo, render).checks.place))
 })
+
+test("a wide print's middle across may sit further out on a worn front; a chest graphic's may not", () => {
+  const wide = { color: "#17181a", coverage: 0.134, allOver: false, box: { left: 0.088, right: 0.891, top: 0.35, bottom: 0.871, cx: 0.561, cy: 0.62, shape: 1.03 } }
+  const worn = { color: "#14171c", coverage: 0.146, allOver: false, box: { left: 0.244, right: 1, top: 0.335, bottom: 0.875, cx: 0.671, cy: 0.58, shape: 0.76 } }
+  assert.equal(compareLooks(wide, worn).checks.place.pass, true, JSON.stringify(compareLooks(wide, worn).checks.place))
+  const chest = { ...wide, box: { left: 0.4, right: 0.6, top: 0.2, bottom: 0.35, cx: 0.5, cy: 0.27, shape: 1.3 } }
+  assert.equal(compareLooks(chest, { ...chest, box: { ...chest.box, left: 0.51, right: 0.71, cx: 0.61 } }).checks.place.pass, false)
+})
