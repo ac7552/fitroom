@@ -63,12 +63,15 @@ export function compareLooks(photo, render, { likeness = null, named = null, bar
   // on a flat photo and a worn render, where its width depends on how the sleeves lie), and its shape.
   if (photo.box && render.box) {
     const p = photo.box, r = render.box
-    const top = Math.abs(p.top - r.top), middle = Math.abs((p.left + p.right) / 2 - (r.left + r.right) / 2)
+    // Its middle across is where most of it is, when both readings have that: a box's middle moves a long
+    // way when a scrap of print at one side is or isn't read (the render's at another screen's sharpness).
+    const across = (box) => typeof box.cx === "number" ? box.cx : (box.left + box.right) / 2
+    const top = Math.abs(p.top - r.top), middle = Math.abs(across(p) - across(r))
     const size = (r.bottom - r.top) / Math.max(1e-3, p.bottom - p.top)
     // A graphic running most of the way across the front (a wide scene, a print to the side seams) is as
     // wide as the front: a worn front shows less of its width than a flat one, so its shape isn't held.
-    const across = p.right - p.left > 0.7
-    const shape = p.shape && r.shape && !across ? r.shape / p.shape : 1
+    const wide = p.right - p.left > 0.7
+    const shape = p.shape && r.shape && !wide ? r.shape / p.shape : 1
     checks.place = {
       score: round(Math.max(top, middle)), size: round(size), shape: round(shape),
       pass: top <= bars.place && middle <= bars.place && size <= bars.size && size >= 1 / bars.size && shape <= bars.shape && shape >= 1 / bars.shape

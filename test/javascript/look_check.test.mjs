@@ -95,3 +95,17 @@ test("a small logo reading just under the size that's placed isn't missing; one 
   assert.equal(compareLooks(logo, { ...logo, coverage: 0.002, box: null }).ok, true)
   assert.ok(compareLooks(logo, { ...logo, coverage: 0.0002, box: null }).failed.includes("place"))
 })
+
+test("a scrap of print at one side, read in one picture and not the other, doesn't move the graphic's place", () => {
+  const pw = 100, ph = 140
+  const image = scrap => {
+    const out = new Uint8ClampedArray(4 * pw * ph)
+    const mark = (x0, x1, y0, y1) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) out[4 * (y * pw + x) + 3] = 255 }
+    mark(45, 90, 50, 120)          // the scene, to the right
+    if (scrap) mark(6, 18, 108, 118) // a scrap by the hem, at the left
+    return lookOf(out, pw, ph, 0.25, false, "#17181a")
+  }
+  const photo = image(true), render = image(false)
+  assert.ok(render.box.left - photo.box.left > 0.3, "the boxes differ a lot")
+  assert.equal(compareLooks(photo, render).checks.place.pass, true, JSON.stringify(compareLooks(photo, render).checks.place))
+})

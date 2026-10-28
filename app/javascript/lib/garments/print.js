@@ -352,12 +352,13 @@ export function lookOf(out, pw, ph, coverage, allOver, color) {
     const label = new Int32Array(pw * ph).fill(-1), pieces = []
     for (let k = 0; k < pw * ph; k++) {
       if (grown[k] <= 0 || label[k] >= 0) continue
-      const piece = { marks: 0, left: pw, right: -1, top: ph, bottom: -1 }, stack = [k]
+      const piece = { marks: 0, sx: 0, sy: 0, left: pw, right: -1, top: ph, bottom: -1 }, stack = [k]
       label[k] = pieces.length
       while (stack.length) {
         const i = stack.pop(), x = i % pw, y = (i - x) / pw
         if (on[i]) {
           piece.marks++
+          piece.sx += x + 0.5; piece.sy += y + 0.5
           if (x < piece.left) piece.left = x
           if (x > piece.right) piece.right = x
           if (y < piece.top) piece.top = y
@@ -376,6 +377,11 @@ export function lookOf(out, pw, ph, coverage, allOver, color) {
       const left = Math.min(...kept.map(q => q.left)), right = Math.max(...kept.map(q => q.right))
       const top = Math.min(...kept.map(q => q.top)), bottom = Math.max(...kept.map(q => q.bottom))
       box = { left: left / pw, right: (right + 1) / pw, top: top / ph, bottom: (bottom + 1) / ph }
+      // Where most of the graphic is (its marks' centre), which a scrap more or less doesn't move.
+      let n = 0, sx = 0, sy = 0
+      for (const q of kept) { n += q.marks; sx += q.sx; sy += q.sy }
+      box.cx = sx / n / pw
+      box.cy = sy / n / ph
       // Its shape (width over height, in pixels), which doesn't depend on how wide the front was taken to be.
       box.shape = (right + 1 - left) / Math.max(1, bottom + 1 - top)
     }
