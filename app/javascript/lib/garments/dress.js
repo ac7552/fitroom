@@ -361,66 +361,81 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
   return covered
 }
 
+// A garment's pattern drafted for its size, cut into cloth, placed round the body and set up to be sewn
+// and draped: everything the 3D view's DrapedTop needs bar what draws it, so it can run where nothing is
+// drawn (in a Web Worker, see drape_worker.js). Returns { bottoms, pattern, cloth, drape, steps (the
+// drape's phases, a generator), expected (about how many frames it takes) }.
+export function sewingFor({ item, body, frame, field, measures }) {
+  const bottoms = item.kind === "trousers"
+  const wearer = bottoms ? bottomWearer(measures, frame) : { ...measures, ...frame.measures }
+  // Tucked in, a top is cut off a little below the waistband (the rest would be hidden in the pants) and
+  // gathered round the body from the top of the waistband down.
+  let size = item.size, tuck = null
+  if (!bottoms && item.tuck) {
+    const band = waistband(item.tuck, frame, measures)
+    size = { ...size, length: Math.min(size.length ?? Infinity, (frame.hps[1] - band.seam) * 100 + TUCK_DEPTH) }
+    // Up to just over the waistband's top, so the cloth comes out of it there; higher at the back, as the
+    // back of the pants rises over the seat.
+    tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM }
+  }
+  // A top that zips down the front (a zip hoodie) is drafted with that closure, so the zip is drawn on it.
+  const cut = item.zip && !bottoms ? { ...(item.cut ?? {}), closure: "zip" } : item.cut ?? null
+  const pattern = bottoms ? draftBottoms(item.style, size, wearer, cut) : draftTop(item.style, size, wearer, cut)
+  const cloth = buildCloth(pattern, bottoms ? BOTTOM_SPACING : SPACING)
+  const { positions, attach } = placeCloth(cloth, pattern, frame)
+  // A skirt hangs round both legs; pants go round each.
+  const envelope = bottoms && item.style !== "skirt" ? null : { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor }
+  // A dress held up by straps or round the bust grips where it rests (as straps and boning do, rather than
+  // sliding off the shoulders' slope); pants grip at the waist; others slide over the body as usual.
+  const holds = ["strapless", "one_shoulder", "straps", "thin_straps", "none"].includes(item.cut?.sleeves)
+  // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist.
+  const ring = bottoms ? {
+    points: Object.entries(cloth.edges).filter(([key]) => /^(front|back)(_[LR])?\/waist$/.test(key)).flatMap(([, idx]) => idx),
+    length: pattern.measures.waist / 100
+  } : null
+  const drape = new Drape(cloth, positions, { ...body, field }, {
+    // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
+    // hang caught on them, short).
+    fabric: pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, ring,
+    // Pants, and a dress or coat long enough to reach it, rest on the floor (a gown's hem carries its weight
+    // there, rather than pulling it off the shoulders).
+    floor: bottoms || item.style === "dress" || item.style === "coat" ? frame.floor + 0.004 : null,
+    feet: bottoms && item.style !== "skirt" ? frame.feet : null,
+    snug: bottoms && item.style !== "skirt" ? snugRound(item.style, pattern) : null,
+    tuck,
+    // A long hem (pants, skirts, dresses) keeps a smooth edge, but the strip above it is no stiffer than
+    // the rest: stiffened, it rolls out like a cuff and flicks up at the side seams.
+    hemStrip: !bottoms && item.style !== "dress",
+    // A top's sleeves stop at the hands (a sleeve longer than the arm gathers above its cuff).
+    arms: bottoms ? null : frame.arms
+  })
+  // A long garment (a dress, pants) has further to fall, so it settles for longer.
+  const long = pattern.style === "dress" || pattern.measures.length > 85
+  // Pants are sewn without gravity (nothing holds them up until they're closed), then fall straight under
+  // a heavier pull for a moment (a stretch knit or a rib cuff would be stretched by it, and spring back
+  // crumpled); a skirt, held at its waistband, is sewn hanging, so it falls straight.
+  const skirt = bottoms && item.style === "skirt"
+  const phases = skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
+    : bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: drape.snug ? 0 : 60 }
+    : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 }
+  const steps = drape.phases(phases)
+  // About how many steps the drape takes (sewing stops when the seams close, so it's a guess), for a
+  // progress bar.
+  const expected = (phases.relaxFrames ?? 0) + (phases.heavyFrames ?? 0) + phases.settleFrames + (bottoms ? 300 : 70)
+  return { bottoms, pattern, cloth, drape, steps, expected }
+}
+
 export class DrapedTop {
   constructor({ item, body, frame, field, measures, renderer }) {
     this.item = item
-    this.bottoms = item.kind === "trousers"
-    const wearer = this.bottoms ? bottomWearer(measures, frame) : { ...measures, ...frame.measures }
-    // Tucked in, a top is cut off a little below the waistband (the rest would be hidden in the pants) and
-    // gathered round the body from the top of the waistband down.
-    let size = item.size, tuck = null
-    if (!this.bottoms && item.tuck) {
-      const band = waistband(item.tuck, frame, measures)
-      size = { ...size, length: Math.min(size.length ?? Infinity, (frame.hps[1] - band.seam) * 100 + TUCK_DEPTH) }
-      // Up to just over the waistband's top, so the cloth comes out of it there; higher at the back, as the
-      // back of the pants rises over the seat.
-      tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM }
-    }
-    // A top that zips down the front (a zip hoodie) is drafted with that closure, so the zip is drawn on it.
-    const cut = item.zip && !this.bottoms ? { ...(item.cut ?? {}), closure: "zip" } : item.cut ?? null
-    this.pattern = this.bottoms ? draftBottoms(item.style, size, wearer, cut) : draftTop(item.style, size, wearer, cut)
-    this.cloth = buildCloth(this.pattern, this.bottoms ? BOTTOM_SPACING : SPACING)
-    const { positions, attach } = placeCloth(this.cloth, this.pattern, frame)
-    // A skirt hangs round both legs; pants go round each.
-    const envelope = this.bottoms && item.style !== "skirt" ? null : { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor }
-    // A dress held up by straps or round the bust grips where it rests (as straps and boning do, rather than
-    // sliding off the shoulders' slope); pants grip at the waist; others slide over the body as usual.
-    const holds = ["strapless", "one_shoulder", "straps", "thin_straps", "none"].includes(item.cut?.sleeves)
-    // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist.
-    const ring = this.bottoms ? {
-      points: Object.entries(this.cloth.edges).filter(([key]) => /^(front|back)(_[LR])?\/waist$/.test(key)).flatMap(([, idx]) => idx),
-      length: this.pattern.measures.waist / 100
-    } : null
-    this.drape = new Drape(this.cloth, positions, { ...body, field }, {
-      // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
-      // hang caught on them, short).
-      fabric: this.pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, ring,
-      // Pants, and a dress or coat long enough to reach it, rest on the floor (a gown's hem carries its weight
-      // there, rather than pulling it off the shoulders).
-      floor: this.bottoms || item.style === "dress" || item.style === "coat" ? frame.floor + 0.004 : null,
-      feet: this.bottoms && item.style !== "skirt" ? frame.feet : null,
-      snug: this.bottoms && item.style !== "skirt" ? snugRound(item.style, this.pattern) : null,
-      tuck,
-      // A long hem (pants, skirts, dresses) keeps a smooth edge, but the strip above it is no stiffer than
-      // the rest: stiffened, it rolls out like a cuff and flicks up at the side seams.
-      hemStrip: !this.bottoms && item.style !== "dress",
-      // A top's sleeves stop at the hands (a sleeve longer than the arm gathers above its cuff).
-      arms: this.bottoms ? null : frame.arms
-    })
-    // A long garment (a dress, pants) has further to fall, so it settles for longer.
-    const long = this.pattern.style === "dress" || this.pattern.measures.length > 85
-    // Pants are sewn without gravity (nothing holds them up until they're closed), then fall straight under
-    // a heavier pull for a moment (a stretch knit or a rib cuff would be stretched by it, and spring back
-    // crumpled); a skirt, held at its waistband, is sewn hanging, so it falls straight.
-    const skirt = this.bottoms && item.style === "skirt"
-    const phases = skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
-      : this.bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: this.drape.snug ? 0 : 60 }
-      : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 }
-    this.steps = this.drape.phases(phases)
-    // About how many steps the drape takes (sewing stops when the seams close, so it's a guess), for a
-    // progress bar.
+    const sewing = sewingFor({ item, body, frame, field, measures })
+    this.bottoms = sewing.bottoms
+    this.pattern = sewing.pattern
+    this.cloth = sewing.cloth
+    this.drape = sewing.drape
+    this.steps = sewing.steps
     this.frames = 0
-    this.expected = (phases.relaxFrames ?? 0) + (phases.heavyFrames ?? 0) + phases.settleFrames + (this.bottoms ? 300 : 70)
+    this.expected = sewing.expected
     this.phase = "sewing"
     this.done = false
     this.frame = frame
@@ -434,9 +449,39 @@ export class DrapedTop {
     this.update()
   }
 
-  // Runs the drape for up to `budget` milliseconds. Returns true while there's more to do.
+  // Runs the drape for up to `budget` milliseconds. Returns true while there's more to do. Sewn in a worker
+  // (this.remote, remote_drape.js's job), it takes the worker's newest points instead.
   advance(budget = 10) {
     if (this.done) return false
+    // (The worker failed: it's sewn here, from where it got to.)
+    if (this.remote?.failed) this.remote = null
+    const remote = this.remote
+    if (remote) {
+      if (remote.x) {
+        // The seams closed there (the cloth's points joined into one piece): the same here, so the points line up.
+        if (remote.x.length !== this.drape.x.length && !this.drape.sewn) {
+          this.drape.releaseBands()
+          this.drape.closeSeams()
+        }
+        // (They don't: something differs between the two; it's sewn here instead.)
+        if (remote.x.length !== this.drape.x.length) {
+          remote.failed = true
+          console.warn("[drape] the worker's cloth doesn't match the page's; draping it here")
+          return this.advance(budget)
+        }
+        this.drape.x.set(remote.x)
+        this.drape.frame = remote.frame
+        this.frames = remote.frames
+        this.phase = remote.phase
+        remote.x = null
+        if (remote.sewn) {
+          this.done = true
+          this.shade()
+        }
+        this.update()
+      }
+      return !this.done
+    }
     const end = performance.now() + budget
     do {
       const next = this.steps.next()

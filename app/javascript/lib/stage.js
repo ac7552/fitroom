@@ -9,6 +9,7 @@ import { N8AOPass } from "n8ao"
 import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
 import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
 import { bodyFrame } from "lib/garments/body"
+import { RemoteDrape } from "lib/garments/remote_drape"
 import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
@@ -101,6 +102,10 @@ const EASE_KEYS = {
 // casual jacket over both. A tucked top is gathered close round the body under the pants' waistband, so the
 // top and the pants are each sewn on the body alone, and the jacket over both.
 const LAYERS = ["bottom", "top", "outer"]
+// What a posing step yields while it waits for the drape worker (see posingRemote).
+const WAITING = "waiting"
+// Draping in a Web Worker (remote_drape.js), for now when the page's address asks for it: ?drape=worker.
+const DRAPE_IN_WORKER = typeof location !== "undefined" && new URLSearchParams(location.search).get("drape") === "worker"
 const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
 const TUCKED_LAYERS = ["top", "bottom", "outer"]
 const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
@@ -126,6 +131,9 @@ export class FittingStage {
     this.order = LAYERS
     this.tucked = false     // whether a top is worn tucked into the pants (when it can be)
     this.drapeBudget = 20   // milliseconds of draping per frame
+    // Or the drape in a worker, at full speed and off this thread (null when it isn't, or can't be, used).
+    this.remote = DRAPE_IN_WORKER ? RemoteDrape.start() : null
+    this.remoteIds = 0
     // Shoes and socks (on the calves' bones, so they follow the pose) and a belt (round the pants' waistband).
     this.feet = { key: null, meshes: [], shoes: {} }
     this.belt = { stamp: null, mesh: null, buckle: null }
@@ -764,6 +772,10 @@ export class FittingStage {
     // usual gap clears it; more would stretch the jacket's hem round the hips, to spring back and ride up).
     if (slot === "outer" && this.slots.top && this.order !== TUCKED_LAYERS) frame.gap = 0.03
     const top = new DrapedTop({ item, body: rest.body, frame, field, measures: this.measures, renderer: this.renderer })
+    // Sewn in the worker, when it's there (not over shoes yet: their outlines are worked out here).
+    if (this.remote && !this.remote.failed && !this.feet.meshes.length) {
+      top.remote = this.remote.sew(++this.remoteIds, { item, body: rest.body, over, egg: rest.egg, measures: this.measures, arms: slot !== "bottom" })
+    }
     if (this.worn) for (const material of [top.materials.main, top.materials.rib]) this.projectOnto(material)
     top.mesh.visible = false
     this.scene.add(top.mesh)
@@ -776,6 +788,7 @@ export class FittingStage {
     const d = this.slots[slot]
     this.slots[slot] = null
     if (!d) { if (!keepShown) this.dropLeaving(slot); return }
+    if (d.top.remote) this.remote?.drop(d.top.remote.id)
     if (d.fade) this.finishFade(d)
     if (keepShown && d.shown) {
       this.dropLeaving(slot)
@@ -860,7 +873,7 @@ export class FittingStage {
       }
     }
     d.final = false
-    d.posing = this.posing(d)
+    d.posing = d.top.remote ? this.posingRemote(d) : this.posing(d)
     d.posedAs = this.pose
   }
 
@@ -906,6 +919,37 @@ export class FittingStage {
       d.top.update()
       yield* (long ? drape.settle(180, 50) : drape.settle(70, 25))
     }
+  }
+
+  // posing, with the settling done in the drape worker: here, the pose is applied a step at a time and the
+  // body and the layers under it are read in it (as posing does), and the worker settles the cloth there. It
+  // yields WAITING while the worker works, and takes the cloth's points as they come back.
+  * posingRemote(d) {
+    const drape = d.top.drape, remote = this.remote
+    const long = d.top.pattern.style === "dress" || d.top.pattern.measures.length > 85
+    const steps = long ? 6 : 3
+    let before = null
+    for (let s = 1; s <= steps; s++) {
+      if (remote.failed) { yield* this.posing(d); return }
+      d.poseStep = (s - 1) / steps
+      this.applyPose(s / steps)
+      const posed = skinPoints(d.restBind, d.weights.skinIndex, d.weights.skinWeight, this.meshes.body)
+      const now = this.snapshotNow(d.slot)
+      if (s < steps) this.applyPose()
+      const last = s === steps
+      const step = remote.pose(d.top.remote.id, { posed, before, now: { body: now.body, over: now.over, egg: now.egg }, bottom: d.slot === "bottom", last, long })
+      before = posed
+      if (last) { d.final = true; d.top.update() }
+      while (!step.done) {
+        if (remote.failed || step.failed) { yield* this.posing(d); return }
+        if (last && step.x) { drape.x.set(step.x); drape.frame = step.frame; step.x = null; d.top.update() }
+        yield WAITING
+      }
+      drape.x.set(step.x)
+      drape.frame = step.frame
+      if (step.field) drape.field = step.field
+    }
+    d.top.update()
   }
 
   // What a studio render needs to reproduce the screen: the body's shape keys and scale, each item's
@@ -1684,7 +1728,9 @@ export class FittingStage {
         this.onDrape?.("posing", false)
         const end = performance.now() + this.drapeBudget
         while (performance.now() < end) {
-          if (d.posing.next().done) { d.posing = null; d.top.shade(); break }
+          const next = d.posing.next()
+          if (next.done) { d.posing = null; d.top.shade(); break }
+          if (next.value === WAITING) break
         }
         if (!d.final) return
         d.top.update()

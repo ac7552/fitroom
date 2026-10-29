@@ -86,9 +86,10 @@ export default class extends Controller {
       if (phase === "done") this.queueLookCheck()
       this.showLoading(phase === "done" ? null : DRAPE_TEXT[phase] ?? this.loadingLabelTarget.textContent)
     }
+    // The mannequin starts with nothing on: the sample T-shirt and dress are among the examples to try.
     this.outfit = {}
     this.tiles = new Map()
-    this.addItem(this.garmentValue)
+    this.renderOutfit()
     this.renderOwnSizes()
     this.update()
   }
