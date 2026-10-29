@@ -518,17 +518,18 @@ a { color: inherit; }
 .studio-take:focus-visible { outline: 2px solid #8fb0ff; outline-offset: 2px; }
 /* While a garment is sewn: a soft band of light sweeps down over the figure (the one it replaces stays on
    until the new one is ready), with a small line saying what's happening and how far along it is, low in the
-   picture above the size rows. It fades once the clothes are on. The controls and size rows stay above it. */
+   picture above the size rows. It fades once the clothes are on (and comes back at once, with no fade in, so
+   nothing half-made shows while it would be fading in). The controls and size rows stay above it. */
 .stage-loading {
   position: absolute; inset: 0; z-index: 1;
   overflow: hidden;
-  pointer-events: none; transition: opacity 0.35s ease;
+  pointer-events: none;
   --sweep: rgb(255 255 255 / 0.35);
   --sweep-text: #e9ebef;
   --sweep-line: rgb(233 235 239 / 0.14);
   --sweep-bar: #e9ebef;
 }
-.stage-loading.is-done { opacity: 0; }
+.stage-loading.is-done { opacity: 0; transition: opacity 0.35s ease; }
 .stage-loading-sweep {
   position: absolute; left: 0; right: 0; top: -40%; height: 34%;
   background: linear-gradient(180deg, transparent 0%, var(--sweep) 50%, transparent 100%);

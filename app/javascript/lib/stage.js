@@ -321,6 +321,7 @@ export class FittingStage {
     this.applyPose()
     // A draped garment follows by settling again in the new pose (see tick).
     for (const d of Object.values(this.slots)) if (d) d.posedAs = null
+    this.announceBusy()
     this.start()
   }
 
@@ -381,6 +382,30 @@ export class FittingStage {
     this.dressFeet(worn.shoes ?? null, worn.socks ?? null)
     this.beltItem = worn.belt ?? null
     for (const slot of this.order) this.dressDraped(slot, items[slot])
+    this.announceBusy()
+  }
+
+  // Something has changed that the clothes on screen don't match yet (a new pose, body, size or garment): say
+  // so now, so the page's veil is up before the next frame is drawn. Left to the frame loop, it's said only once
+  // that frame's draping step is done, and the first step into a new pose or a new drape (building the body's
+  // collision field) is its longest: the mannequin would show in its new pose or shape with the clothes still
+  // as they were, for a good part of a second.
+  announceBusy() {
+    if (this.busy || this.settled) return
+    this.busy = true
+    this.onDrape?.(this.busyPhase(), false)
+  }
+
+  // What's being done first, in the drape's words ("sewing", "settling" or "posing").
+  busyPhase() {
+    for (const slot of this.order ?? LAYERS) {
+      if (this.waiting[slot]) return "sewing"
+      const d = this.slots[slot]
+      if (!d) continue
+      if (!d.top.done) return d.top.phase ?? "sewing"
+      if (d.posedAs !== this.pose || d.posing) return "posing"
+    }
+    return "posing"
   }
 
   // Shoes and socks, lofted round the mannequin's feet and legs as they stand (see accessories.js), then hung
@@ -1699,7 +1724,7 @@ export class FittingStage {
     if (this.settled) {
       if (this.busy) { this.busy = false; this.onDrape?.("done", true) }
       if (this.revealed) { this.revealed = false; this.reveal() }
-    } else this.busy = true
+    } else this.announceBusy()
     // A tucked top waits to be shown until the pants it's tucked into are (it's cut short, to end inside them).
     for (const slot of this.order) if (this.slots[slot]?.final && !this.slots[slot].posing) this.show(this.slots[slot])
     for (const slot of this.order) {
