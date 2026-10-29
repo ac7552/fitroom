@@ -53,8 +53,9 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "not_supported", error.code
   end
 
-  def top(name, category = "Tops")
+  def top(name, category = "Tops", description: nil)
     html = page("navy-suit-jacket").gsub("Navy Wool Suit Jacket", name).gsub("Suit jackets", category)
+    html = html.sub('"color": "Navy",', %("color": "Navy", "description": #{description.to_json},)).sub("Two-button, notch lapel, half-canvassed. Super 110s wool.", description) if description
     GarmentImport.new.from_page(html, source_url: "x")
   end
 
@@ -181,9 +182,12 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal [ "top", "dress" ], top("Ksubi Devin Long Sleeve Shirtdress - Stone Lurex", "Mini Dresses").values_at(:garment, :style)
     assert_equal [ "top", "sweatshirt" ], top("Kith Calix Quarter Zip - Black", "Quarter Zips").values_at(:garment, :style)
     assert_equal "shirt", top("Giorgio Armani & Kith Quarter-Zip Shirt - Flint Stone", "Button Up Shirts")[:style]
-    suit = top("Agolde Maria Bodysuit - White", "Bodysuits")
+    suit = top("Agolde Maria Bodysuit - White", "Bodysuits", description: "Viscose blend Wide shoulder straps Scoop neckline Snap closure on the gusset Fitted silhouette")
     assert_equal [ "top", true ], suit.values_at(:garment, :bodysuit)
     assert_equal({ fit: "fitted", stretch: true }, suit[:cut])
+    assert_equal "tank", suit[:style], "on straps"
+    # (A blazer is still a jacket: only a body- or catsuit isn't a suit.)
+    assert_equal "jacket", top("Kith Women Keshi Cropped Blazer - Incognito", "Blazers")[:garment]
     assert_equal "polo", top("Kith Women Rose Polo Bodysuit - Black", "Bodysuits")[:style]
     # A sweater vest goes over a top, as a jacket does, drawn as a tank; Kith tags each product with its own
     # name, and a "Tie-front" in it isn't a tie.

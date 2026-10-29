@@ -351,6 +351,8 @@ const DRESS_CLOTH = { stretch: "stretch", leather: "leather", silk: "silk", jers
 // The dress style with the cut's cloth, sleeves and neckline (for dresses with sleeves, drafted as a top).
 function dressStyle(style, cut) {
   if (!style.shaped || !cut) return style
+  // A shirt dress has a shirt's collar and buttons down the front.
+  if (cut.collar) return { ...style, fabric: DRESS_CLOTH[cut.fabric] ?? style.fabric, sleeve: cut.sleeves === "long" ? "long" : "short", collar: "shirtstand", closure: "buttons" }
   return { ...style, fabric: DRESS_CLOTH[cut.fabric] ?? style.fabric, sleeve: cut.sleeves === "long" ? "long" : "short",
            collar: ["round", "high"].includes(cut.neckline) ? "band" : null }
 }

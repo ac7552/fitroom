@@ -9,6 +9,7 @@ class GarmentImport
   #   length    "mini", "knee", "midi" or "maxi"
   #   fit       "fitted", "slim", "relaxed" or "flared"
   #   hem_flare true when only the hem flares out ("flared hem", mermaid, trumpet): the body keeps its fit
+  #   collar    true for a shirt dress's collar ("classic collar", "point collar"): drawn with it and buttons
   #   stretch   true when the cloth stretches (elastane, spandex, jersey), so it's made smaller than the body
   #   fabric    the cloth as the 3D view draws it: "stretch", "jersey", "leather", "silk" or "cotton"
   #   printed   true when the listing says the cloth is printed or patterned (only then is a print read off
@@ -49,7 +50,8 @@ class GarmentImport
     # an A-line, so they're left out of reading its fit.
     HEM_FLARE = /flared? hem|flare (?:at|from) the (?:hem|knee)|mermaid|trumpet|fishtail/i
     SLEEVE_FLARE = /(?:flared?|bell|trumpet|wide) (?:sleeves?|cuffs?)/i
-    STRETCH = /elastane|spandex|lycra|stretch|jersey|ribbed|rib[- ]knit|\bknit\b/i
+    SHIRT_COLLAR = /(?:classic|shirt|point|spread|button[- ]down|camp|pointed) collar|\bcollared\b/i
+    STRETCH = /elastane|spandex|lycra|stretch|jersey|ribbed|rib[- ]knit|\bknit(?:ted)?\b/i
     PRINTED = /print|pattern|floral|graphic|logo|stripe|check|plaid|gingham|polka|leopard|zebra|paisley|motif|parquet|camo|tie[- ]dye/i
     DETAILS = [
       [ "belt", /\bbelt/i ], [ "tie", /self[- ]tie|\btie\b|sash|bow\b/i ], [ "scarf", /scarf/i ],
@@ -91,9 +93,11 @@ class GarmentImport
         sleeves:,
         neckline: first.(NECKLINES, words) || { "strapless" => "straight", "thin_straps" => "scoop", "straps" => "scoop",
                                                 "one_shoulder" => "straight" }.fetch(sleeves, "round"),
-        length: first.(LENGTHS, name) || first.(LENGTHS, words) || "knee",
+        # Its own name first: a "Midi Skirt" Kith files under Maxi Skirts is a midi.
+        length: first.(LENGTHS, product[:name]) || first.(LENGTHS, name) || first.(LENGTHS, words) || "knee",
         fit: first.(FITS, words.gsub(HEM_FLARE, " ").gsub(SLEEVE_FLARE, " ")) || (stretch ? "fitted" : "slim"),
         hem_flare: words.match?(HEM_FLARE),
+        collar: words.match?(SHIRT_COLLAR),
         stretch:,
         fabric: fabric(words, stretch),
         printed: words.match?(PRINTED),
@@ -111,7 +115,7 @@ class GarmentImport
       return "silk" if words.match?(/silk|satin|chiffon|charmeuse|organza|georgette|crepe de chine/i)
       # Smooth, slippery cloths that hang like silk: a nylon slip, a sequinned or viscose dress.
       return "silk" if !stretch && words.match?(/\bnylon\b|viscose|rayon|cupro|sequin/i)
-      return "stretch" if stretch && !words.match?(/\bknit\b|jersey|ribbed|rib[- ]knit/i)
+      return "stretch" if stretch && !words.match?(/\bknit(?:ted)?\b|jersey|ribbed|rib[- ]knit/i)
       return "jersey" if stretch
 
       "cotton"

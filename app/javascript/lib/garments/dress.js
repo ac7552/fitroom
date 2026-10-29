@@ -393,9 +393,10 @@ export function sewingFor({ item, body, frame, field, measures }) {
     const band = waistband(item.tuck, frame, measures)
     size = { ...size, length: Math.min(size.length ?? Infinity, (frame.hps[1] - band.seam) * 100 + TUCK_DEPTH) }
     // Up to just over the waistband's top, so the cloth comes out of it there; higher at the back, as the
-    // back of the pants rises over the seat. (Not a stretch top, a bodysuit: it already lies on the body,
-    // with nothing to gather, and pressed in further it slides down off the shoulders. It's only cut short.)
-    if (!item.cut?.stretch) tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM }
+    // back of the pants rises over the seat. A stretch top (a bodysuit) isn't pressed in, only cut short and
+    // hidden in the pants: it already lies on the body, with nothing to gather, and pressed in further it
+    // slides down off the shoulders.
+    tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM, press: !item.cut?.stretch }
   }
   // A top that zips down the front (a zip hoodie) is drafted with that closure, so the zip is drawn on it.
   const cut = item.zip && !bottoms ? { ...(item.cut ?? {}), closure: "zip" } : item.cut ?? null
@@ -563,8 +564,9 @@ export class DrapedTop {
     const details = {
       stitch: knit ? "hem" : "topstitch", closure: pattern.closure, pocket: item.style === "hoodie" ? "kangaroo" : null,
       neckDepth: pattern.measures.frontNeck, length: pattern.measures.length,
-      // Semi-sheer cloth shows more of its colour than sheer.
-      sheer: item.cut?.sheer ? (item.cut.sheer_kind === "semi" ? 0.78 : 0.5) : 1,
+      // How much of a sheer cloth's colour shows: most of it, semi-sheer (it reads as the cloth's colour in a
+      // photo, the skin only hinted); less, sheer; but a printed sheer one's print is what's seen.
+      sheer: item.cut?.sheer ? (item.cut.sheer_kind === "semi" ? 0.9 : item.cut.printed ? 0.82 : 0.65) : 1,
       // A puffer's quilted baffles (see fabric.js's QUILT).
       quilt: Boolean(item.puffer)
     }

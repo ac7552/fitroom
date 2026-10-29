@@ -32,7 +32,8 @@ class GarmentImport
   # Dresses (a "dress shirt" or "dress pants" isn't one), drawn as a top cut long.
   # A shirt dress, sweater dress or slip dress named in one word ("Shirtdress") is one too.
   DRESSES = /\b(?:dress(?:es)?(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?)\b)|(?:shirt|sweater|slip|tee|knit|tank|polo|wrap)dress(?:es)?|gowns?|maxi|midi|sundress|frock|kaftan|caftan)\b/i
-  JACKETS = /jacket|blazer|suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket/i
+  # (Not a "bodysuit" or a "catsuit".)
+  JACKETS = /jacket|blazer|(?<!body|cat)suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket/i
   # T-shirts, shirts, polos, sweatshirts, hoodies and knitwear: worn on the body, under a jacket.
   TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b|bodysuit|quarter[- ]?zip|half[- ]?zip|1\/4[- ]?zip/i
   # How a top looks, for drawing it: the first match in its name wins, then in its category, else a tee.
@@ -57,7 +58,7 @@ class GarmentImport
   TROUSERS = /trouser|pants?\b|jeans?\b|chinos?\b|slacks|leggings?\b|\btights\b|joggers?\b|sweatpants?|track ?pants?|\bshorts?\b(?![- ]?sleeve)|skirts?\b|skort/i
   # Worn over tailoring and cut long; fitted with more room and no "right" length.
   COATS = /overcoat|topcoat|top coat|car coat|trench|peacoat|pea coat|parka|duffle|\bcoat\b/i
-  NOT_COATS = /sport ?coat|suit|blazer|tuxedo/i
+  NOT_COATS = /sport ?coat|(?<!body|cat)suit|blazer|tuxedo/i
   # A "hoodie" that's insulated is outerwear (Canada Goose calls jackets hoodies), and so is one that zips up
   # with a hood, unless it's knitwear (a sweater hoodie with a zip is a knit top, worn as a hoodie is).
   INSULATED = /\bdown\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell/i
@@ -77,7 +78,7 @@ class GarmentImport
   # shirt (button-front denim, trucker and work jackets), bomber, or zip (most other outerwear). First match wins.
   STYLES = [
     [ "cardigan", /cardigan/i ],
-    [ "tailored", /blazer|suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
+    [ "tailored", /blazer|(?<!body|cat)suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
     [ "bomber", /bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington|aviator|blouson/i ],
     [ "zip", /two-way zip|zip(?:per)? closure|full[- ]zip|zip[- ]up|front zip/i ],
     [ "shirt", /denim(?: \w+)? jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
@@ -1081,6 +1082,8 @@ class GarmentImport
     style = "tee" unless style.is_a?(String)
     # A henley the shop files under short-sleeve ones ("Short Sleeve Henleys") is a tee with buttons.
     return "tee" if style == "longsleeve" && product[:category].to_s.match?(/short[- ]?sleeve/i) && !product[:name].to_s.match?(/long[- ]?sleeve|\bl\/s\b/i)
+    # A top on straps (a bodysuit or a cami named for neither) is a tank.
+    return "tank" if style == "tee" && product[:description].to_s.match?(/sleeveless|(?:shoulder|spaghetti|thin|wide|adjustable) straps?|\bcami(?:sole)?\b/i)
     # A "T-shirt" whose description says it has long sleeves is a long-sleeve one.
     style == "tee" && product[:description].to_s.match?(/long[- ]?sleeve/i) ? "longsleeve" : style
   end

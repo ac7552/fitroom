@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Six real listings (Kith's, October 2026): what each dress is, read from its name, category and description.
+# Seven real listings (Kith's, October 2026): what each dress is, read from its name, category and description.
 class DressCutTest < ActiveSupport::TestCase
   LISTINGS = {
     desma: [ "Kith Women Desma Suiting Dress - Black", "Mini Dresses",
@@ -14,7 +14,9 @@ class DressCutTest < ActiveSupport::TestCase
     cyrielle: [ "GUIZIO Cyrielle Dress - Sweet Peach", "Mini Dresses",
                 "Lightweight chiffon polyester Sculpted one shoulder neckline Integrated high neck scarf Draped sash self-tie closure on hip Fitted silhouette Mini length" ],
     zair: [ "Aya Muse Zair Layered Gown - Caramel", "Maxi Dresses",
-            "Lyocell blend Adjustable straps on the front Cutouts on the shoulder Raw sleeve cuffs Sweetheart neck Flared hem Maxi fit Material: 90% Lyocell / 10% Silk" ]
+            "Lyocell blend Adjustable straps on the front Cutouts on the shoulder Raw sleeve cuffs Sweetheart neck Flared hem Maxi fit Material: 90% Lyocell / 10% Silk" ],
+    devin: [ "Ksubi Devin Long Sleeve Shirtdress - Stone Lurex", "Mini Dresses",
+             "Knitted viscose blend Semi-sheer Classic collar Button closure on the front and sleeve cuffs Slim fit Material: 75% Viscose / 20% Lurex / 5% Nylon" ]
   }.freeze
 
   def cut(key)
@@ -29,6 +31,11 @@ class DressCutTest < ActiveSupport::TestCase
     assert_equal [ "thin_straps", "plunge", "silk", true ], cut(:mireli).values_at(:sleeves, :neckline, :fabric, :printed)
     assert_equal [ "one_shoulder", "silk", false ], cut(:cyrielle).values_at(:sleeves, :fabric, :printed)
     assert_includes cut(:cyrielle)[:details], "tie"
+    # Knitted viscose is a knit, not a silky woven.
+    assert_equal [ "long", true, "jersey", "semi", true ], cut(:devin).values_at(:sleeves, :stretch, :fabric, :sheer_kind, :collar)
+    refute cut(:zair)[:collar]
+    deba = GarmentImport::DressCut.read({ name: "Peachy Den Deba Midi Skirt - Pistachio", category: "Maxi Skirts", description: "Nylon Flared construction Relaxed fit" })
+    assert_equal "midi", deba[:length], "its own name, before the shop's category"
   end
 
   test "a flared hem doesn't make a gown an A-line: it keeps its fit over the hips and flares only at the hem" do

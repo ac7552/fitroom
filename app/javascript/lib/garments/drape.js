@@ -59,8 +59,8 @@ export class Drape {
   // snug: how far round (m) a pant leg's hem can stretch, for stayOffFeet: a cuff smaller than the foot stays
   // above the ankle instead of being pulled down over it.
   // tuck: { table (body.js's torso table), top (a height), raise (m higher at the middle of the back), inside
-  // (m) }: a top tucked into pants. Below `top` its body pieces stay within `inside` of the body's convex
-  // outline, gathered as a waistband holds them.
+  // (m), press }: a top tucked into pants. With press, below `top` its body pieces stay within `inside` of the
+  // body's convex outline, gathered as a waistband holds them (without, it's only hidden there).
   // hemStrip: false keeps a hem's edge in a smooth line without stiffening the strip above it. Round a pant
   // leg, a stiff, heavy strip hinged on softer cloth rolls outwards like a turned-up cuff.
   // arms: bodyFrame's arms, for a top: a sleeve's cuff can't slip further down the arm than the base of the
@@ -305,7 +305,7 @@ export class Drape {
     const hit = field.hit
     const thick = this.params.thickness, keep = this.friction
     const n = p.length / 3
-    const tucks = this.tuck ? this.tuckedPoints() : null
+    const tucks = this.tuck?.press ? this.tuckedPoints() : null
     for (let i = 0; i < n; i++) {
       const px = p[3 * i], py = p[3 * i + 1], pz = p[3 * i + 2]
       const d = field.at(px, py, pz)
@@ -342,7 +342,7 @@ export class Drape {
       }
     }
     if (this.envelope) this.stayOutside()
-    if (this.tuck) this.stayTucked()
+    if (this.tuck?.press) this.stayTucked()
     if (this.feet) this.stayOffFeet()
     if (this.arms) this.stayOnArms()
     if (this.hands) keepOffHands(p, this.hands, thick, 0.02, field)

@@ -329,6 +329,9 @@ export class FittingStage {
   redraw() {
     if (!this.meshes || !this.fitted) return
     const worn = Object.fromEntries(this.outfit.map(item => [item.kind, item]))
+    // A blazer over a dress is draped too, cut as a coat is (a stand collar, buttons): the suit's jacket from
+    // the model has its own shirt in it, and the dress under it wouldn't be drawn at all.
+    if (worn.jacket && !DRAPED_STYLES.includes(worn.jacket.style) && worn.top?.style === "dress" && !worn.coat) worn.jacket = { ...worn.jacket, style: "coat" }
 
     // A casual jacket is draped like a top, and so is a coat (cut long, its sleeves round the arms), over
     // the top and the pants; the suit's jacket is drawn from the model, and so is a coat worn over a jacket.
@@ -663,7 +666,8 @@ export class FittingStage {
   // laid folded down over it from its top edge, round the neck and over the yoke, its points coming down
   // toward the chest and apart at the front. Laid on the shirt where it hangs, as the scarf is.
   wearCollars() {
-    const slots = ["top", "outer"].filter(slot => ["shirt", "shortshirt", "polo"].includes(this.slots[slot]?.top.item.style))
+    // (A shirt dress has a shirt's collar too.)
+    const slots = ["top", "outer"].filter(slot => ["shirt", "shortshirt", "polo"].includes(this.slots[slot]?.top.item.style) || this.slots[slot]?.top.item.cut?.collar)
     const ready = slots.filter(slot => { const d = this.slots[slot]; return d.shown && d.final && !d.posing })
     const stamp = ready.map(slot => `${slot}:${this.slots[slot].top.drape.frame}:${this.slots[slot].posedAs}:${this.slots[slot].top.item.color}`).join("|") + this.view
     if (stamp === this.collars.stamp) return
