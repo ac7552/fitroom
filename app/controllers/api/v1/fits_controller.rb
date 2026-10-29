@@ -71,7 +71,9 @@ module Api
           keys.to_h do |key|
             value = size[key].nil? ? nil : Float(size[key], exception: false)
             errors[:"sizes.#{index}.#{key}"] = "must be a number" if value.nil? && !size[key].nil?
-            errors[:"sizes.#{index}.#{key}"] = "must be between 5 and 250 cm" if value && !value.between?(5, 250)
+            # (A micro short's inseam is an inch or two: only an inseam may be under 5 cm.)
+            least = key == "inseam" ? 0 : 5
+            errors[:"sizes.#{index}.#{key}"] = "must be between #{least} and 250 cm" if value && !value.between?(least, 250)
             [ key, value ]
           end.merge("name" => name).tap do |out|
             errors[:"sizes.#{index}.#{required}"] ||= "is required" if out[required].nil?

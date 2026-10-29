@@ -87,6 +87,16 @@ class Api::FitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Cut with a straight leg", checks.last["note"]
   end
 
+  test "micro shorts with an inch-long inseam are fitted; other measurements still need 5 cm" do
+    sizes = [ { name: "S", waist: 81.3, seat: 90.2, inseam: 2.54, leg_opening: 63.5 } ]
+    post api_v1_fits_path, params: { unit: "in", garment: "trousers", style: "shorts", measurements: MEASUREMENTS.merge(hips: 39.5, inseam: 32.25), sizes: }, as: :json
+    assert_response :success
+    assert_equal "S", response.parsed_body["best"]
+
+    post api_v1_fits_path, params: { unit: "in", garment: "trousers", measurements: MEASUREMENTS, sizes: [ { name: "S", waist: 3, seat: 90 } ] }, as: :json
+    assert_response :unprocessable_entity
+  end
+
   test "trousers without hips or inseam say what's missing" do
     post api_v1_fits_path, params: { garment: "trousers", unit: "in", measurements: MEASUREMENTS, sizes: [ { name: "34", waist: 88.9, seat: 107 } ] }, as: :json
 

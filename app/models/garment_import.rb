@@ -25,14 +25,16 @@ class GarmentImport
     [ "socks", /\bsocks?\b|underwear|boxers?|briefs\b/i ],
     [ "scarves and ties", /scarf|scarves|\bties?\b|gloves?/i ],
     [ "swimwear", /swim|bikini/i ],
-    [ "unitards", /unitard|catsuit|bodysuit/i ],
+    # (A bodysuit is a top that fastens below: it's worn tucked into the pants or skirt, see garment.)
+    [ "unitards", /unitard|catsuit/i ],
     [ "accessories", /accessor/i ]
   ].freeze
   # Dresses (a "dress shirt" or "dress pants" isn't one), drawn as a top cut long.
-  DRESSES = /\b(?:dress(?:es)?(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?)\b)|gowns?|maxi|midi|sundress|frock|kaftan|caftan)\b/i
+  # A shirt dress, sweater dress or slip dress named in one word ("Shirtdress") is one too.
+  DRESSES = /\b(?:dress(?:es)?(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?)\b)|(?:shirt|sweater|slip|tee|knit|tank|polo|wrap)dress(?:es)?|gowns?|maxi|midi|sundress|frock|kaftan|caftan)\b/i
   JACKETS = /jacket|blazer|suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket/i
   # T-shirts, shirts, polos, sweatshirts, hoodies and knitwear: worn on the body, under a jacket.
-  TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b/i
+  TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b|bodysuit|quarter[- ]?zip|half[- ]?zip|1\/4[- ]?zip/i
   # How a top looks, for drawing it: the first match in its name wins, then in its category, else a tee.
   # "T-shirt" is checked before "shirt", so a T-shirt is never drawn as a button-up.
   TOP_STYLES = [
@@ -48,7 +50,9 @@ class GarmentImport
     [ "shortshirt", /short[- ]?sleeve.*shirt|\bs\/s\b.*shirt|camp[- ]?(collar|shirt)|bowling shirt|aloha|hawaiian|resort shirt/i ],
     [ "shirt", /oxford|flannel|button[- ]?(down|up|front)|poplin|dress shirt|chambray/i ],
     [ "longsleeve", /long[- ]?sleeve|\bl\/s\b|henley/i ],
-    [ "shirt", /shirts?\b/i ]
+    [ "shirt", /shirts?\b/i ],
+    # A quarter zip that's none of these (not a "Quarter-Zip Shirt" or a knit one) is a sweatshirt with a zip.
+    [ "sweatshirt", /quarter[- ]?zip|half[- ]?zip|1\/4[- ]?zip/i ]
   ].freeze
   TROUSERS = /trouser|pants?\b|jeans?\b|chinos?\b|slacks|leggings?\b|\btights\b|joggers?\b|sweatpants?|track ?pants?|\bshorts?\b(?![- ]?sleeve)|skirts?\b|skort/i
   # Worn over tailoring and cut long; fitted with more room and no "right" length.
@@ -58,6 +62,9 @@ class GarmentImport
   # with a hood, unless it's knitwear (a sweater hoodie with a zip is a knit top, worn as a hoodie is).
   INSULATED = /\bdown\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell/i
   HOODED_OUTERWEAR = Regexp.union(INSULATED, /zip(?:per)? closure|two-way zip/i)
+  # A puffer (a down or padded jacket, coat or vest, quilted into baffles): drawn lofted, standing off the
+  # body, its baffles puffed. Not "button-down", nor a shell that's only "padded at the shoulders".
+  PUFFER = /puffer|nuptse|\bdown[- ](?:filled|fill|jacket|parka|coat|vest|insulat\w*)|(?:goose|duck) down|down (?:and|&) feather|fill[- ]power|quilted|baffle|\binsulated\b|\bpadded (?:jacket|coat|vest|parka)/i
   # Knitwear: a sweater, a cardigan, anything knitted. Drawn as a knit (ribbed, matte) whatever its fibre.
   KNITWEAR = /sweater|jumper|cardigan|\bknit(?:ted|wear)?\b|crochet|cable[- ]knit|rib[- ]?knit|merino|cashmere/i
   # A top made to sit close: a shrunken or baby fit, a fitted or slim cut. (Not "fitted cuffs" or a
@@ -98,7 +105,19 @@ class GarmentImport
     "tan" => "#a9845b", "camel" => "#b38a5c", "caramel" => "#a8743f", "beige" => "#c2ad8c", "khaki" => "#a99a72",
     "olive" => "#545b39", "green" => "#3e5240", "burgundy" => "#5c1e2a", "wine" => "#5c1e2a",
     "white" => "#e9e6df", "ivory" => "#e9e4d6", "cream" => "#e6dcc6",
-    "indigo" => "#2b3f66", "neutrals" => "#b9ad98", "stone" => "#b8b0a0", "red" => "#7a2a2a"
+    "indigo" => "#2b3f66", "neutrals" => "#b9ad98", "stone" => "#b8b0a0", "red" => "#7a2a2a",
+    # The rest of what shops call their colours (the photo's own colour replaces these once it's read; until
+    # then a "Yellow Moss" cardigan shouldn't show navy).
+    "yellow" => "#d8bf3a", "mustard" => "#c49a2c", "gold" => "#c8a14a", "lemon" => "#e6d86a", "orange" => "#d8722e",
+    "rust" => "#9a4a2a", "terracotta" => "#b0603e", "peach" => "#e8b296", "coral" => "#e07a64", "pink" => "#e3a3b4",
+    "rose" => "#c98b93", "blush" => "#e2b8b0", "fuchsia" => "#c2307a", "magenta" => "#b0306e", "purple" => "#5c3a7a",
+    "plum" => "#5a2e48", "lilac" => "#b9a2cf", "lavender" => "#b7a8d6", "violet" => "#6a4c9c", "mauve" => "#a5838f",
+    "maroon" => "#5a1c24", "sage" => "#a5ab8e", "moss" => "#7a7a3e", "mint" => "#b8dcc4", "lime" => "#a8c64a",
+    "forest" => "#2f4a35", "emerald" => "#2a6a4c", "teal" => "#2b6b6e", "turquoise" => "#3aa8a8", "aqua" => "#7ccdd0",
+    "sky" => "#9cc3e4", "cobalt" => "#2a4aa8", "royal" => "#2a44a0", "taupe" => "#8a7e72", "sand" => "#cdb894",
+    "oatmeal" => "#d8ccb4", "oat" => "#d8ccb4", "bone" => "#e3dccb", "ecru" => "#e2d9c2", "silver" => "#b8bcc2",
+    "chocolate" => "#4a2f22", "espresso" => "#3a2a22", "mocha" => "#6a4c3a", "cognac" => "#8a4a26", "slate" => "#5a6270",
+    "graphite" => "#45484e", "pewter" => "#7c7f84", "onyx" => "#1c1d20", "heather" => "#9a9ca1", "seal" => "#6e6a60"
   }.freeze
   DEFAULT_COLOR = "#2a3552"
 
@@ -747,7 +766,9 @@ class GarmentImport
     # Not the colour after the name: Willy Chavarria's "Track Jacket - Peacoat" is a jacket, not a pea coat.
     words = [ product[:name].to_s.sub(/\s+[-–]\s+[^-–]+\z/, ""), product[:category] ].join(" ")
     # The shop's own category and tags say first what something is: a sneaker is shoes, whatever its name says.
-    sorted = [ product[:category], *Array(product[:tags]).grep(/\A(?!mens\z|wmns\z|womens\z)/i) ].compact.join(" ")
+    # (Not a tag that's the product's own name, as Kith tags every product: "Tie-front Cardigan ... Vest" isn't a tie.)
+    tags = Array(product[:tags]).grep(/\A(?!mens\z|wmns\z|womens\z)/i).reject { it.to_s.include?(" - ") || it.to_s.casecmp?(product[:name].to_s) }
+    sorted = [ product[:category], *tags ].compact.join(" ")
     # The category alone first: Teatora's "Wallet Short", filed under Shorts, is shorts, not a wallet.
     not_fitted = NOT_FITTED.find { |_, pattern| product[:category].to_s.match?(pattern) }
     not_fitted ||= NOT_FITTED.find { |_, pattern| sorted.match?(pattern) || words.match?(pattern) && !words.match?(Regexp.union(DRESSES, TOPS, JACKETS, TROUSERS)) } unless product[:category].to_s.match?(Regexp.union(DRESSES, TOPS, JACKETS, TROUSERS))
@@ -765,6 +786,9 @@ class GarmentImport
     # A "maxi skirt" is a skirt, not a dress.
     return "top" if words.match?(DRESSES) && !words.match?(/skirts?\b|skort/i)
     return "coat" if words.match?(COATS) && !words.match?(NOT_COATS)
+    # A sweater vest (knitted, sleeveless) is worn over a shirt or a tee, as a jacket is, and drawn as a tank
+    # (see garment); a padded or down vest is outerwear.
+    return "jacket" if vest?(product)
     # A cardigan is worn open over a top, as a jacket is.
     return "jacket" if words.match?(/cardigan/i)
     # So is a knit that zips all the way down ("Crochet Cable Zip Track"), but not a half-zip pullover.
@@ -783,6 +807,8 @@ class GarmentImport
 
     raise Error.new("not_supported", "Fitroom can't try this on yet. It works with tops, dresses, jackets, coats and pants.")
   end
+
+  def vest?(product) = product.values_at(:name, :category).join(" ").match?(/\bvests?\b/i) && !product.values_at(:name, :description).join(" ").match?(INSULATED)
 
   def dress?(kind, product) = kind == "top" && top_style_of(product) == "dress" && !product.values_at(:name, :category).join(" ").match?(/skirts?\b|skort/i)
 
@@ -813,7 +839,7 @@ class GarmentImport
 
   def garment(product, chart, kind:, source_url:)
     chart = shoulder_sleeves(plausible(chart, kind), product) unless kind == "trousers"
-    style = kind == "top" ? top_style_of(product) : kind == "trousers" ? bottom_style_of(product) : nil
+    style = kind == "top" ? top_style_of(product) : kind == "trousers" ? bottom_style_of(product) : kind == "jacket" && vest?(product) ? "tank" : nil
     # Shorts' "inseam" past 40 cm is their whole length from the waist (Armani's charts): less the rise.
     if style == "shorts"
       sizes = chart.sizes.map { it["inseam"].to_f > 40 ? it.merge("inseam" => (it["inseam"] - (it["rise"] || (product[:women] ? 26 : 30))).round(1)) : it }
@@ -840,6 +866,9 @@ class GarmentImport
     # A top's cut, when its listing says it sits close or is made oversized (see top_cut); a jacket's, when
     # it's oversized or made to end at the waist (see jacket_cut).
     fit_cut = kind == "top" ? top_cut(product) : kind == "jacket" ? jacket_cut(product) : nil
+    # A bodysuit fastens below, so it's always worn tucked in, and it's cut to sit close and stretch on.
+    bodysuit = kind == "top" && product.values_at(:name, :category).join(" ").match?(/bodysuit/i)
+    fit_cut = { fit: "fitted", stretch: true } if bodysuit && fit_cut&.dig(:fit) != "fitted"
     {
       name: product[:name].presence || "Jacket",
       brand: product[:brand],
@@ -857,6 +886,8 @@ class GarmentImport
       **(skirt_cut ? { cut: skirt_cut } : fit_cut ? { cut: fit_cut } : {}),
       **(kind == "top" && product[:shape] && sleeves_sewn(product[:shape]) == :low ? { dropped: true } : {}),
       **(style == "hoodie" && zipped?(product) ? { zip: true } : {}),
+      **(bodysuit ? { bodysuit: true } : {}),
+      **(%w[jacket coat].include?(kind) && product.values_at(:name, :description).join(" ").match?(PUFFER) ? { puffer: true } : {}),
       chart: chart.as_json
     }
   end
@@ -1048,6 +1079,8 @@ class GarmentImport
       break found if found
     end
     style = "tee" unless style.is_a?(String)
+    # A henley the shop files under short-sleeve ones ("Short Sleeve Henleys") is a tee with buttons.
+    return "tee" if style == "longsleeve" && product[:category].to_s.match?(/short[- ]?sleeve/i) && !product[:name].to_s.match?(/long[- ]?sleeve|\bl\/s\b/i)
     # A "T-shirt" whose description says it has long sleeves is a long-sleeve one.
     style == "tee" && product[:description].to_s.match?(/long[- ]?sleeve/i) ? "longsleeve" : style
   end

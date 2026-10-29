@@ -8,6 +8,7 @@ class GarmentImport
   #   neckline  "straight", "scoop", "plunge", "round" or "high"
   #   length    "mini", "knee", "midi" or "maxi"
   #   fit       "fitted", "slim", "relaxed" or "flared"
+  #   hem_flare true when only the hem flares out ("flared hem", mermaid, trumpet): the body keeps its fit
   #   stretch   true when the cloth stretches (elastane, spandex, jersey), so it's made smaller than the body
   #   fabric    the cloth as the 3D view draws it: "stretch", "jersey", "leather", "silk" or "cotton"
   #   printed   true when the listing says the cloth is printed or patterned (only then is a print read off
@@ -44,6 +45,10 @@ class GarmentImport
       [ "relaxed", /relaxed|loose|shift dress|oversized|boxy|easy fit/i ],
       [ "slim", /slim/i ]
     ].freeze
+    # A flare only at the hem (the body keeps its fit down to it), or on the sleeves: neither makes the dress
+    # an A-line, so they're left out of reading its fit.
+    HEM_FLARE = /flared? hem|flare (?:at|from) the (?:hem|knee)|mermaid|trumpet|fishtail/i
+    SLEEVE_FLARE = /(?:flared?|bell|trumpet|wide) (?:sleeves?|cuffs?)/i
     STRETCH = /elastane|spandex|lycra|stretch|jersey|ribbed|rib[- ]knit|\bknit\b/i
     PRINTED = /print|pattern|floral|graphic|logo|stripe|check|plaid|gingham|polka|leopard|zebra|paisley|motif|parquet|camo|tie[- ]dye/i
     DETAILS = [
@@ -87,7 +92,8 @@ class GarmentImport
         neckline: first.(NECKLINES, words) || { "strapless" => "straight", "thin_straps" => "scoop", "straps" => "scoop",
                                                 "one_shoulder" => "straight" }.fetch(sleeves, "round"),
         length: first.(LENGTHS, name) || first.(LENGTHS, words) || "knee",
-        fit: first.(FITS, words) || (stretch ? "fitted" : "slim"),
+        fit: first.(FITS, words.gsub(HEM_FLARE, " ").gsub(SLEEVE_FLARE, " ")) || (stretch ? "fitted" : "slim"),
+        hem_flare: words.match?(HEM_FLARE),
         stretch:,
         fabric: fabric(words, stretch),
         printed: words.match?(PRINTED),
@@ -139,7 +145,7 @@ class GarmentImport
 
     # How much bigger (cm) than the body each fit is made, or for a stretch cloth how much of the body it is.
     EASE = {
-      "fitted" => [ 3, 3, 4 ], "slim" => [ 6, 6, 6 ], "relaxed" => [ 14, 16, 14 ], "flared" => [ 6, 6, 30 ]
+      "fitted" => [ 3, 3, 4 ], "slim" => [ 6, 6, 6 ], "relaxed" => [ 14, 16, 14 ], "flared" => [ 6, 6, 14 ]
     }.freeze
     STRETCH_SHARE = 0.95
     # Length from the shoulder's high point (or, strapless, from the top edge) at size M, cm.

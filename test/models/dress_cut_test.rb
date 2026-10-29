@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Five real listings (Kith's, October 2026): what each dress is, read from its name, category and description.
+# Six real listings (Kith's, October 2026): what each dress is, read from its name, category and description.
 class DressCutTest < ActiveSupport::TestCase
   LISTINGS = {
     desma: [ "Kith Women Desma Suiting Dress - Black", "Mini Dresses",
@@ -12,7 +12,9 @@ class DressCutTest < ActiveSupport::TestCase
     mireli: [ "SIR Mireli Slip Dress - Rose Parquet", "Mini Dresses",
               "Printed polyester blend Contrast trims Thin straps Plunging neck Open back Mini fit Material: 65% Polyester / 35% Silk" ],
     cyrielle: [ "GUIZIO Cyrielle Dress - Sweet Peach", "Mini Dresses",
-                "Lightweight chiffon polyester Sculpted one shoulder neckline Integrated high neck scarf Draped sash self-tie closure on hip Fitted silhouette Mini length" ]
+                "Lightweight chiffon polyester Sculpted one shoulder neckline Integrated high neck scarf Draped sash self-tie closure on hip Fitted silhouette Mini length" ],
+    zair: [ "Aya Muse Zair Layered Gown - Caramel", "Maxi Dresses",
+            "Lyocell blend Adjustable straps on the front Cutouts on the shoulder Raw sleeve cuffs Sweetheart neck Flared hem Maxi fit Material: 90% Lyocell / 10% Silk" ]
   }.freeze
 
   def cut(key)
@@ -27,6 +29,14 @@ class DressCutTest < ActiveSupport::TestCase
     assert_equal [ "thin_straps", "plunge", "silk", true ], cut(:mireli).values_at(:sleeves, :neckline, :fabric, :printed)
     assert_equal [ "one_shoulder", "silk", false ], cut(:cyrielle).values_at(:sleeves, :fabric, :printed)
     assert_includes cut(:cyrielle)[:details], "tie"
+  end
+
+  test "a flared hem doesn't make a gown an A-line: it keeps its fit over the hips and flares only at the hem" do
+    zair = cut(:zair)
+    assert_equal [ "long", "maxi", "slim", true ], zair.values_at(:sleeves, :length, :fit, :hem_flare)
+    m = GarmentImport::DressCut.usual_sizes(zair, %w[XS S M L]).sizes.find { it["name"] == "M" }
+    assert_in_delta 106, m["hips"], 1, "the hips eased as a slim fit's, not a flared one's"
+    refute cut(:desma)[:hem_flare]
   end
 
   test "women's sizes by letter and by US number, at the dress's length" do
