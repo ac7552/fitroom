@@ -1,7 +1,7 @@
-// Audits the 37 outfit scenarios (docs/outfits.json) in the running app, on the Mac:
+// Audits the outfit scenarios (docs/outfits.json: 67 of them) in the running app, on the Mac:
 //
 //   bin/dev                                   # the app, on http://localhost:3000
-//   node script/spike/audit.mjs [--outfits 1-37] [--body men|women|both] [--out tmp/audit] [--base http://localhost:3000] [--resume]
+//   node script/spike/audit.mjs [--outfits 1-67] [--body men|women|both] [--out tmp/audit] [--base http://localhost:3000] [--resume]
 //
 // For each outfit, on each mannequin (the example bodies): the outfit is cleared, each piece is added from
 // its Kith link in order, and once the cloth is still the figure is photographed from the front and from
@@ -12,7 +12,7 @@
 //
 // Resilient: a piece that fails never stops the run, a page that crashes is reopened, imports are 2 s
 // apart (Kith rate-limits) and retried once on a network-looking error, and --resume skips outfits whose
-// front.png and json are already there. About a minute a piece, so ~2 h for everything.
+// front.png and json are already there. About a minute a piece, so ~2 h for the first 37.
 //
 // Needs Playwright (`npm i -g playwright`); it drives the Chrome already installed. Nothing of a person is
 // involved: the mannequins wear the example numbers.
@@ -30,7 +30,7 @@ const POLL = 500
 const BETWEEN_IMPORTS = 2000
 const RETRY_WAIT = 5000
 const NETWORK_ERROR = /can't reach|took too long|failed to fetch|network|rate|429|too many|timed? ?out|didn't answer|try again/i
-const USAGE = "Usage: node script/spike/audit.mjs [--outfits 1-37] [--body men|women|both] [--out tmp/audit] [--base http://localhost:3000] [--resume]"
+const USAGE = "Usage: node script/spike/audit.mjs [--outfits 1-67] [--body men|women|both] [--out tmp/audit] [--base http://localhost:3000] [--resume]"
 const OUTFITS_FILE = process.env.AUDIT_OUTFITS_FILE ?? fileURLToPath(new URL("../../docs/outfits.json", import.meta.url))   // the env for a quick test page
 
 function loadPlaywright() {
@@ -392,7 +392,8 @@ async function makeSheet(sheetPage, out, result, sheetFile) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const fail = message => { console.error(message); process.exit(1) }
   let options
-  try { options = parseAuditArgs(process.argv.slice(2)) } catch (error) { fail(`${error.message}\n${USAGE}`) }
+  const count = JSON.parse(fs.readFileSync(OUTFITS_FILE, "utf8")).outfits.length
+  try { options = parseAuditArgs(process.argv.slice(2), count) } catch (error) { fail(`${error.message}\n${USAGE}`) }
   try {
     await audit(options)
   } catch (error) {

@@ -206,12 +206,18 @@ test("the index links every sheet with its flag count, and the summary table lin
   assert.deepEqual(summaryLines({}), ["#   outfit body   items flags"])
 })
 
-test("docs/outfits.json has 37 outfits with pieces for both mannequins", () => {
+test("docs/outfits.json: the first 37 outfits for both mannequins, then 30 more for one or both", () => {
   const { outfits } = JSON.parse(fs.readFileSync(new URL("../../docs/outfits.json", import.meta.url), "utf8"))
-  assert.equal(outfits.length, 37)
-  for (const outfit of outfits) {
-    assert.ok(outfit.name)
-    assert.ok(outfit.men.length >= 1 && outfit.women.length >= 1, outfit.name)
-    for (const handle of [...outfit.men, ...outfit.women]) assert.match(handle, /^[a-z0-9][a-z0-9_-]*$/, handle)
-  }
+  assert.equal(outfits.length, 67)
+  const names = new Set()
+  outfits.forEach((outfit, i) => {
+    assert.ok(outfit.name && !names.has(outfit.name), outfit.name)
+    names.add(outfit.name)
+    if (i < 37) assert.ok(outfit.men.length >= 1 && outfit.women.length >= 1, outfit.name)
+    else assert.ok((outfit.men?.length ?? 0) + (outfit.women?.length ?? 0) >= 1, outfit.name)
+    for (const handle of [...(outfit.men ?? []), ...(outfit.women ?? [])]) assert.match(handle, /^[a-z0-9][a-z0-9_-]*$/, handle)
+  })
+  // Most of the new ones are for the woman.
+  const women = outfits.slice(37).filter(o => o.women?.length).length, men = outfits.slice(37).filter(o => o.men?.length).length
+  assert.ok(women > men, `${women} for the woman, ${men} for the man`)
 })
