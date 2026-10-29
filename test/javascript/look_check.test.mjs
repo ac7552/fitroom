@@ -117,3 +117,14 @@ test("a wide print's middle across may sit further out on a worn front; a chest 
   const chest = { ...wide, box: { left: 0.4, right: 0.6, top: 0.2, bottom: 0.35, cx: 0.5, cy: 0.27, shape: 1.3 } }
   assert.equal(compareLooks(chest, { ...chest, box: { ...chest.box, left: 0.51, right: 0.71, cx: 0.61 } }).checks.place.pass, false)
 })
+
+test("an unprinted dress is held to its colour and likeness only: its photo's shine and ties aren't a graphic it lacks", () => {
+  const shiny = { color: "#17181b", coverage: 0.04, allOver: false, box: { left: 0.3, right: 0.6, top: 0.1, bottom: 0.3 } }
+  const plain = { color: "#1b1c20", coverage: 0, allOver: false, box: null }
+  assert.ok(compareLooks(shiny, plain).failed.includes("place"))
+  const unprinted = compareLooks(shiny, plain, { unprinted: true, likeness: 0.5 })
+  assert.equal(unprinted.ok, true, JSON.stringify(unprinted))
+  assert.deepEqual(Object.keys(unprinted.checks).sort(), ["colour", "likeness"])
+  assert.deepEqual(compareLooks(shiny, { ...plain, color: "#c8b48a" }, { unprinted: true }).failed, ["colour"])
+  assert.deepEqual(compareLooks(shiny, plain, { unprinted: true, likeness: 0.2 }).failed, ["likeness"])
+})

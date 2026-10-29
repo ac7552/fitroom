@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import { bodyFrame, SkinField } from "lib/garments/body"
 import { STYLES, draftTop } from "lib/garments/pattern"
-import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms } from "lib/garments/pants"
+import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms, riseFor } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
 import { bottomsPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
@@ -108,14 +108,20 @@ function nearHand(frame, p, at) {
   for (const side of ["L", "R"]) {
     const arm = frame.arms[side]
     const { t, distance } = arm.locate([p[at], p[at + 1], p[at + 2]])
-    if (t > (arm.lengths[1] + arm.lengths[2]) / 2 && distance < HAND_CLEAR) return true
+    if (t > arm.lengths[1] * ELBOW_UP && distance < HAND_CLEAR) return true
   }
   return false
 }
 const HAND_CLEAR = 0.07
+// From a little above the elbow: an arm hanging at the side lies against the clothes under a jacket from
+// there down (the elbow at the waist, the forearm by the hip), and held off them the jacket's sleeve is
+// pushed up the arm as the arms come down into the pose, and bunches its hem at that side.
+const ELBOW_UP = 0.75
 const HAND_HEEL = 0.06   // m past the wrist: the heel of the hand, which a cuff can rest on
 
-export function collisionBody(body, frame, egg, bodyCount = body.positions.length / 3, { arms = true } = {}) {
+// bottoms: which of the worn-under points are pants or a skirt (null: all of them), the layers field's.
+// sleeves: which are a top's sleeves (null: none), left out.
+export function collisionBody(body, frame, egg, bodyCount = body.positions.length / 3, { arms = true, bottoms = null, sleeves = null } = {}) {
   const n = body.positions.length / 3
   const keep = new Uint8Array(n), worn = new Uint8Array(n)
   const knee = frame.floor + 0.1
@@ -123,9 +129,14 @@ export function collisionBody(body, frame, egg, bodyCount = body.positions.lengt
     const p = body.positions
     if (p[3 * i + 1] < knee) continue
     if (i >= bodyCount) {
-      worn[i] = 1
-      // What's worn under (pants): not right by the hands, where a sleeve's cuff hangs beside the thigh; the
-      // pants there would push the cuff off the wrist. A sleeve may lie against them a little instead.
+      worn[i] = !bottoms || bottoms[i] ? 1 : 0
+      // A top's sleeves under a jacket's: the jacket's lie on the arm as if they weren't there (the top's are
+      // hidden under them, see coveredPoints). Collided with, they make pockets at the armpits that catch the
+      // jacket's sleeves as the arms come down, and fold them across the chest.
+      if (sleeves?.[i]) continue
+      // What's worn under: not right by the arms from the elbow down, where a sleeve hangs beside the waist
+      // and thigh; the clothes there would push it up the arm and the cuff off the wrist (see ELBOW_UP). A
+      // sleeve may lie against them a little instead.
       if (arms && nearHand(frame, p, 3 * i)) continue
       keep[i] = 1
       continue
@@ -144,7 +155,9 @@ export function collisionBody(body, frame, egg, bodyCount = body.positions.lengt
   // above leaves the pants out beside the hands (for the sleeves' cuffs), and in it the nearer surface wins,
   // so a sweatshirt's sides that slip in between the pants and the hips there read as just outside the skin
   // and stay, the pants showing through. Alone, the pants' field has them inside the pants, and the drape
-  // puts the garment's body (not its sleeves) back over them (see Drape#collide).
+  // puts the garment's body (not its sleeves) back over them (see Drape#collide). Only pants and skirts: a
+  // top's own field (a hoodie's, under a jacket) is no solid, its hood a pocket and its sleeves tubes, and in
+  // it a jacket's points read as inside and are thrown about.
   if (worn.some(Boolean)) field.layers = new SkinField(body.positions, body.normals, body.index, { keep: worn, strict: true })
   return field
 }
@@ -217,7 +230,8 @@ export const TUCKABLE = ["tee", "longsleeve", "polo", "shirt", "shortshirt"]
 // The wearer as pants are drafted for them: their measurements, the body's, and from the crotch up to the
 // natural waist (about at the navel).
 function bottomWearer(measures, frame) {
-  return { ...measures, ...frame.measures, rise: (frame.hps[1] - (measures.height ?? 175) * 0.00235 - frame.crotch) * 100 }
+  const rise = (frame.hps[1] - (measures.height ?? 175) * 0.00235 - frame.crotch) * 100
+  return { ...measures, ...frame.measures, rise, riseFor: frame.torso ? round => riseFor(frame, rise, round) : null }
 }
 
 // Where pants or a skirt sit on this body (heights in m): their waistband's seam and its top at the sides,
@@ -302,6 +316,7 @@ function freeDistance(outer, b) {
   return out
 }
 
+const SLEEVE_TOP = 16   // cm down a sleeve from the top of its cap
 export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {}) {
   const field = outer.drape.field
   const a = inner.geometry.attributes.position.array
@@ -331,11 +346,14 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
   for (let i = 0; i < na; i++) {
     const x = a[3 * i], y = a[3 * i + 1], z = a[3 * i + 2]
     const part = partOf(inner.cloth, i)
+    // The top of a sleeve under a jacket's is under the jacket's shoulder too (the jacket's sleeves lie on
+    // the arm as if it weren't there, see collisionBody, so its cap can show through the shoulder).
+    const cap = (part === 1 || part === 2) && inner.cloth.points?.[i]?.[1] > -SLEEVE_TOP
     const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell)
     let nearest = Infinity, near = -1
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
       for (const j of grid.get(key(cx + dx, cy + dy, cz + dz)) ?? []) {
-        if (outerPart[j] !== part) continue
+        if (outerPart[j] !== part && !(cap && outerPart[j] === 0)) continue
         const d = (b[3 * j] - x) ** 2 + (b[3 * j + 1] - y) ** 2 + (b[3 * j + 2] - z) ** 2
         if (d < nearest) { nearest = d; near = j }
       }
@@ -375,8 +393,9 @@ export function sewingFor({ item, body, frame, field, measures }) {
     const band = waistband(item.tuck, frame, measures)
     size = { ...size, length: Math.min(size.length ?? Infinity, (frame.hps[1] - band.seam) * 100 + TUCK_DEPTH) }
     // Up to just over the waistband's top, so the cloth comes out of it there; higher at the back, as the
-    // back of the pants rises over the seat.
-    tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM }
+    // back of the pants rises over the seat. (Not a stretch top, a bodysuit: it already lies on the body,
+    // with nothing to gather, and pressed in further it slides down off the shoulders. It's only cut short.)
+    if (!item.cut?.stretch) tuck = { table: frame.torso, top: band.top + 0.003, raise: band.raise, inside: TUCK_ROOM }
   }
   // A top that zips down the front (a zip hoodie) is drafted with that closure, so the zip is drawn on it.
   const cut = item.zip && !bottoms ? { ...(item.cut ?? {}), closure: "zip" } : item.cut ?? null
@@ -413,9 +432,10 @@ export function sewingFor({ item, body, frame, field, measures }) {
   const long = pattern.style === "dress" || pattern.measures.length > 85
   // Pants are sewn without gravity (nothing holds them up until they're closed), then fall straight under
   // a heavier pull for a moment (a stretch knit or a rib cuff would be stretched by it, and spring back
-  // crumpled); a skirt, held at its waistband, is sewn hanging, so it falls straight.
+  // crumpled); a skirt is laid on with its sides together, so it's closed as it's placed (see phases' weld),
+  // eases a moment and hangs from its waistband.
   const skirt = bottoms && item.style === "skirt"
-  const phases = skirt ? { settleFrames: 280, calmFrames: 60, sewGravity: 0.4, relaxFrames: 12 }
+  const phases = skirt ? { settleFrames: 280, calmFrames: 60, relaxFrames: 12, weld: true }
     : bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: drape.snug ? 0 : 60 }
     : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 }
   const steps = drape.phases(phases)
@@ -538,13 +558,15 @@ export class DrapedTop {
 
   makeMaterials(renderer) {
     const { item, pattern } = this
-    const surface = this.bottoms ? bottomSurface(item.style, item.fabric) : surfaceFor(item.style, item.fabric)
+    const surface = this.bottoms ? bottomSurface(item.style, item.fabric) : item.puffer ? "puffer" : surfaceFor(item.style, item.fabric)
     const knit = ["jersey", "fleece", "rib"].includes(surface)
     const details = {
       stitch: knit ? "hem" : "topstitch", closure: pattern.closure, pocket: item.style === "hoodie" ? "kangaroo" : null,
       neckDepth: pattern.measures.frontNeck, length: pattern.measures.length,
       // Semi-sheer cloth shows more of its colour than sheer.
-      sheer: item.cut?.sheer ? (item.cut.sheer_kind === "semi" ? 0.78 : 0.5) : 1
+      sheer: item.cut?.sheer ? (item.cut.sheer_kind === "semi" ? 0.78 : 0.5) : 1,
+      // A puffer's quilted baffles (see fabric.js's QUILT).
+      quilt: Boolean(item.puffer)
     }
     return {
       main: clothMaterial({ color: item.color, cloth: surface, details, renderer }),
@@ -926,7 +948,18 @@ function hemisphere(count) {
 export function prepareBody(body, egg, over = [], { arms = true } = {}) {
   const frame = bodyFrame(body)
   if (egg) frame.head = { centre: egg.centre, rx: egg.radii[0], rz: egg.radii[2], top: egg.centre[1] + egg.radii[1] }
-  const field = collisionBody(merge(body, over), frame, egg, body.positions.length / 3, { arms })
+  const merged = merge(body, over)
+  // Which merged points are pants or a skirt worn under (clothSnapshot marks them).
+  const bottoms = new Uint8Array(merged.positions.length / 3)
+  let at = body.positions.length / 3
+  const sleeves = new Uint8Array(merged.positions.length / 3)
+  for (const o of over) {
+    const n = o.positions.length / 3
+    if (o.bottoms) bottoms.fill(1, at, at + n)
+    if (o.sleeves) sleeves.set(o.sleeves, at)
+    at += n
+  }
+  const field = collisionBody(merged, frame, egg, body.positions.length / 3, { arms, bottoms, sleeves })
   return { frame, field }
 }
 

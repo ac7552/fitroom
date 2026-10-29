@@ -80,3 +80,21 @@ test("a sleeve is never cut narrower than the arm it goes on, at the underarm or
   const plain = draftTop("hoodie", size, { chest: 91.5, waist: 74, shoulders: 39.5, arm: 58, height: 165 }).measures
   assert.ok(plain.bicep > 0 && plain.opening > 0)
 })
+
+test("a skirt sits where the body is as round as its waist, so it's laid on at its own size", async () => {
+  const { riseFor } = await import("lib/garments/pants")
+  // A body round in section: 100 cm round 8 cm above the crotch (the seat), narrowing to 68 cm 26 cm up (the
+  // natural waist), and wider again above.
+  const crotch = 0.8
+  const girth = cm => cm <= 8 ? 92 + cm : cm <= 26 ? 100 - (32 * (cm - 8)) / 18 : 68 + (cm - 26) * 2
+  const frame = { crotch, torso: { envelope: y => girth((y - crotch + 0.015) * 100) / 100 / (2 * Math.PI) } }
+  const at = waist => riseFor(frame, 21, waist)
+  // Where the body is 74 cm round, less the few millimetres it's laid off it.
+  const rise = at(74)
+  assert.ok(Math.abs(girth(rise) + 1.9 - 74) < 1.2, `a 74 cm waist sits at ${rise} cm, where the body is ${girth(rise).toFixed(1)} cm`)
+  assert.ok(at(70) > rise, "a smaller waist sits higher")
+  assert.equal(at(110), 8, "a waist bigger than the seat sits at the seat")
+  assert.ok(Math.abs(at(60) - 26) <= 0.5, "one smaller than the natural waist sits at it")
+  const skirt = draftBottoms("skirt", { waist: 74, seat: 104 }, { waist: 68, hips: 100, height: 165, rise: 21, riseFor: round => riseFor(frame, 21, round) }, { fit: "slim" })
+  assert.equal(skirt.measures.rise, rise, "the skirt is drafted from there")
+})

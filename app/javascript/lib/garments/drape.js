@@ -22,6 +22,8 @@ export const CLOTHS = {
   leather: { stretch: 1e-8, bend: 1.2e-5, drag: 1.7, thickness: 0.005 },
   silk: { stretch: 3e-8, bend: 5e-4, drag: 1.0, thickness: 0.0025 }
 }
+// (A puffer drapes as the nylon shell it's made of: drawn lofted, with its baffles puffed (fabric.js's QUILT).
+// Draped thicker or stiffer, it stands off the arms and its sleeves slip off them, or it slides off.)
 
 // Hems (and the rims of bands and hoods) are turned up and stitched: two layers, so that strip is heavier
 // and much stiffer to bend, which keeps it hanging in a smooth line.
@@ -35,6 +37,11 @@ const HAND_REACH = 0.12        // m: cloth further from the arm's line than this
 const SUBSTEPS = 10
 const GRAVITY = -9.81
 const MAX_SEW_STEP = 0.0025   // metres a seam closes in one small step, at most
+// Cloth hardly stretches, but it gives way when pushed together: it folds. As stiff squeezed as stretched,
+// cloth left a little short anywhere (laid round a body's curves, it can't be its own size everywhere) has
+// nowhere to go but out of its surface, and where it hangs free (a skirt below the knees) that runs away
+// a little more every small step, until the hem is flung up and lands crumpled.
+export const SQUEEZE = 300
 
 export class Drape {
   // cloth: from cloth.js; start: Float32Array placed positions (place.js); body: { positions, normals, index }
@@ -239,7 +246,7 @@ export class Drape {
         p[3 * i + 2] = x[3 * i + 2] + v[3 * i + 2] * h
       }
       if (sew) this.pullSeams()
-      solveDistances(p, w, this.edges, this.rest, stretch, ribStretch, this.edgeRib)
+      solveDistances(p, w, this.edges, this.rest, stretch, ribStretch, this.edgeRib, SQUEEZE)
       solveDistances(p, w, this.bends, this.bendRest, bend, bend * HEM_BEND, this.bendHem)
       if (this.sewn && s % 2 === 1) this.selfCollide()
       this.collide()
@@ -631,8 +638,9 @@ export class Drape {
 }
 
 // One pass over distance constraints (XPBD, one iteration per small step). compliance: already divided by
-// the step squared; rib: per constraint, use ribCompliance instead.
-function solveDistances(p, w, pairs, rest, compliance, ribCompliance, rib) {
+// the step squared; rib: per constraint, use ribCompliance instead; squeeze: how many times softer a
+// constraint is when it's shorter than its rest (1: as stiff).
+function solveDistances(p, w, pairs, rest, compliance, ribCompliance, rib, squeeze = 1) {
   const count = rest.length
   for (let e = 0; e < count; e++) {
     const a = 3 * pairs[2 * e], b = 3 * pairs[2 * e + 1]
@@ -640,7 +648,7 @@ function solveDistances(p, w, pairs, rest, compliance, ribCompliance, rib) {
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz)
     if (d < 1e-9) continue
     const wa = w[pairs[2 * e]], wb = w[pairs[2 * e + 1]]
-    const alpha = rib && rib[e] ? ribCompliance : compliance
+    const alpha = (rib && rib[e] ? ribCompliance : compliance) * (d < rest[e] ? squeeze : 1)
     const lambda = -(d - rest[e]) / (wa + wb + alpha)
     const sx = (dx / d) * lambda, sy = (dy / d) * lambda, sz = (dz / d) * lambda
     p[a] += sx * wa; p[a + 1] += sy * wa; p[a + 2] += sz * wa
@@ -667,8 +675,15 @@ export function drapeGarment(cloth, start, body, options = {}, onFrame = null) {
 // none, the cloth draws up as it's pulled together, and a skirt rides up the legs and crumples coming down).
 // heavyFrames: settled first under three times gravity, so pants' legs, crumpled as their seams are pulled
 // together, fall straight before they settle (under plain gravity, a wide leg stays crumpled).
-Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmFrames = 50, sewGravity = false, relaxFrames = 0, heavyFrames = 0 } = {}) {
+// weld: the seams are closed as placed, before anything moves (a skirt is laid on with its sides already
+// together: sewn a little at a time, the sides spring apart over the hips as the cloth eases, and pulling
+// them back together flings the hem up into a crumple).
+Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmFrames = 50, sewGravity = false, relaxFrames = 0, heavyFrames = 0, weld = false } = {}) {
   let f = 0
+  if (weld) {
+    this.releaseBands()
+    this.closeSeams()
+  }
   for (let k = 0; k < relaxFrames; k++, f++) {
     this.step({ gravity: 0, sew: false, still: true })
     yield "sewing"
@@ -685,13 +700,15 @@ Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmF
       if (gap < best - 0.0005) { best = gap; since = k } else if (gap < 0.012 && k - since >= 12) return
     }
   }
-  if (this.attach) {
+  if (!this.sewn) {
+    if (this.attach) {
+      yield* sew(this, sewFrames)
+      this.releaseBands()
+    }
     yield* sew(this, sewFrames)
-    this.releaseBands()
+    this.closeSeams()
   }
-  yield* sew(this, sewFrames)
   this.sewFramesUsed = f
-  this.closeSeams()
   const drag = this.params.drag
   for (let k = 0; k < heavyFrames; k++) {
     this.step({ gravity: 3, sew: false })

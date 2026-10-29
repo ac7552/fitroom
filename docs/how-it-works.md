@@ -89,7 +89,12 @@ browser, in `app/javascript/lib/garments/`:
   field of its skin for collisions); `place.js` lays the pieces round it, sleeves round the arms.
 - `drape.js` sews and settles the cloth with position-based dynamics: seams pull together with gravity
   off (bands held on their edges until the body is sewn), then it hangs for a couple of seconds. Hems are
-  heavier and stiffer, as turned-up hems are. It runs a few milliseconds per frame, so you see it settle.
+  heavier and stiffer, as turned-up hems are. The cloth hardly stretches but gives way when it's pushed
+  together, and folds, as cloth does: pushed back as hard as it's pulled, cloth left a little short
+  anywhere would shake itself into a crumple where it hangs free (a long skirt or dress below the knees).
+  A skirt is laid round the body with its sides already together, so it's closed as it's placed and only
+  eases and hangs; it sits where the body is as round as its waist, each row spread round the body by
+  distance, so it starts at its own size. It runs a few milliseconds per frame, so you see it settle.
 - `dress.js` turns it into the garment on screen, follows the poses by skinning it to the mannequin and
   settling it again, shades its folds, and paints its fit map by part.
 - `fabric.js` draws the cloth: knit, rib, fleece, twill or nylon at real scale, with seams, hem stitching,

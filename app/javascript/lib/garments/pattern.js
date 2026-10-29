@@ -356,8 +356,11 @@ function dressStyle(style, cut) {
 }
 
 // Where the skirt goes in to the waist and out over the hips, and how wide its hem is, by its fit: fitted
-// (a pencil skirt), slim, relaxed or flared.
+// (a pencil skirt), slim, relaxed or flared. A dress whose only flare is at its hem (cut.hem_flare: a
+// "flared hem", a mermaid or trumpet gown) keeps its fit over the hips and widens below them to at least
+// HEM_ONLY_FLARE.
 const HEM_FLARE = { fitted: 0.98, slim: 1.05, relaxed: 1.15, flared: 1.5 }
+const HEM_ONLY_FLARE = 1.3
 function shapeSkirt(m, size, body, cut) {
   const fit = cut?.fit ?? "slim"
   const roomy = fit === "relaxed" || fit === "flared"
@@ -367,7 +370,8 @@ function shapeSkirt(m, size, body, cut) {
     hips: size.hips ?? (cut?.stretch ? (body.hips ?? body.chest) * 0.97 : (body.hips ?? body.chest) + 6),
     hipAt: body.height * 0.335
   }
-  m.hem = Math.max(m.shaped.hips, m.chest * 0.9) * (HEM_FLARE[fit] ?? 1.05)
+  const flare = HEM_FLARE[fit] ?? 1.05
+  m.hem = Math.max(m.shaped.hips, m.chest * 0.9) * (cut?.hem_flare ? Math.max(flare, HEM_ONLY_FLARE) : flare)
   // A shaped side can't come in to a waist wider than the chest.
   m.shaped.waist = Math.min(m.shaped.waist, m.chest)
 }

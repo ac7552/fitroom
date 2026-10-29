@@ -8,7 +8,8 @@
 // --scene dark|daylight|studio, --pose standing|relaxed|walking|arms_out, --view mannequin|ghost|fit,
 // --tucked, --turn RADIANS (camera round the figure), --width/--height (picture), --script FILE (a JS module
 // run in the page after the drape, with window.stage), --photo (use stage.photo, sharper, rather than a
-// screenshot), --also-back (a second picture from behind, "-back.png").
+// screenshot), --also-side (a second picture from the wearer's left, "-side.png"), --also-back (another from
+// behind, "-back.png").
 import { createRequire } from "node:module"
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE ?? "playwright")
 import fs from "node:fs"
@@ -67,6 +68,10 @@ const result = await page.evaluate(async ({ items, body, measures, scene, pose, 
   if (script) extra = await (await import(script)).default?.(stage)
   // Settle accessories (belt, collars, hidden skin) and stop the frame loop, so a screenshot isn't waiting on
   // a busy software renderer.
+  // (And put on screen what's waiting to be, as the next frame would: a tucked top goes on once the pants it's
+  // tucked into are; and finish the clothes' fade in: caught part way, a garment can be all but invisible.)
+  for (let i = 0; i < 2; i++) stage.advanceDrape()
+  stage.finishFades?.()
   for (let i = 0; i < 3; i++) { stage.wearBelt?.(); stage.wearScarf?.(); stage.wearCollars?.(); stage.hideCovered?.(); stage.draw() }
   stage.visible = false
   if (stage.frameId) { cancelAnimationFrame(stage.frameId); stage.frameId = null }
@@ -91,6 +96,18 @@ async function snap(file) {
   console.log("wrote", file)
 }
 await snap(out)
+// --also-side: the same drape from the wearer's left too (a skirt's or dress's fall shows best side on).
+if (args["also-side"]) {
+  const turnBy = a => page.evaluate(by => {
+    const stage = window.stage, t = stage.controls.target, p = stage.camera.position
+    const d = Math.hypot(p.x - t.x, p.z - t.z), a = Math.atan2(p.x - t.x, p.z - t.z) + by
+    p.set(t.x + Math.sin(a) * d, p.y, t.z + Math.cos(a) * d)
+    stage.controls.update()
+  }, a)
+  await turnBy(Math.PI / 2)
+  await snap(out.replace(/\.png$/, "-side.png"))
+  await turnBy(-Math.PI / 2)
+}
 if (args["also-back"]) {
   await page.evaluate(() => {
     const stage = window.stage, t = stage.controls.target, p = stage.camera.position

@@ -24,6 +24,9 @@ export const BOTTOM_STYLES = {
 // How wide a skirt's hem is, over its hips, by its fit: a pencil skirt (fitted), slim, relaxed, an A-line
 // (flared), or pleated (very full).
 const SKIRT_HEM = { fitted: 0.92, slim: 1.02, relaxed: 1.15, flared: 1.45, pleated: 1.8 }
+// A skirt's length from its waistband (cm) by the length its listing names, when its chart gives none (as
+// GarmentImport::SKIRT_LENGTHS guesses for a skirt with no chart).
+const SKIRT_LENGTHS = { mini: 40, knee: 56, midi: 74, maxi: 96 }
 
 // The front takes a little less of each round than the back (the seat is behind).
 const FRONT = 0.47
@@ -109,6 +112,42 @@ export function bottomMeasures(styleName, size, body, cut = null) {
   }
 }
 
+// How high above the crotch (cm) a waist `round` cm round sits on this body (bodyFrame's: its crotch and
+// torso outline; natural, the tape's rise to the natural waist, cm): going up from the seat's widest
+// towards the natural waist, the first height where the body's convex outline (with the few millimetres the
+// cloth starts off it) is no bigger. Sat by the tape measure alone, a skirt's waist can land where the body
+// is several centimetres bigger than it: laid on there it starts stretched, its side seams spring apart as
+// it eases, and closing them flings the hem up into a crumple. A waist bigger than the seat sits at the seat;
+// one smaller than the natural waist, at it.
+const LAID_OFF = 2 * Math.PI * 0.3   // cm: what the 3 mm the cloth is laid off the body adds round it
+const girthCache = new WeakMap()
+export function riseFor(frame, natural, round) {
+  if (!girthCache.has(frame)) girthCache.set(frame, new Map())
+  const cache = girthCache.get(frame)
+  const girth = cm => {
+    if (!cache.has(cm)) {
+      const y = frame.crotch - 0.015 + cm / 100   // (as place.js measures a bottom's rows up)
+      let sum = 0, last = null, first = null
+      for (let k = 0; k < 48; k++) {
+        const a = (k / 48) * 2 * Math.PI, r = frame.torso.envelope(y, a), q = [r * Math.sin(a), r * Math.cos(a)]
+        if (last) sum += Math.hypot(q[0] - last[0], q[1] - last[1]); else first = q
+        last = q
+      }
+      cache.set(cm, (sum + Math.hypot(first[0] - last[0], first[1] - last[1])) * 100 + LAID_OFF)
+    }
+    return cache.get(cm)
+  }
+  // The seat (the widest), and the natural waist: the narrowest above it, up to a little over where the
+  // tape puts it.
+  const reach = Math.max(10, Math.round(natural * 2) / 2) + 8
+  let seat = 0
+  for (let cm = 0; cm <= reach; cm += 0.5) if (girth(cm) > girth(seat)) seat = cm
+  let top = seat
+  for (let cm = seat; cm <= reach; cm += 0.5) if (girth(cm) < girth(top)) top = cm
+  for (let cm = seat; cm <= top; cm += 0.5) if (girth(cm) <= round) return cm
+  return top
+}
+
 // A skirt: a front and a back, each half its round, joined at the sides, with a waistband. It sits where the
 // body is as round as its waist (as pants do) and hangs to its length from there. cut: { fit, stretch }
 // (see GarmentImport::DressCut). The pieces are placed like pants' (place.js), round the hips and down
@@ -118,11 +157,13 @@ function draftSkirt(size, body, cut) {
   const hipsBody = body.hips ?? body.waist + 14
   const waist = size.waist ?? body.waist + 2
   const hips = Math.max(size.seat ?? (cut?.stretch ? hipsBody * 0.97 : hipsBody + 6), waist + 4)
-  const length = size.length ?? size.inseam ?? 55
+  const length = size.length ?? size.inseam ?? SKIRT_LENGTHS[cut?.length] ?? 55
   const hem = hips * (SKIRT_HEM[cut?.fit] ?? SKIRT_HEM.slim)
   const naturalRise = body.rise ?? body.height * 0.135
   const sitAt = waist <= body.waist ? 1 : waist >= hipsBody ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hipsBody - body.waist)
-  const top = naturalRise * sitAt - style.band.height / 2   // from the crotch up to the waistband's seam
+  // From the crotch up to the waistband's seam: where the body is as round as the waist, when the wearer's
+  // shape is known (riseFor, above), so the skirt's top starts at its own size; or by the tape.
+  const top = body.riseFor?.(waist) ?? naturalRise * sitAt - style.band.height / 2
   const m = { waist, seat: hips, hips, hem, length, rise: top, seatAt: Math.min(top * 0.62, 18), inseam: Math.max(0, length - top), band: style.band.height, cuff: 0, skirt: true }
   const piece = () => {
     const hw = waist / 4, hh = hips / 4, he = hem / 4

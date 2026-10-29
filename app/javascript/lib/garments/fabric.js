@@ -40,8 +40,14 @@ const CLOTHS = {
   // Silk, satin, chiffon: smooth, with a strong soft sheen along the folds.
   silk: { surface: "smooth", tile: 0.05, roughness: 0.4, sheen: 1, sheenRoughness: 0.3, normal: 0.06 },
   // Stretch (nylon and elastane): a very fine knit, a little sheen.
-  stretch: { surface: "fine", tile: 0.012, roughness: 0.68, sheen: 0.35, sheenRoughness: 0.45, normal: 0.12 }
+  stretch: { surface: "fine", tile: 0.012, roughness: 0.68, sheen: 0.35, sheenRoughness: 0.45, normal: 0.12 },
+  // A puffer's nylon shell: smooth, with a soft gloss on each baffle (the quilting itself is drawn by the
+  // shader, see QUILT).
+  puffer: { surface: "plain", tile: 0.004, roughness: 0.46, sheen: 0.22, sheenRoughness: 0.4, normal: 0.06, clearcoat: 0.3, clearcoatRoughness: 0.5 }
 }
+// A puffer's quilting: baffles round the body and the sleeves, SPACING cm apart (by aDown, so they meet at the
+// side seams), each puffed out up to LOFT m between its stitched seams, and a little darker in those seams.
+export const QUILT = { spacing: 11, loft: 0.008, seam: 0.3 }
 // Creases (see the cloth shader): how much a fold's shade (1 - aShade) counts beside the cloth's squeeze, and
 // how much darker and rougher the cloth is at a full crease. Kept low: dark creases read as dirt.
 const CREASE = { fold: 0.6, dark: 0.14, rough: 0.3 }
@@ -358,6 +364,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uPhotoOn: { value: 0 },
     // How much of a sheer part's colour shows (1: none of it is sheer).
     uSheer: { value: details.sheer ?? 1 },
+    // A puffer's baffles: x how far each puffs out (m; 0 for no quilting), y how far apart they are (cm).
+    uQuilt: { value: new THREE.Vector2(details.quilt ? QUILT.loft : 0, QUILT.spacing) },
     // The AI's picture of this view, laid back on from its camera (see PROJECTION; stage.js#wearPhoto sets it).
     ...projectionUniforms()
   }
@@ -380,6 +388,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aStrain;
         attribute float aDown;
         attribute float aAcross;
+        uniform vec2 uQuilt;
         varying float vAcross;
         varying float vCover;
         varying float vStrain;
@@ -397,10 +406,16 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
       .replace("#include <uv_vertex>", `#include <uv_vertex>
         vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain; vDown = aDown; vAcross = aAcross;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed += normalize( objectNormal ) * 0.0015;")
+      .replace("#include <begin_vertex>", `#include <begin_vertex>
+        transformed += normalize( objectNormal ) * 0.0015;
+        // A puffer's baffles: each puffs out between its seams, which stay where the drape left the cloth (so
+        // nothing under it shows through there), as do the pieces' edges (puffed by different amounts either side
+        // of a seam, the cloth would part along it).
+        if ( uQuilt.x > 0.0 ) transformed += normalize( objectNormal ) * uQuilt.x * sqrt( max( sin( 3.14159265 * fract( aDown / uQuilt.y ) ), 0.0 ) ) * smoothstep( 0.0, 2.5, aEdge );`)
     shader.fragmentShader = shader.fragmentShader
       // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
-      .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );"))
+      .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );") + `
+        if ( uQuilt.x > 0.0 ) normal = quiltNormal( - vViewPosition, normal, faceDirection );`)
       .replace("#include <common>", `#include <common>
         #define CREASE_FOLD ${CREASE.fold.toFixed(2)}
         #define CREASE_DARK ${CREASE.dark.toFixed(2)}
@@ -436,6 +451,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform vec3 uSleeveSize;
         uniform float uPhotoOn;
         uniform float uSheer;
+        uniform vec2 uQuilt;
         varying float vCover;
         varying float vStrain;
         varying float vDown;
@@ -453,6 +469,18 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           return smoothstep( halfWidth + px, halfWidth - px, abs( value - at ) );
         }
         float dashes( vec2 p ) { return step( fract( ( p.x + p.y ) / 0.42 ), 0.62 ); }
+        // A puffer baffle's height (m) at this point, by how far down the garment it is (see uQuilt).
+        float quiltHeight() { return uQuilt.x * sqrt( max( sin( 3.14159265 * fract( vDown / uQuilt.y ) ), 1e-3 ) ) * smoothstep( 0.0, 2.5, vEdge ); }
+        // The surface's normal tilted by the baffles' slope (three.js's bump mapping, by screen derivatives).
+        vec3 quiltNormal( vec3 position, vec3 normal, float faceDirection ) {
+          float h = quiltHeight();
+          vec3 dx = dFdx( position ), dy = dFdy( position );
+          vec2 slope = vec2( dFdx( h ) / max( length( dx ), 1e-6 ), dFdy( h ) / max( length( dy ), 1e-6 ) );
+          vec3 sx = normalize( dx ), sy = normalize( dy );
+          vec3 r1 = cross( sy, normal ), r2 = cross( normal, sx );
+          float det = dot( sx, r1 ) * faceDirection;
+          return normalize( abs( det ) * normal - sign( det ) * ( slope.x * r1 + slope.y * r2 ) );
+        }
         // Distance to a kangaroo pocket's outline on the front (cm): a trapezoid with curved hand openings.
         float pocketDistance( vec2 p ) {
           float bottom = -uLength + 4.0, top = bottom + 22.0;
@@ -513,6 +541,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
             stitch = max( stitch, lineAt( d, 0.55, 0.05 ) * dashes( vPattern ) );
           }
         }
+        // A puffer's stitched seams between its baffles, where the shell is pulled in: a little darker.
+        if ( uQuilt.x > 0.0 ) shadow = max( shadow, ${QUILT.seam.toFixed(2)} * ( 1.0 - smoothstep( 0.0, 0.3, sin( 3.14159265 * fract( vDown / uQuilt.y ) ) ) ) );
         diffuseColor.rgb *= 1.0 - 0.22 * groove - 0.5 * shadow;
         diffuseColor.rgb = mix( diffuseColor.rgb, thread, stitch * 0.85 );
         bool backPhoto = uBackOn > 0.5 && vPiece > 1.5 && vPiece < 2.5;

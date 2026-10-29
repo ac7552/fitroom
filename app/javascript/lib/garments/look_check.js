@@ -40,7 +40,10 @@ export const BARS = {
 // checks: { colour, place, printed, likeness? } }, each { score, pass } (score null when it doesn't apply).
 // named: the colour the listing names ("Black"), when it's a plain one, which the photo's reading is held to
 // as well (a photo of another colourway, or a misread colour, shows up there).
-export function compareLooks(photo, render, { likeness = null, named = null, bars = BARS } = {}) {
+// unprinted: the garment is drawn with no print whatever its photo shows (a dress whose listing doesn't say
+// it's printed: its ties, ruching, a leather's shine or the inside seen through an open back read as a
+// graphic in the photo), so only its colour and likeness are checked.
+export function compareLooks(photo, render, { likeness = null, named = null, bars = BARS, unprinted = false } = {}) {
   const checks = {}
   if (!photo || !render) return { ok: false, failed: ["unread"], checks }
   const de = colourGap(photo.color, render.color)
@@ -48,6 +51,12 @@ export function compareLooks(photo, render, { likeness = null, named = null, bar
   if (named) {
     const gap = colourGap(named, photo.color)
     checks.named = { score: round(gap), pass: gap <= bars.named }
+  }
+
+  if (unprinted) {
+    if (typeof likeness === "number") checks.likeness = { score: round(likeness), pass: likeness >= bars.likeness }
+    const failed = Object.entries(checks).filter(([, c]) => !c.pass).map(([name]) => name)
+    return { ok: failed.length === 0, failed, checks }
   }
 
   // How much is printed: an all-over print or stripes against a graphic is the clearest misreading, and a

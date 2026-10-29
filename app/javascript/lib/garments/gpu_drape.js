@@ -10,13 +10,13 @@
 //
 //   const result = await benchDrape(drape, { frames: 120 })
 //   → { cpu: { msPerFrame, ... }, gpu: { msPerFrame, ... } | { unavailable } , apart }
-import { CLOTHS } from "lib/garments/drape"
+import { CLOTHS, SQUEEZE } from "lib/garments/drape"
 
 const FRAME = 1 / 60, SUBSTEPS = 10, GRAVITY = -9.81
 const GROUP = 64
 
 const SHADER = /* wgsl */ `
-struct Params { n: u32, h: f32, fall: f32, drag: f32, thick: f32, cell: f32, band: f32, pad: f32, fieldMin: vec4<f32>, dims: vec4<u32> }
+struct Params { n: u32, h: f32, fall: f32, drag: f32, thick: f32, cell: f32, band: f32, squeeze: f32, fieldMin: vec4<f32>, dims: vec4<u32> }
 struct Thread { a: u32, b: u32, rest: f32, alpha: f32 }
 struct Colour { offset: u32, count: u32 }
 @group(0) @binding(0) var<uniform> P: Params;
@@ -47,7 +47,9 @@ struct Colour { offset: u32, count: u32 }
   let wa = w[t.a]; let wb = w[t.b];
   let d = pa[t.a].xyz - pa[t.b].xyz; let len = length(d);
   if (len < 1e-9) { return; }
-  let lambda = -(len - t.rest) / (wa + wb + t.alpha);
+  // (A thread's compliance is stored negative when it gives way squeezed: drape.js's SQUEEZE.)
+  let alpha = select(abs(t.alpha), abs(t.alpha) * P.squeeze, t.alpha < 0.0 && len < t.rest);
+  let lambda = -(len - t.rest) / (wa + wb + alpha);
   let s = d / len * lambda;
   pa[t.a] = vec4<f32>(pa[t.a].xyz + s * wa, 0.0);
   pa[t.b] = vec4<f32>(pa[t.b].xyz - s * wb, 0.0);
@@ -89,7 +91,8 @@ fn field(q: vec3<f32>) -> vec4<f32> {
 `
 
 // Constraints (pairs of points, rest lengths, compliance) coloured greedily so no two of one colour share a
-// point: { threads (Uint8Array, 16 bytes each: a, b, rest, alpha), colours: [[offset, count], ...] }.
+// point: { threads (Uint8Array, 16 bytes each: a, b, rest, alpha; alpha negative for a thread that gives way
+// squeezed), colours: [[offset, count], ...] }.
 export function coloured(lists) {
   const all = []
   for (const { pairs, rest, alphaOf } of lists) {
@@ -143,7 +146,7 @@ export class GpuCloth {
     const stretch = params.stretch / (h * h), ribStretch = CLOTHS.rib.stretch / (h * h), bendC = params.bend / (h * h)
     const HEM_BEND = 0.08   // (as drape.js has it)
     const { threads, colours } = coloured([
-      { pairs: drape.edges, rest: drape.rest, alphaOf: e => (drape.edgeRib[e] ? ribStretch : stretch) },
+      { pairs: drape.edges, rest: drape.rest, alphaOf: e => -(drape.edgeRib[e] ? ribStretch : stretch) },
       { pairs: drape.bends, rest: drape.bendRest, alphaOf: e => (drape.bendHem[e] ? bendC * HEM_BEND : bendC) }
     ])
     this.colours = colours
@@ -178,7 +181,7 @@ export class GpuCloth {
     // Params: as one small uniform block.
     const p = new ArrayBuffer(64), pu = new Uint32Array(p), pf = new Float32Array(p)
     pu[0] = n; pf[1] = h; pf[2] = GRAVITY * h; pf[3] = Math.exp(-params.drag * h); pf[4] = params.thickness
-    pf[5] = field.cell; pf[6] = field.band
+    pf[5] = field.cell; pf[6] = field.band; pf[7] = SQUEEZE
     pf[8] = field.min[0]; pf[9] = field.min[1]; pf[10] = field.min[2]
     pu[12] = nx; pu[13] = ny; pu[14] = nz
     const uniform = device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })

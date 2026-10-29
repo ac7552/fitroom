@@ -335,14 +335,16 @@ export default class extends Controller {
     garment.lookPixels ??= await pixelsOf(photos.front, 480).catch(() => null)
     const alike = garment.lookPixels ? await likeness(garment.lookPixels, shot) : null
     const renderLook = findPrint(shot.data, shot.width, shot.height, null, PLAIN)?.look
-    const front = compareLooks(garment.lookPlain.front, renderLook, { named, likeness: alike })
+    // A dress drawn without its photo's print (see applyTopReading) has only its colour and likeness to match.
+    const unprinted = garment.style === "dress" && Boolean(garment.cut) && !garment.cut.printed
+    const front = compareLooks(garment.lookPlain.front, renderLook, { named, likeness: alike, unprinted })
     // Both readings go with the result, for the failure log and the look audit (script/spike/look_audit.mjs).
     front.looks = { photo: garment.lookPlain.front, render: renderLook }
     if (!garment.backPrint || !photos.back) return front
     garment.lookPlain.back ??= (await readPhoto(photos.back, PLAIN))?.look ?? null
     const backShot = await this.stage.lookShot("top", { back: true })
     if (!backShot || !garment.lookPlain.back) return front
-    const back = compareLooks(garment.lookPlain.back, findPrint(backShot.data, backShot.width, backShot.height, null, PLAIN)?.look)
+    const back = compareLooks(garment.lookPlain.back, findPrint(backShot.data, backShot.width, backShot.height, null, PLAIN)?.look, { unprinted })
     return { ok: front.ok && back.ok, failed: [...new Set([...front.failed, ...back.failed])], checks: front.checks, back: back.checks, looks: front.looks }
   }
 
@@ -1519,12 +1521,15 @@ export default class extends Controller {
       shoePhoto: kind === "shoes" && garment.shoeSide ? garment.photo : null,
       shoeViews: kind === "shoes" && garment.shoeSide ? garment.shoeViews ?? null : null,
       onePiece: Boolean(garment.one_piece),
+      bodysuit: Boolean(garment.bodysuit),
+      puffer: Boolean(garment.puffer),
       buckle: garment.buckle ?? null
     })))
     // Nothing to sew (shoes alone, or the same outfit again): no loader, once any check of the top is done.
     this.queueLookCheck()
     if (this.stage.settled) this.showLoading(null)
-    this.tuckTarget.hidden = !this.stage.canTuck() || this.stage.onePiece
+    // A bodysuit is always tucked in: there's no choice to offer.
+    this.tuckTarget.hidden = !this.stage.canTuck() || this.stage.onePiece || Boolean(this.outfit.top?.garment.bodysuit)
 
     this.renderStageNote()
 

@@ -263,11 +263,39 @@ export function placeCloth(cloth, pattern, frame) {
     const y = topY + py / 100
     const edges = pattern.panels[name].edges
     const sideX = Math.abs(edges.find(e => e.name.startsWith("side_")).points.reduce((best, [x, yy]) => (Math.abs(yy - py) < Math.abs(best[1] - py) ? [x, yy] : best))[0])
-    const angle = (place.part === "back" ? Math.PI : 0) + (px / Math.max(sideX, 1)) * (Math.PI / 2)
-    const reach = frame.torso.envelope(y, angle)
+    // The body's outline grown evenly until it's as long round as the row, so the row starts at its own
+    // size (made round where it's wider than the body, it'd start stretched over the hips' front and back),
+    // and each point as far round it as it is across the row: spread by angle instead, the cloth would start
+    // stretched at the sides (a body is wider than it's deep, so an angle there spans more of it) and
+    // squeezed at the front and back, and spring apart at the side seams.
     const round = (sideX * 4) / 100
-    const r = Math.max(reach + gapFor(y, round, "envelope"), round / (2 * Math.PI))
+    const gap = Math.max(0.003, (round - bodyGirth(y, "envelope")) / (2 * Math.PI))
+    const angle = angleRound(y, gap, (place.part === "back" ? 0.5 : 0) + px / (4 * Math.max(sideX, 1)))
+    const r = frame.torso.envelope(y, angle) + gap
     return [r * Math.sin(angle), y, frame.torso.centreAt(y) + r * Math.cos(angle)]
+  }
+  // The angle (from the front, towards +x) at which a share `u` of the way round (0 at the middle of the
+  // front, 0.25 at the left side, 0.5 at the back) the body's outline `gap` off it, at height y, is reached.
+  const rounds = new Map()
+  function angleRound(y, gap, u) {
+    const key = `${Math.round(y * 500)}:${Math.round(gap * 2000)}`
+    if (!rounds.has(key)) {
+      const count = 96, along = new Float32Array(count + 1)
+      let last = null
+      for (let k = 0; k <= count; k++) {
+        const a = (k / count) * 2 * Math.PI, r = frame.torso.envelope(y, a) + gap, q = [r * Math.sin(a), r * Math.cos(a)]
+        along[k] = last ? along[k - 1] + Math.hypot(q[0] - last[0], q[1] - last[1]) : 0
+        last = q
+      }
+      rounds.set(key, along)
+    }
+    const along = rounds.get(key), count = along.length - 1
+    const target = (((u % 1) + 1) % 1) * along[count]
+    let k = 0
+    while (k < count - 1 && along[k + 1] < target) k++
+    const t = (target - along[k]) / ((along[k + 1] - along[k]) || 1)
+    const angle = ((k + t) / count) * 2 * Math.PI
+    return u < 0 ? angle - 2 * Math.PI : angle
   }
 
   cloth.panels.forEach((name, panelIndex) => {
@@ -315,10 +343,13 @@ export function placeCloth(cloth, pattern, frame) {
   // Bands go along the edges they're sewn to, then off them in their own direction. Each band point is kept
   // as an attachment (between which two points of the edge it's sewn to, how far off it, and which way), so
   // the drape can hold bands on their edges while the body's seams close and only then let them go.
+  // (A point can be sewn twice: a waistband's end is sewn to the skirt and to the band's other end.)
   const sewnTo = new Map()
   for (const [a, b] of cloth.sewing) {
-    sewnTo.set(a, b)
-    sewnTo.set(b, a)
+    if (!sewnTo.has(a)) sewnTo.set(a, [])
+    if (!sewnTo.has(b)) sewnTo.set(b, [])
+    sewnTo.get(a).push(b)
+    sewnTo.get(b).push(a)
   }
   const attach = { points: [], from: [], to: [], u: [], offset: [], direction: [] }
   for (let pass = 0; pass < 3; pass++) {
@@ -330,8 +361,8 @@ export function placeCloth(cloth, pattern, frame) {
       for (const e of panel.edges) {
         if (!e.name.startsWith("sewn_")) continue
         for (const i of cloth.edges[`${name}/${e.name}`]) {
-          const host = sewnTo.get(i)
-          if (host !== undefined && done[host]) along.push([cloth.points[i][0], host])
+          const host = sewnTo.get(i)?.find(j => done[j])
+          if (host !== undefined) along.push([cloth.points[i][0], host])
         }
       }
       if (along.length < 2) return

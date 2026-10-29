@@ -291,7 +291,8 @@ export class FittingStage {
   canTuck(items = this.outfit) {
     const worn = Object.fromEntries(items.map(item => [item.kind, item]))
     const tailored = worn.jacket && !DRAPED_STYLES.includes(worn.jacket.style)
-    return Boolean(worn.top && worn.trousers && TUCKABLE.includes(worn.top.style) && !tailored && !(worn.coat && worn.jacket))
+    // (A bodysuit is always worn tucked in, whatever its style: it fastens below.)
+    return Boolean(worn.top && worn.trousers && (TUCKABLE.includes(worn.top.style) || worn.top.bodysuit) && !tailored && !(worn.coat && worn.jacket))
   }
 
   // "mannequin", "ghost" (the clothes alone) or "fit" (the fit map, on the mannequin).
@@ -372,7 +373,7 @@ export class FittingStage {
     // A romper's or jumpsuit's top hangs over its shorts or pants, in the same cloth, so they read as one
     // piece (it isn't tucked: there's nothing to tuck).
     this.onePiece = Boolean(worn.top?.onePiece && worn.trousers?.onePiece)
-    const tuck = this.tucked && !this.onePiece && this.canTuck()
+    const tuck = (this.tucked || Boolean(worn.top?.bodysuit)) && !this.onePiece && this.canTuck()
     this.order = tuck ? TUCKED_LAYERS : LAYERS
     const items = {
       bottom: worn.trousers ?? null,
@@ -763,11 +764,11 @@ export class FittingStage {
     const style = slot === "bottom" ? item.style ?? "trousers" : DRAPED_STYLES.includes(item.style) ? item.style : "tee"
     // Each layer is sewn over the ones under it, so a new one under it is a new drape for it too.
     const over = this.under(slot).map(d => d.key)
-    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, item.zip ?? false, item.tuck ?? null, this.fitted.scale, this.fitted.influences, over, this.feet.key])
+    const key = JSON.stringify([slot, style, item.size, item.fabric, item.cut ?? null, item.zip ?? false, item.puffer ?? false, item.tuck ?? null, this.fitted.scale, this.fitted.influences, over, this.feet.key])
     if (this.slots[slot]?.key !== key && this.waiting[slot]?.key !== key) {
       // The garment shown stays until the new one is sewn and in the pose shown, so nothing jumps about.
       this.removeDraped(slot, { keepShown: true })
-      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null, zip: Boolean(item.zip), tuck: item.tuck ?? null, photoSize: item.photoSize ?? null } }
+      const spec = { slot, key, item: { kind: item.kind, style, size: item.size, color: item.color, fabric: item.fabric, cut: item.cut ?? null, zip: Boolean(item.zip), puffer: Boolean(item.puffer), tuck: item.tuck ?? null, photoSize: item.photoSize ?? null } }
       // It waits for the layers under it to be sewn, then is sewn over them.
       if (this.under(slot).some(d => !d.top.done)) this.waiting[slot] = spec
       else {
@@ -1949,7 +1950,10 @@ function clothSnapshot(x, garment, body = null) {
   const positions = Float32Array.from(x)
   const normals = vertexNormals(positions, index)
   if (body) faceAway(positions, normals, body)
-  return { positions, normals, index }
+  // (Pants and skirts are marked: the collision field's layers are built from them; and so are a top's sleeves,
+  // which a jacket's sleeves don't collide with: see collisionBody.)
+  const sleeves = garment.bottoms ? null : Uint8Array.from(garment.drape.sleeveSides(), side => (side ? 1 : 0))
+  return { positions, normals, index, bottoms: Boolean(garment.bottoms), sleeves }
 }
 
 // Cloth folded over on itself (loose pants bunched at the hip) faces both ways at once, and a layer sewn over
