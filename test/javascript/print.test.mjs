@@ -40,6 +40,39 @@ test("a plain garment has no print", () => {
   assert.equal(findPrint(data, w, h).print, null)
 })
 
+// A black hoodie with a big chest graphic (a row of bold red letters over a line of yellow text), as wide as
+// most of the front, down to about halfway; plain below it, round the pocket, and at the sides.
+function bigChestGraphic() {
+  const w = 400, h = 440, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = [236, 236, 236]
+      const body = x >= 100 && x < 300 && y >= 80 && y < 380, sleeves = y >= 80 && y < 140 && x >= 60 && x < 340
+      if (body || sleeves) c = [24, 25, 28]
+      const letters = x >= 120 && x < 285 && y >= 120 && y < 210 && (x - 120) % 33 < 28
+      const text = x >= 125 && x < 280 && y >= 215 && y < 235 && (x - 125) % 9 < 6
+      if (letters) c = [176, 36, 40]
+      if (text) c = [218, 178, 70]
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h }
+}
+
+test("a big chest graphic isn't an all-over print: it isn't repeated over the sleeves and back", () => {
+  const { data, w, h } = bigChestGraphic()
+  const found = findPrint(data, w, h)
+  // It covers more than a quarter of the front (once called all-over on that alone), but only its top half.
+  assert.ok(found.print.coverage > 0.25, `coverage ${found.print.coverage}`)
+  assert.ok(found.print.spread < 0.8, `spread ${found.print.spread}`)
+  assert.equal(found.print.allOver, false)
+  assert.equal(found.print.stripes, false)
+  assert.equal(found.look.allOver, false)
+  // Plain cloth below the graphic stays see-through, so the cloth's own colour shows there.
+  const { data: pixels, width, height } = found.print
+  assert.equal(pixels[4 * (Math.round(height * 0.85) * width + Math.round(width * 0.2)) + 3], 0)
+})
+
 // A tee laid flat: its body, and sleeves from its shoulders down to armpit (how far down its arms are sewn in).
 function tee({ armpit, sleeveOut = 30 }) {
   const w = 240, h = 240, data = new Uint8ClampedArray(4 * w * h)

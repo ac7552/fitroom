@@ -85,7 +85,7 @@ export async function readPhoto(src, { shape = null, hood = true, patterns = tru
     out.getContext("2d").putImageData(new ImageData(found.print.data, found.print.width, found.print.height), 0, 0)
     const strip = found.print.strip
     print = {
-      image: out, coverage: found.print.coverage, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes,
+      image: out, coverage: found.print.coverage, spread: found.print.spread, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes,
       strip: strip ? stripCanvas(strip) : null, vertical: Boolean(strip?.vertical),
       stripSpan: strip && !strip.vertical ? strip.span : 1, stripAcross: strip?.vertical ? { from: strip.from, span: strip.span } : null
     }
@@ -264,6 +264,11 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   // Marks running off the front's sides or hem are its edge in the light (a sleeve's rim, the hem's fold),
   // not a print: a chest print sits inside the front. (An all-over print, which does reach them, is kept
   // whole below.)
+  // First, where the print reaches with them (an all-over print's, cut off by the front's edges, are part of
+  // it), its specks and thin lines left out: how far it spreads over the front is measured on this.
+  const reach = Float32Array.from(alpha)
+  const reachSolid = boxBlur(reach, pw, ph, 2)
+  for (let k = 0; k < pw * ph; k++) reach[k] *= smooth(reachSolid[k], 0.3, 0.55)
   const before = alpha.reduce((sum, a) => sum + a, 0)
   const kept = Float32Array.from(alpha)
   const edgeMarks = []
@@ -300,14 +305,20 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
     covered += a
   }
   const coverage = covered / (pw * ph)
+  // How far the print reaches over the front: an all-over print reaches all of it. A big chest graphic, however
+  // much of the front it covers, leaves plain cloth at its sides or round the pocket and hem; laid as an
+  // all-over print, pieces of it would be repeated over the sleeves and the back.
+  for (let k = 0; k < pw * ph; k++) reach[k] = Math.max(reach[k], out[4 * k + 3] / 255)
+  const spread = printSpread(reach, pw, ph, k => !gap[k] && Boolean(garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)]))
+  // Print all over the front (and bold rows or columns in it may be stripes).
+  const strong = coverage > 0.25 && spread >= ALL_OVER_SPREAD
   // An all-over print: the whole front, as photographed.
-  if (coverage > 0.25 && patterns) {
+  if (strong && patterns) {
     for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   }
   // Stripes: horizontal ones right across (a striped knit), or vertical ones down the front (a striped
   // button-up). Both at once is a check: that's laid as the photo's print, not as stripes. Faint stripes (pale
   // blue on white) are read too, though they're too close to the cloth's colour to count as print above.
-  const strong = coverage > 0.25
   // Stripes run right across, to the side seams (or right down, to the hem); a big chest graphic (a logo's
   // bold letters over a line of text) has rows of its own colours too, but plain cloth either side of it.
   let down = patterns ? stripeStrip(data, lab, garment.mask, w, x0 + inset, x1 - inset, top, bottom, rows.last, strong) : null
@@ -322,7 +333,7 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   if (patterned && !strong) for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   const allOver = (strong && patterns) || patterned
   // A small logo or a line of text counts: 0.3% of the front (a chest patch is about 1%).
-  const print = coverage > 0.003 || patterned ? { data: out, width: pw, height: ph, coverage, allOver, stripes: Boolean(strip), strip } : null
+  const print = coverage > 0.003 || patterned ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip } : null
   // A graphic on a sleeve (an all-over print or stripes already cover them).
   const sleeves = allOver || !sleeveGuess ? { left: null, right: null } : {
     left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
@@ -387,6 +398,37 @@ export function lookOf(out, pw, ph, coverage, allOver, color) {
     }
   }
   return { color, coverage: allOver ? 1 : coverage, allOver, box }
+}
+
+// How far a front's print reaches over it: the share of its cells (SPREAD_CELLS across and down) whose cloth
+// is at least 8% print. alpha: how much each pixel of the front is print (0 to 1); cloth(k): whether pixel k
+// is the front's cloth (not the neck opening, a pocket's edge or the backdrop). A cell that's mostly not
+// cloth (beside a tapered hem) doesn't count either way.
+const SPREAD_CELLS = [4, 5]
+// An all-over print reaches at least this share of the front's cells.
+const ALL_OVER_SPREAD = 0.8
+export function printSpread(alpha, pw, ph, cloth) {
+  const [nx, ny] = SPREAD_CELLS
+  let cells = 0, printed = 0
+  for (let cy = 0; cy < ny; cy++) {
+    for (let cx = 0; cx < nx; cx++) {
+      const xa = Math.floor(cx * pw / nx), xb = Math.floor((cx + 1) * pw / nx)
+      const ya = Math.floor(cy * ph / ny), yb = Math.floor((cy + 1) * ph / ny)
+      let n = 0, a = 0
+      for (let y = ya; y < yb; y++) {
+        for (let x = xa; x < xb; x++) {
+          const k = y * pw + x
+          if (!cloth(k)) continue
+          n++
+          a += alpha[k]
+        }
+      }
+      if (n < (xb - xa) * (yb - ya) * 0.25) continue
+      cells++
+      if (a >= n * 0.08) printed++
+    }
+  }
+  return cells ? printed / cells : 0
 }
 
 // A graphic on one sleeve of a photo (`way` -1: the photo's left one, +1 its right), as a strip of pixels
