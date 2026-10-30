@@ -1712,6 +1712,155 @@ export async function readBottomShape(src) {
   return pixels && measureBottom(pixels.data, pixels.w, pixels.h)
 }
 
+// A dress's shape in its photo, flat from the front: widths as shares of the chest's width, heights as shares
+// of its length from its top (the straps, or the top edge) to its hem.
+// { waist: the narrowest width below the chest, waistAt: how far down it is, hips: the widest in the quarter
+// below the waist, hem: the hem's width, flareFrom: where it starts widening for the hem ("waist", "hips" or
+// "knee"; null when it hangs straight), neckDepth: how far down the neckline's lowest point is, neckWidth: the
+// neckline's width at the top, halter: the straps meet at the neck, strapless: straight across at the top,
+// sleeves: "long" or "short" (null for none) }. Null when it can't be read (no garment, or not a dress's
+// proportions).
+export async function readDressShape(src) {
+  const pixels = await loadPixels(src)
+  return pixels && measureDress(pixels.data, pixels.w, pixels.h)
+}
+
+export function measureDress(data, w, h) {
+  const cut = cutOut(data, w, h)
+  return cut && measureDressMask(cut.garment.mask, w, h)
+}
+
+export function measureDressMask(mask, w, h) {
+  const on = (x, y) => mask[y * w + x] === 1
+  const rowMin = new Int32Array(h).fill(-1), rowMax = new Int32Array(h).fill(-1)
+  let top = -1, bottom = -1, widest = 0
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) if (on(x, y)) { if (rowMin[y] < 0) rowMin[y] = x; rowMax[y] = x }
+    if (rowMin[y] >= 0) widest = Math.max(widest, rowMax[y] - rowMin[y] + 1)
+  }
+  // From the first row wider than a hanger's hook (a halter's neck strap is far wider than one).
+  for (let y = 0; y < h; y++) {
+    if (rowMin[y] < 0 || (top < 0 && rowMax[y] - rowMin[y] + 1 < Math.max(3, widest * 0.04))) continue
+    if (top < 0) top = y
+    bottom = y
+  }
+  if (top < 0) return null
+  const tall = bottom - top + 1
+  if (tall < h * 0.3) return null
+  const row = f => Math.min(bottom, Math.max(top, Math.round(top + tall * f)))
+  const span = y => (rowMin[y] < 0 ? 0 : rowMax[y] - rowMin[y] + 1)
+  // The middle, from the rows through the skirt (the top can be off centre: one shoulder, a tie).
+  const centre = Math.round(median(Array.from({ length: 21 }, (_, k) => row(0.45 + k * 0.02)).filter(y => rowMin[y] >= 0).map(y => (rowMin[y] + rowMax[y]) / 2)))
+  // The width through the middle at a row: it stops at a gap, so a sleeve lying apart from the body is
+  // left out (0 where the middle itself is open: the neckline).
+  const across = y => {
+    if (!on(centre, y)) return 0
+    let a = centre, b = centre
+    while (a > 0 && on(a - 1, y)) a--
+    while (b < w - 1 && on(b + 1, y)) b++
+    return b - a + 1
+  }
+  const smooth = (f, y, n = 3) => median(Array.from({ length: 2 * n + 1 }, (_, k) => f(Math.min(bottom, Math.max(top, y - n + k)))))
+  // The neckline: the first row the middle is cloth, and stays cloth.
+  let neckBottom = top
+  while (neckBottom < row(0.6) && !(across(neckBottom) && across(neckBottom + 1) && across(neckBottom + 2))) neckBottom++
+  // The armpit: where the width drops most (sleeves end there, or part from the body). No drop: no sleeves,
+  // and the chest is the widest the bodice gets above a third of the way down.
+  const step = Math.max(2, Math.round(tall * 0.025))
+  let armpit = -1, sharpest = 0
+  for (let y = Math.max(neckBottom, row(0.06)); y <= row(0.45); y++) {
+    const fall = smooth(across, y - step, 1) - smooth(across, y + step, 1)
+    if (fall > sharpest) { sharpest = fall; armpit = y }
+  }
+  let widestTop = 0
+  for (let y = row(0.1); y <= row(0.45); y++) widestTop = Math.max(widestTop, across(y))
+  let chestRow, chest
+  if (armpit >= 0 && sharpest > smooth(across, armpit + step, 1) * 0.22 && sharpest > widestTop * 0.15) {
+    chestRow = Math.min(bottom, armpit + 2 * step)
+    chest = smooth(across, chestRow)
+  } else {
+    armpit = -1
+    chest = 0
+    chestRow = neckBottom
+    for (let y = neckBottom; y <= row(0.38); y++) { const a = smooth(across, y, 1); if (a > chest) { chest = a; chestRow = y } }
+  }
+  if (chest < w * 0.06) return null
+  // Sleeves: an armpit, and cloth beside the body below it (sleeves lying along it) reaching this far down.
+  let sleeves = null
+  if (armpit >= 0) {
+    let reach = armpit
+    for (let y = armpit; y <= bottom; y++) if (span(y) > across(y) + chest * 0.12) reach = y
+    sleeves = (reach - top) / tall > 0.4 ? "long" : "short"
+  }
+  // Sleeves laid down along the body, touching it until their cuffs part from it: rows low down with cloth
+  // apart on both sides of the body. Then the widths through the body include the sleeves, and only the
+  // sleeves are read.
+  const gap = Math.max(2, Math.round(w * 0.01))
+  const besideBoth = y => {
+    if (!on(centre, y)) return false
+    let a = centre, b = centre
+    while (a > 0 && on(a - 1, y)) a--
+    while (b < w - 1 && on(b + 1, y)) b++
+    // A sleeve's width of cloth on each side (not a tie's thin end, or a speck).
+    const piece = (from, dir) => {
+      let x = from
+      while (x >= 0 && x < w && !on(x, y)) x += dir
+      let width = 0
+      while (x >= 0 && x < w && on(x, y)) { width++; x += dir }
+      return width
+    }
+    const least = Math.max(3, (b - a) * 0.12)
+    return piece(a - gap - 1, -1) >= least && piece(b + gap + 1, 1) >= least
+  }
+  let along = 0, reach = -1
+  for (let y = row(0.3); y <= bottom; y++) if (besideBoth(y)) { along++; reach = y }
+  if (armpit < 0 && along > tall * 0.04) {
+    const r3 = v => Math.round(v * 1000) / 1000
+    return { waist: null, waistAt: null, hips: null, hem: null, flareFrom: null, neckDepth: r3((neckBottom - top) / tall), neckWidth: null,
+             halter: false, strapless: false, sleeves: (reach - top) / tall > 0.55 ? "long" : "short", length: null }
+  }
+  // The waist: the narrowest below the chest, down to about two thirds of the way.
+  let waistRow = row(0.4), waist = Infinity
+  for (let y = Math.min(bottom, chestRow + Math.round(tall * 0.05)); y <= row(0.62); y++) {
+    const a = smooth(across, y)
+    if (a > 0 && a < waist) { waist = a; waistRow = y }
+  }
+  if (!Number.isFinite(waist)) return null
+  let hips = waist
+  for (let y = waistRow; y <= Math.min(bottom, waistRow + Math.round(tall * 0.25)); y++) hips = Math.max(hips, smooth(across, y))
+  const hem = median([0.95, 0.96, 0.97, 0.98].map(f => span(row(f))))
+  // Whether it widens for its hem past the hips' own curve, and from where: half that widening done by
+  // two thirds of the way down from the waist is a skirt widening all the way (an A-line, from the waist);
+  // by four fifths, from the hips; later, a flounce or a mermaid's flare low on the skirt ("knee").
+  let flareFrom = null
+  const down = f => smooth(span, Math.round(waistRow + (bottom - waistRow) * f))
+  const base = down(0.3)
+  if (hem > base * 1.12) {
+    let half = 1
+    for (let f = 0.3; f <= 1; f += 0.02) if (down(f) >= base + (hem - base) / 2) { half = f; break }
+    flareFrom = half <= 0.7 ? "waist" : half <= 0.8 ? "hips" : "knee"
+  }
+  // At the very top: straps meeting at the neck (a halter) span little; straight across (strapless) span
+  // the chest and close the middle.
+  const topSpan = median([0.005, 0.01, 0.015].map(f => span(row(f))))
+  const halter = armpit < 0 && topSpan < chest * 0.45 && Math.abs((rowMin[row(0.01)] + rowMax[row(0.01)]) / 2 - centre) < chest * 0.15
+  const strapless = armpit < 0 && !halter && (neckBottom - top) / tall < 0.03 && topSpan > chest * 0.8
+  // The neckline's width just below the top: the open stretch round the middle.
+  const neckRow = row(0.02)
+  let neckWidth = 0
+  if (!on(centre, neckRow)) {
+    let a = centre, b = centre
+    while (a > 0 && !on(a - 1, neckRow)) a--
+    while (b < w - 1 && !on(b + 1, neckRow)) b++
+    neckWidth = a > 0 && b < w - 1 ? b - a + 1 : 0
+  }
+  const r3 = v => Math.round(v * 1000) / 1000
+  return {
+    waist: r3(waist / chest), waistAt: r3((waistRow - top) / tall), hips: r3(hips / chest), hem: r3(hem / chest), flareFrom,
+    neckDepth: r3((neckBottom - top) / tall), neckWidth: r3(neckWidth / chest), halter, strapless, sleeves, length: r3(tall / chest)
+  }
+}
+
 // The garment's outline in a photo (or a render): { mask (1 where garment), w, h } or null.
 export function garmentMask(data, w, h) {
   const cut = cutOut(data, w, h)

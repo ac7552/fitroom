@@ -224,7 +224,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 28
+  FORMAT = 29
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -342,7 +342,8 @@ class GarmentImport
       tags: Array(data["tags"]).join(",").split(/,\s*/).map(&:strip).first(40),
       sorted: data["product_type"].to_s.present?,
       shape: photo_shape(given&.dig("shape")),
-      bottom_shape: photo_bottom_shape(given&.dig("bottom_shape"))
+      bottom_shape: photo_bottom_shape(given&.dig("bottom_shape")),
+      dress_shape: photo_dress_shape(given&.dig("dress_shape"))
     }
     product[:women] = women?(product, url)
     kind = kind_of(product)
@@ -515,17 +516,20 @@ class GarmentImport
   end
 
   # A skirt's usual measurements in each of its shop's women's sizes: its waist and hips (by its cut) and its
-  # length (mini to maxi).
+  # length (mini to maxi). A low-rise skirt's waist is made bigger, so it sits lower, round the hips; a
+  # high-waisted one's sits at the waist.
   SKIRT_LENGTHS = { "mini" => 40, "knee" => 56, "midi" => 74, "maxi" => 96 }.freeze
+  SKIRT_RISES = [ [ 9, /low[- ]rise|low[- ]waist|hip[- ]hugg|sits? (?:low )?on the hips/i ], [ 4, /mid[- ]rise/i ], [ 0, /high[- ]rise|high[- ]waist/i ] ].freeze
 
   def usual_skirts(product)
     cut = DressCut.read(product)
     letters = Array(product[:sizes]).map { letter_of(it) }.compact.uniq
     letters = %w[XS S M L XL] if letters.size < 2
+    risen = SKIRT_RISES.find { |_, pattern| product.values_at(:name, :description).join(" ").match?(pattern) }&.first
     sizes = letters.sort_by { ALL_LETTERS.index(it) }.map do |letter|
       _, waist, hips = DressCut::LETTERS.fetch(letter)
       ease = cut[:stretch] ? -2 : { "fitted" => 2, "slim" => 3, "relaxed" => 8, "flared" => 6 }.fetch(cut[:fit], 3)
-      { "name" => letter, "waist" => (waist + [ ease, 2 ].min).round(1), "seat" => (hips + ease).round(1),
+      { "name" => letter, "waist" => (waist + (risen || [ ease, 2 ].min)).round(1), "seat" => (hips + ease).round(1),
         "length" => (SKIRT_LENGTHS.fetch(cut[:length], 56) + (ALL_LETTERS.index(letter) - 3)).to_f }
     end
     ChartReader::Chart.new(sizes:, unit: "cm", kind: "sizes", missing: [])
@@ -662,14 +666,41 @@ class GarmentImport
   end
 
   # The pants' shape the browser read off the shop photo ({ "thigh", "hem", "rise", "length" }: one leg's
-  # width at the thigh and the hem, over the waist's width), checked: nil unless plausible, and for a skirt.
+  # width at the thigh and the hem, over the waist's width), checked: nil unless plausible. A skirt's is its
+  # hips' and hem's widths over its waist's, and its length over it ({ skirt: true, hips:, hem:, length: }).
   def photo_bottom_shape(shape)
-    return unless shape.is_a?(Hash) && shape["skirt"] != true
+    return unless shape.is_a?(Hash)
+
+    if shape["skirt"] == true
+      read = { hips: shape["hips"], hem: shape["hem"], length: shape["length"] }
+      return if read.values.any? { !(it.is_a?(Numeric) && it.finite? && it.between?(0.3, 6)) }
+
+      return read.merge(skirt: true)
+    end
 
     read = { thigh: shape["thigh"], hem: shape["hem"], rise: shape["rise"], length: shape["length"] }
     return if read.values.any? { !(it.is_a?(Numeric) && it.finite? && it.between?(0.05, 6)) }
 
     read
+  end
+
+  # A dress's shape the browser read off the shop photo (see print.js measureDress): its widths over its
+  # chest's, heights over its length, where it widens for its hem, its neckline, and whether it's a halter,
+  # strapless or has sleeves. Checked: nil unless plausible; a photo that showed only the sleeves keeps those.
+  DRESS_FLARES = %w[waist hips knee].freeze
+
+  def photo_dress_shape(shape)
+    return unless shape.is_a?(Hash)
+
+    number = ->(key, range) { (v = shape[key]).is_a?(Numeric) && v.finite? && range.cover?(v) ? v.to_f.round(3) : nil }
+    read = {
+      waist: number.("waist", 0.5..1.3), waist_at: number.("waistAt", 0.15..0.7), hips: number.("hips", 0.6..2),
+      hem: number.("hem", 0.6..3.5), neck_depth: number.("neckDepth", 0..0.6), neck_width: number.("neckWidth", 0..0.95),
+      flare_from: DRESS_FLARES.include?(shape["flareFrom"]) ? shape["flareFrom"] : nil,
+      halter: shape["halter"] == true, strapless: shape["strapless"] == true,
+      sleeves: %w[long short].include?(shape["sleeves"]) ? shape["sleeves"] : nil
+    }
+    read.compact.reject { |_, v| v == false }.presence
   end
 
   # A women's listing: its shop tags it so ("wmns", "womens") or files it there, or its name says so.
@@ -913,8 +944,14 @@ class GarmentImport
       chart = chart.with(sizes: chart.sizes.map { it.merge("sleeve" => nil, "shoulders" => nil) }, missing: chart.missing - %w[sleeve shoulders])
     end
     # A skirt's cut, read as a dress's is (its length, how it flares, its cloth).
-    skirt_cut = style == "skirt" ? DressCut.read(product).slice(:length, :fit, :stretch, :fabric, :printed, :details) : nil
+    # A skirt's cut, read as a dress's is (its length, how it flares, its cloth), and the shape its photo
+    # showed: its hips and hem over its waist.
+    skirt_cut = style == "skirt" ? DressCut.read(product.except(:dress_shape)).slice(:length, :fit, :stretch, :fabric, :printed, :details, :hem_flare) : nil
     skirt_cut[:fit] = "pleated" if skirt_cut && product.values_at(:name, :description).join(" ").match?(/pleat/i)
+    skirt_cut&.delete(:hem_flare) unless skirt_cut&.dig(:hem_flare)
+    if skirt_cut && (shape = product[:bottom_shape])&.dig(:skirt) && shape[:hem] >= shape[:hips] * 0.85
+      skirt_cut[:shape] = { hips: shape[:hips], hem: shape[:hem] }
+    end
     # Pants: pull-on (an elastic or drawcord waist, gathered in, which stretches to fit), how loose the shop
     # says they're cut, and whether they come unhemmed.
     skirt_cut = bottoms_cut(product, style, chart) if kind == "trousers" && style != "skirt"

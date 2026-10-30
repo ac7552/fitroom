@@ -4,14 +4,22 @@ class GarmentImport
   # and the usual measurements of each women's size when the listing gives no chart.
   #
   # A cut: { sleeves:, neckline:, length:, fit:, stretch:, fabric:, printed:, details: }
-  #   sleeves   "strapless", "one_shoulder", "thin_straps", "straps", "none" (sleeveless), "short" or "long"
+  #   sleeves   "strapless", "one_shoulder", "halter", "thin_straps", "straps", "none" (sleeveless), "short" or
+  #             "long"
   #   neckline  "straight", "scoop", "plunge", "round" or "high"
   #   length    "mini", "knee", "midi" or "maxi"
   #   fit       "fitted", "slim", "relaxed" or "flared"
   #   hem_flare true when only the hem flares out ("flared hem", mermaid, trumpet): the body keeps its fit
+  #   waist_flare true when the skirt widens all the way from the waist (an A-line or fit and flare, as its
+  #             photo shows): it's cut flaring from the waist, not the hips
+  #   shape     the shape its photo showed (widths over the chest's, heights over the length; see
+  #             GarmentImport#photo_dress_shape): what the 3D view cuts it to
   #   collar    true for a shirt dress's collar ("classic collar", "point collar"): drawn with it and buttons
   #   stretch   true when the cloth stretches (elastane, spandex, jersey), so it's made smaller than the body
-  #   fabric    the cloth as the 3D view draws it: "stretch", "jersey", "leather", "silk" or "cotton"
+  #   fabric    the cloth as the 3D view draws it: "stretch", "jersey", "leather", "silk", "structured"
+  #             (suiting, scuba, ponte, a boned bodice: stiff, so it skims the body and holds a flare out) or
+  #             "cotton". Read by what most of it is: 8% silk doesn't make a silk dress, nor 5% polyurethane
+  #             (an elastane) a leather one
   #   printed   true when the listing says the cloth is printed or patterned (only then is a print read off
   #             the photo; a dress's ties and pleats aren't a print)
   #   details   what the 3D view doesn't draw ("belt", "tie", "scarf", "cut-outs" ...), to say so
@@ -19,12 +27,13 @@ class GarmentImport
     SLEEVES = [
       [ "strapless", /strapless|bandeau|\btube (?:dress|top)|off[- ]the[- ]shoulders?|off[- ]shoulder|corset bodice/i ],
       [ "one_shoulder", /one[- ]shoulder|single[- ]shoulder|asymmetric(?:al)? (?:neck|shoulder)/i ],
+      [ "halter", /halter/i ],
       [ "long", /long[- ]sleeves?|\bl\/s\b|full[- ]length sleeves?|bishop sleeves?|raglan sleeves?/i ],
       [ "short", /short[- ]sleeves?|cap sleeves?|puff sleeves?|t-?shirt dress|tee dress|flutter sleeves?/i ],
       # Sleeves the listing only mentions in passing ("raw sleeve cuffs", "cold shoulder") are long ones.
       [ "long", /sleeve cuffs?|cold[- ]shoulder|cut[- ]?outs? (?:on|at) the shoulders?/i ],
       [ "thin_straps", /spaghetti|thin straps?|skinny straps?|narrow straps?|slip dress|\bslip\b|cami\b|camisole|adjustable straps?/i ],
-      [ "straps", /wide straps?|\bstraps?\b|halter|racer ?back|tank dress|\btank\b|square neck/i ],
+      [ "straps", /wide straps?|\bstraps?\b|racer ?back|tank dress|\btank\b|square neck/i ],
       [ "none", /sleeveless/i ]
     ].freeze
     NECKLINES = [
@@ -52,6 +61,10 @@ class GarmentImport
     SLEEVE_FLARE = /(?:flared?|bell|trumpet|wide) (?:sleeves?|cuffs?)/i
     SHIRT_COLLAR = /(?:classic|shirt|point|spread|button[- ]down|camp|pointed) collar|\bcollared\b/i
     STRETCH = /elastane|spandex|lycra|stretch|jersey|ribbed|rib[- ]knit|\bknit(?:ted)?\b/i
+    # Cloths that hold their shape: stiff to bend, whether they stretch or not.
+    STRUCTURED = /suiting|scuba|ponte|neoprene|bonded|\bbon(?:ing|ed)\b|corset|structured|tweed|boucl[eé]|\bcrepe\b(?! de chine)/i
+    # A hem with a strip gathered onto it: drawn as the body's shape, with the strip on (not as a flare).
+    FLOUNCE = /ruffled? hem|ruffle (?:at|on) the hem|flounce|tiered|tiers\b|peplum hem/i
     PRINTED = /print|pattern|floral|graphic|logo|stripe|check|plaid|gingham|polka|leopard|zebra|paisley|motif|parquet|camo|tie[- ]dye/i
     DETAILS = [
       [ "belt", /\bbelt/i ], [ "tie", /self[- ]tie|\btie\b|sash|bow\b/i ], [ "scarf", /scarf/i ],
@@ -87,9 +100,11 @@ class GarmentImport
       name = product.values_at(:name, :category).join(" ")
       words = [ name, product[:description], product[:fabric] ].join(" ")
       first = ->(rules, text) { rules.find { |_, pattern| text.to_s.match?(pattern) }&.first }
-      sleeves = first.(SLEEVES, name) || first.(SLEEVES, words) || "none"
-      stretch = words.match?(STRETCH)
-      {
+      named_sleeves = first.(SLEEVES, name) || first.(SLEEVES, words)
+      sleeves = named_sleeves || "none"
+      shares = fibre_shares(product[:fabric].presence || product[:description])
+      stretch = words.match?(STRETCH) || STRETCHY.sum { shares[it].to_f } >= 3
+      cut = {
         sleeves:,
         neckline: first.(NECKLINES, words) || { "strapless" => "straight", "thin_straps" => "scoop", "straps" => "scoop",
                                                 "one_shoulder" => "straight" }.fetch(sleeves, "round"),
@@ -99,7 +114,7 @@ class GarmentImport
         hem_flare: words.match?(HEM_FLARE),
         collar: words.match?(SHIRT_COLLAR),
         stretch:,
-        fabric: fabric(words, stretch),
+        fabric: fabric(words, stretch, shares),
         printed: words.match?(PRINTED),
         cutouts: cutouts(words),
         sheer: sheer(words)&.first,
@@ -108,13 +123,65 @@ class GarmentImport
         # What the 3D view doesn't draw (cut-outs, sheer parts and scarves it does).
         details: DETAILS.filter_map { |detail, pattern| detail if words.match?(pattern) && !%w[cut-outs sheer\ panels scarf].include?(detail) }
       }
+      shape = product[:dress_shape]
+      shape ? with_photo(cut, shape, words, named_sleeves) : cut
     end
 
-    def fabric(words, stretch)
-      return "leather" if words.match?(/leather|\bpu\b|polyurethane|vinyl|latex/i)
-      return "silk" if words.match?(/silk|satin|chiffon|charmeuse|organza|georgette|crepe de chine/i)
+    # The cut, its shape from its photo where the photo is clear (the words still give its cloth, its back and
+    # what's on it). The Desma's "Form-fitting silhouette" flares from its waist in its photo; a Dalters
+    # whose words never say "sleeves" has them in its photo; a halter's straps meet at the neck.
+    def with_photo(cut, shape, words, named_sleeves)
+      cut = cut.dup
+      if shape[:halter] && !%w[strapless one_shoulder].include?(cut[:sleeves]) then cut[:sleeves] = "halter"
+      elsif shape[:strapless] && named_sleeves.nil? then cut[:sleeves] = "strapless"
+      elsif shape[:sleeves] && (named_sleeves.nil? || cut[:sleeves] == "none") then cut[:sleeves] = shape[:sleeves]
+      end
+      return cut unless shape[:hem] && shape[:waist]
+
+      flounce = words.match?(FLOUNCE)
+      hem = flounce ? [ shape[:hips] || shape[:hem], shape[:hem] ].min : shape[:hem]
+      case flounce ? nil : shape[:flare_from]
+      when "waist"
+        if hem >= 1.2
+          cut[:fit] = "flared"
+          cut[:waist_flare] = true
+        end
+      when "hips" then cut[:fit] = "flared" if hem >= 1.3
+      when "knee" then cut[:hem_flare] = true
+      else
+        # Straight in its photo, whatever the words say about a flare.
+        cut[:fit] = cut[:stretch] ? "fitted" : "slim" if cut[:fit] == "flared" && hem < 1.15
+      end
+      cut[:shape] = { waist: shape[:waist], waist_at: shape[:waist_at], hips: shape[:hips], hem: hem.round(3),
+                      neck_depth: shape[:neck_depth], neck_width: shape[:neck_width] }.compact
+      cut
+    end
+
+    # A material line's fibres and their shares ("77% Viscose / 15% Nylon / 8% Silk" is { "viscose" => 77,
+    # "nylon" => 15, "silk" => 8 }), from its first part only: a contrast cloth, a lining or a trim after it
+    # isn't what most of the garment is.
+    FIBRES = { "elastane" => /elastane|spandex|lycra/i, "polyurethane" => /polyurethane|\bpu\b/i, "silk" => /silk/i,
+               "viscose" => /viscose|rayon|modal|lyocell|tencel|cupro/i, "nylon" => /nylon|polyamide/i, "polyester" => /polyester/i,
+               "cotton" => /cotton/i, "wool" => /wool|cashmere|merino|alpaca|mohair/i, "linen" => /linen/i, "acrylic" => /acrylic/i }.freeze
+    STRETCHY = %w[elastane polyurethane].freeze
+
+    def fibre_shares(text)
+      main = text.to_s.split(/\b(?:contrast|lining|trim|body 2|rib(?:bing)?|panel|embroidery|pocketing)\b/i).first.to_s
+      main.scan(/(\d{1,3}(?:\.\d+)?)\s*%\s*([a-z][a-z ]*)/i).each_with_object({}) do |(share, fibre), out|
+        key = FIBRES.find { |_, pattern| fibre.match?(pattern) }&.first or next
+        out[key] = out[key].to_f + share.to_f
+      end
+    end
+
+    def fabric(words, stretch, shares = {})
+      leather = words.match?(/leather|vinyl|latex|pleather/i) || shares["polyurethane"].to_f >= 50 ||
+                (shares.empty? && words.match?(/\bpu\b|polyurethane/i))
+      return "leather" if leather
+      return "structured" if words.match?(STRUCTURED)
+      return "silk" if words.match?(/satin|chiffon|charmeuse|organza|georgette|crepe de chine/i)
+      return "silk" if shares.any? ? shares["silk"].to_f >= 30 : words.match?(/silk/i)
       # Smooth, slippery cloths that hang like silk: a nylon slip, a sequinned or viscose dress.
-      return "silk" if !stretch && words.match?(/\bnylon\b|viscose|rayon|cupro|sequin/i)
+      return "silk" if !stretch && words.match?(/\bnylon\b|viscose|rayon|cupro|lyocell|tencel|modal|sequin|slip dress/i)
       return "stretch" if stretch && !words.match?(/\bknit(?:ted)?\b|jersey|ribbed|rib[- ]knit/i)
       return "jersey" if stretch
 

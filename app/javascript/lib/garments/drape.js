@@ -20,7 +20,10 @@ export const CLOTHS = {
   // heavy-looking, silk and chiffon light and soft.
   stretch: { stretch: 9e-7, bend: 1.5e-4, drag: 1.2, thickness: 0.003 },
   leather: { stretch: 1e-8, bend: 1.2e-5, drag: 1.7, thickness: 0.005 },
-  silk: { stretch: 3e-8, bend: 5e-4, drag: 1.0, thickness: 0.0025 }
+  silk: { stretch: 3e-8, bend: 5e-4, drag: 1.0, thickness: 0.0025 },
+  // Suiting, scuba, ponte, a boned bodice: it stretches some, but it's stiff to bend, so it skims over the
+  // body's hollows and holds a flared skirt out instead of clinging to every curve.
+  structured: { stretch: 2.5e-7, bend: 2.2e-5, drag: 1.5, thickness: 0.0045 }
 }
 // (A puffer drapes as the nylon shell it's made of: drawn lofted, with its baffles puffed (fabric.js's QUILT).
 // Draped thicker or stiffer, it stands off the arms and its sleeves slip off them, or it slides off.)

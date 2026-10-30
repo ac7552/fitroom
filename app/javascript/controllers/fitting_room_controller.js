@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { findPrint, readPhoto, readBottomPhoto, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
+import { findPrint, readPhoto, readBottomPhoto, readDressShape, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
 import { compareLooks, croppedLengths, nextReading, PLAIN } from "lib/garments/look_check"
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
@@ -2109,12 +2109,17 @@ async function readShop(link) {
   // cut when the shop gives no chart.
   const shape = photo ? await readTopShape(photo).catch(() => null) : null
   const bottomShape = photo ? await readBottomShape(photo).catch(() => null) : null
+  // A dress's shape (its waist, where it widens, its hem, neckline and straps), which the import cuts it to.
+  const words = `${product_type} ${title} ${tags}`
+  const dressShape = photo && DRESS_WORDS.test(words) && !/\bskirts?\b|\bskort/i.test(`${product_type} ${title}`) ? await readDressShape(photo).catch(() => null) : null
   const backPhoto = photo ? await readBackPhoto(images, { shape, bottomShape }) : null
   return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
-    photo, back_photo: backPhoto, shape, bottom_shape: bottomShape, shoeViews }
+    photo, back_photo: backPhoto, shape, bottom_shape: bottomShape, dress_shape: dressShape, shoeViews }
 }
 
 const SHOE_WORDS = /sneakers?|\bshoes?\b|\bboots?\b|footwear|loafers?|sandals?|slides?\b|mules?\b|clogs?|trainers?|derby|oxfords?\b|runners?|low top|high top/i
+// A listing that's a dress (a gown, a slip, a mini): its photo's shape is read for it.
+const DRESS_WORDS = /\bdress(?:es)?\b(?!\s*(?:shirt|pants|trousers|shoe))|\bgowns?\b|\bsundress|shirtdress|slip dress|\bmaxi\b|\bmidi\b/i
 
 async function readShoePhotos(images, first) {
   const rest = (images ?? []).slice(1, 8)

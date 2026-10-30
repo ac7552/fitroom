@@ -24,6 +24,7 @@ export const BOTTOM_STYLES = {
 // How wide a skirt's hem is, over its hips, by its fit: a pencil skirt (fitted), slim, relaxed, an A-line
 // (flared), or pleated (very full).
 const SKIRT_HEM = { fitted: 0.92, slim: 1.02, relaxed: 1.15, flared: 1.45, pleated: 1.8 }
+const SKIRT_FLARED_HEM = 1.35
 // A skirt's length from its waistband (cm) by the length its listing names, when its chart gives none (as
 // GarmentImport::SKIRT_LENGTHS guesses for a skirt with no chart).
 const SKIRT_LENGTHS = { mini: 40, knee: 56, midi: 74, maxi: 96 }
@@ -158,7 +159,10 @@ function draftSkirt(size, body, cut) {
   const waist = size.waist ?? body.waist + 2
   const hips = Math.max(size.seat ?? (cut?.stretch ? hipsBody * 0.97 : hipsBody + 6), waist + 4)
   const length = size.length ?? size.inseam ?? SKIRT_LENGTHS[cut?.length] ?? 55
-  const hem = hips * (SKIRT_HEM[cut?.fit] ?? SKIRT_HEM.slim)
+  // As full at its hem as its photo shows (its hem over its hips), else by its cut; a "flared hem" at least a
+  // flare's.
+  const photoed = cut?.shape?.hem && cut.shape.hips ? Math.max(0.95, cut.shape.hem / cut.shape.hips) : null
+  const hem = hips * Math.max(photoed ?? SKIRT_HEM[cut?.fit] ?? SKIRT_HEM.slim, cut?.hem_flare ? SKIRT_FLARED_HEM : 0)
   const naturalRise = body.rise ?? body.height * 0.135
   const sitAt = waist <= body.waist ? 1 : waist >= hipsBody ? 0.35 : 1 - 0.65 * (waist - body.waist) / (hipsBody - body.waist)
   // From the crotch up to the waistband's seam: where the body is as round as the waist, when the wearer's
@@ -201,7 +205,8 @@ function draftSkirt(size, body, cut) {
   panels.waistband = { edges: band(waists.map(([p, e]) => lengthOf(edgeOf(panels[p].edges, e))), style.band.stretch, style.band.height, "up"), place: { at: "band", toward: "up" }, fabric: "main" }
   waists.forEach(([p, e], i) => seams.push([p, e, "waistband", `sewn_${i}`]))
   seams.push(["waistband", "end_a", "waistband", "end_b"])
-  return { panels, seams, style: "skirt", kind: "bottoms", closure: null, fabric: cut?.fabric === "silk" ? "silk" : cut?.stretch ? "stretch" : style.fabric, measures: m }
+  const fabric = cut?.fabric === "silk" ? "silk" : cut?.fabric === "structured" ? "structured" : cut?.stretch ? "stretch" : style.fabric
+  return { panels, seams, style: "skirt", kind: "bottoms", closure: null, fabric, measures: m }
 }
 
 // One leg piece, front or back, as the left front (or right back) is made: its edges anticlockwise seen from

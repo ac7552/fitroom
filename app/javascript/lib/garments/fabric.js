@@ -41,6 +41,8 @@ const CLOTHS = {
   silk: { surface: "smooth", tile: 0.05, roughness: 0.4, sheen: 1, sheenRoughness: 0.3, normal: 0.06 },
   // Stretch (nylon and elastane): a very fine knit, a little sheen.
   stretch: { surface: "fine", tile: 0.012, roughness: 0.68, sheen: 0.35, sheenRoughness: 0.45, normal: 0.12 },
+  // Suiting and other cloths that hold their shape: a tight, matte weave with a faint sheen.
+  structured: { surface: "plain", tile: 0.008, roughness: 0.8, sheen: 0.22, sheenRoughness: 0.5, normal: 0.14 },
   // A puffer's nylon shell: smooth, with a soft gloss on each baffle (the quilting itself is drawn by the
   // shader, see QUILT).
   puffer: { surface: "plain", tile: 0.004, roughness: 0.46, sheen: 0.22, sheenRoughness: 0.4, normal: 0.06, clearcoat: 0.3, clearcoatRoughness: 0.5 }

@@ -302,7 +302,7 @@ module Fit
   STRETCH_SHARE = { "slim" => -0.12..-0.03, "regular" => -0.09..0.01, "classic" => -0.05..0.05 }.freeze
   DRESS_HIPS = { "slim" => 2..6, "regular" => 3..10, "classic" => 6..16 }.freeze
   NO_SLEEVES = { "none" => "Sleeveless", "straps" => "Straps, no sleeves", "thin_straps" => "Thin straps, no sleeves",
-                 "strapless" => "Strapless", "one_shoulder" => "One shoulder" }.freeze
+                 "strapless" => "Strapless", "one_shoulder" => "One shoulder", "halter" => "Halter, no sleeves" }.freeze
   STRAPLESS_TOP = 18   # cm: a strapless dress's length is measured from its top edge, this far below the shoulder
 
   # A dress: bust, waist and hips (it sits on all three), sleeves and shoulders only when it has sleeves, and

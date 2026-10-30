@@ -166,7 +166,7 @@ export function collisionBody(body, frame, egg, bodyCount = body.positions.lengt
 // says something different (a denim shirt, a nylon bomber).
 function surfaceFor(style, fabric) {
   // A dress's own cloth (see GarmentImport::DressCut): leather, silk, stretch or jersey.
-  if (style === "dress" && ["stretch", "jersey"].includes(fabric)) return fabric
+  if (style === "dress" && ["stretch", "jersey", "structured"].includes(fabric)) return fabric
   // Silk and leather look like themselves on any top (a silk shirt, a leather tee).
   if (fabric === "silk" || (fabric === "leather" && style !== "zip" && style !== "bomber")) return fabric
   // Knitwear's own knit: a sweater's, or anything the listing calls a knit (a sweater hoodie, a knit zip-up).

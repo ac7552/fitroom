@@ -208,14 +208,12 @@ function bodice(m, side) {
   }
   const neckPlus = quarter, neckMinus = reversed(mirrored(quarter))   // +x high point to centre, centre to -x high point
   // A shaped side runs from the hem in over the hips to the waist, then out to the underarm.
-  const sidePlus = m.shaped
-    ? [[hw, -m.length], [m.shaped.hips / 4, -m.shaped.hipAt], [m.shaped.waist / 4 + 0.3, -m.shaped.waistAt], underarm]
-    : line([hw, -m.length], underarm)
+  const { side: sidePlus, hem } = sideAndHem(m, underarm)
   // +x is the wearer's left on the front and their right on the back.
   const plus = side === "front" ? "L" : "R", minus = side === "front" ? "R" : "L"
   const neck = [{ name: `neck_${plus}`, points: neckPlus }, { name: `neck_${minus}`, points: neckMinus }]
   return [
-    { name: "hem", points: line([-hw, -m.length], [hw, -m.length]) },
+    { name: "hem", points: hem },
     { name: `side_${plus}`, points: sidePlus },
     { name: `armhole_${plus}`, points: armhole },
     { name: `shoulder_${plus}`, points: shoulderLine },
@@ -346,7 +344,7 @@ export function outline(panel) {
 // Dresses
 
 // The cloth a dress is drafted in (for its drape): its cut's.
-const DRESS_CLOTH = { stretch: "stretch", leather: "leather", silk: "silk", jersey: "jersey", cotton: "twill" }
+const DRESS_CLOTH = { stretch: "stretch", leather: "leather", silk: "silk", jersey: "jersey", cotton: "twill", structured: "structured" }
 
 // The dress style with the cut's cloth, sleeves and neckline (for dresses with sleeves, drafted as a top).
 function dressStyle(style, cut) {
@@ -361,21 +359,54 @@ function dressStyle(style, cut) {
 // (a pencil skirt), slim, relaxed or flared. A dress whose only flare is at its hem (cut.hem_flare: a
 // "flared hem", a mermaid or trumpet gown) keeps its fit over the hips and widens below them to at least
 // HEM_ONLY_FLARE.
+// cut.shape (the shape its photo showed, see GarmentImport::DressCut) gives the hem's width and the waist's
+// as shares of the chest, and cut.waist_flare a skirt that widens all the way from the waist (an A-line, a fit
+// and flare): its side runs straight from the waist to the hem, and the hem curves (see sideAndHem).
 const HEM_FLARE = { fitted: 0.98, slim: 1.05, relaxed: 1.15, flared: 1.5 }
 const HEM_ONLY_FLARE = 1.3
 function shapeSkirt(m, size, body, cut) {
   const fit = cut?.fit ?? "slim"
   const roomy = fit === "relaxed" || fit === "flared"
   m.shaped = {
-    waist: size.waist ?? (roomy ? body.waist + 14 : body.waist + 4),
+    waist: size.waist ?? (roomy && !cut?.waist_flare ? body.waist + 14 : body.waist + 4),
     waistAt: body.height * 0.235,
     hips: size.hips ?? (cut?.stretch ? (body.hips ?? body.chest) * 0.97 : (body.hips ?? body.chest) + 6),
-    hipAt: body.height * 0.335
+    hipAt: body.height * 0.335,
+    fromWaist: Boolean(cut?.waist_flare),
+    // How much smaller than its hips' round the cloth can be cut there and still go on: a stretch cloth gives.
+    give: cut?.stretch ? 0.92 : 0.99
   }
   const flare = HEM_FLARE[fit] ?? 1.05
   m.hem = Math.max(m.shaped.hips, m.chest * 0.9) * (cut?.hem_flare ? Math.max(flare, HEM_ONLY_FLARE) : flare)
+  const shape = cut?.shape
+  // The photo's hem, as wide for the chest as it shows (never narrower than the hips it goes over), and its
+  // waist when the chart doesn't give one.
+  if (shape?.hem) m.hem = Math.max(m.shaped.hips * 0.98, m.chest * shape.hem)
+  if (shape?.waist && size.waist == null) m.shaped.waist = Math.max(body.waist + (cut.stretch ? -2 : 3), m.chest * shape.waist)
   // A shaped side can't come in to a waist wider than the chest.
   m.shaped.waist = Math.min(m.shaped.waist, m.chest)
+}
+
+// A body panel's side, from the hem up to `top` (the underarm, or the top edge's corner), and its hem: a
+// straight hem, or for a skirt widening all the way from the waist a curve, as a circle skirt's is cut, so
+// its sides aren't longer than its middle and the hem hangs level. length: the hem's depth at the middle.
+export function sideAndHem(m, top, length = m.length) {
+  const cw = top[0], hw = m.hem / 4
+  if (!m.shaped) return { side: line([hw, -length], top), hem: line([-hw, -length], [hw, -length]) }
+  const s = m.shaped
+  const ww = Math.min(s.waist / 4 + 0.3, cw), wy = -s.waistAt
+  if (s.fromWaist && hw > ww + 1) {
+    const k = (hw - ww) / (length - s.waistAt)
+    // Over the hips the straight line has to clear them (less what a stretch cloth gives); if it doesn't, it
+    // goes out round them first.
+    const atHips = ww + k * (s.hipAt - s.waistAt)
+    if (atHips >= (s.hips / 4) * (s.give ?? 1)) {
+      const apex = wy + ww / k, radius = apex + length, alpha = Math.atan(k)
+      const arc = Array.from({ length: 25 }, (_, i) => { const phi = -alpha + (2 * alpha * i) / 24; return [radius * Math.sin(phi), apex - radius * Math.cos(phi)] })
+      return { side: [arc[arc.length - 1], [ww, wy], top], hem: arc }
+    }
+  }
+  return { side: [[hw, -length], [s.hips / 4, -s.hipAt], [ww, wy], top], hem: line([-hw, -length], [hw, -length]) }
 }
 
 // A tank top: a front and a back joined at the sides and over the shoulders on wide straps, its armholes
@@ -405,10 +436,13 @@ function draftTank(size, body) {
 // How each sleeveless cut sits on the shoulder: how far in from the shoulder bone its strap's outside edge is,
 // the strap's width (cm), and the neck's depth at the back. A strap is drawn at least two of the cloth's point
 // spacings wide (dress.js), or it would have nothing to hold it together: thin straps show about 3.5 cm.
+// A halter's straps rise to either side of the neck (inset from the shoulder bone to there): its armholes are
+// cut deep in towards them, and its back is open below them.
 const STRAPS = {
   none: { inset: 1.5, width: null, back: 3 },
   straps: { inset: 5.5, width: 5, back: 12 },
-  thin_straps: { inset: 6.5, width: 3.6, back: 16 }
+  thin_straps: { inset: 6.5, width: 3.6, back: 16 },
+  halter: { width: 4.5, back: 24, halter: true }
 }
 const NECK_DEPTH = { round: 9, high: 3, straight: 11, scoop: 15, plunge: 24 }
 
@@ -437,13 +471,21 @@ function draftDress(size, body, cut) {
     seams.push(["front", "shoulder_L", "back", "shoulder_L"])
   } else {
     const strap = STRAPS[cut.sleeves] ?? STRAPS.none
-    const outside = Math.min(size.shoulders ? size.shoulders / 2 : Infinity, shoulderBone - strap.inset)
+    const neckBase = (body.neck ?? 38) / (2 * Math.PI) + 0.6
+    const outside = strap.halter ? neckBase + strap.width : Math.min(size.shoulders ? size.shoulders / 2 : Infinity, shoulderBone - strap.inset)
     m.shoulders = 2 * outside
-    if (strap.width) m.neckWidth = Math.max(outside - strap.width, m.neckWidth)
+    if (strap.width) m.neckWidth = strap.halter ? neckBase : Math.max(outside - strap.width, m.neckWidth)
     m.shoulderDrop = strap.width ? 1.5 : 3
-    m.armhole += strap.width ? 3 : 1.5
+    m.armhole += strap.halter ? 1 : strap.width ? 3 : 1.5
     m.frontNeck = NECK_DEPTH[neckline] ?? 9
-    m.backNeck = strap.back
+    m.backNeck = strap.halter ? Math.max(strap.back, m.armhole + 3) : strap.back
+    // The neckline its photo showed: how deep, and how wide (leaving a strap at least 3.6 cm wide).
+    const shape = cut.shape
+    if (shape?.neck_depth >= 0.04) {
+      m.frontNeck = Math.min(Math.max(shape.neck_depth * m.length, 4), 32)
+      m.neckSquare = 2
+    }
+    if (shape?.neck_width > 0 && !strap.halter) m.neckWidth = Math.min(Math.max(m.neckWidth, (shape.neck_width * m.chest) / 4), outside - 3.6)
     panels.front = { edges: bodice(m, "front"), place: { at: "torso", side: "front" }, fabric: "main" }
     panels.back = { edges: bodice(m, "back"), place: { at: "torso", side: "back" }, fabric: "main" }
     for (const s of ["L", "R"]) {
@@ -461,13 +503,12 @@ function topless(m, side, strap) {
   const cw = m.chest / 4, hw = m.hem / 4
   const top = -(m.top + (side === "back" ? 1.5 : 0))
   const hem = strap ? -m.length : top - m.length
-  const sideLine = halfSide => (m.shaped
-    ? [[hw, hem], [m.shaped.hips / 4, -m.shaped.hipAt], [Math.min(m.shaped.waist / 4 + 0.3, cw), -m.shaped.waistAt], [cw, top]]
-    : line([hw, hem], [cw, top])).map(([x, y]) => [x * halfSide, y])
+  const shaped = sideAndHem(m, [cw, top], -hem)
+  const sideLine = halfSide => shaped.side.map(([x, y]) => [x * halfSide, y])
   const plusSide = sideLine(1), minusSide = reversed(sideLine(-1))
   // +x is the wearer's left on the front and their right on the back.
   const plus = side === "front" ? "L" : "R", minus = side === "front" ? "R" : "L"
-  const edges = [{ name: "hem", points: line([-hw, hem], [hw, hem]) }, { name: `side_${plus}`, points: plusSide }]
+  const edges = [{ name: "hem", points: shaped.hem }, { name: `side_${plus}`, points: plusSide }]
   if (!strap) {
     edges.push({ name: "top", points: line([cw, top], [-cw, top]) })
   } else {

@@ -25,7 +25,8 @@ class DressCutTest < ActiveSupport::TestCase
   end
 
   test "each dress's sleeves, neckline, length, fit and cloth" do
-    assert_equal [ "none", "straight", "mini", "fitted", true, "stretch" ], cut(:desma).values_at(:sleeves, :neckline, :length, :fit, :stretch, :fabric)
+    # A suiting holds its shape, stretch or not.
+    assert_equal [ "none", "straight", "mini", "fitted", true, "structured" ], cut(:desma).values_at(:sleeves, :neckline, :length, :fit, :stretch, :fabric)
     assert_equal [ "strapless", "mini", "fitted", "leather" ], cut(:saja).values_at(:sleeves, :length, :fit, :fabric)
     assert_equal [ "straps", "scoop", "slim", "leather" ], cut(:wang).values_at(:sleeves, :neckline, :fit, :fabric)
     assert_equal [ "thin_straps", "plunge", "silk", true ], cut(:mireli).values_at(:sleeves, :neckline, :fabric, :printed)
@@ -36,6 +37,36 @@ class DressCutTest < ActiveSupport::TestCase
     refute cut(:zair)[:collar]
     deba = GarmentImport::DressCut.read({ name: "Peachy Den Deba Midi Skirt - Pistachio", category: "Maxi Skirts", description: "Nylon Flared construction Relaxed fit" })
     assert_equal "midi", deba[:length], "its own name, before the shop's category"
+  end
+
+  test "the cloth is what most of it is: a little silk doesn't make it silk, a little polyurethane doesn't make it leather" do
+    mela = GarmentImport::DressCut.read({ name: "Aya Muse Mela Mini Dress - Forest", category: "Mini Dresses",
+                                          description: "Viscose blend Ruffled artwork on the straps and neck Plunging neck Lace-up closure on the front Ruffled hem Slim fit",
+                                          fabric: "Main: 77% Viscose / 15% Nylon / 8% Silk / Contrast Body: 58% Rayon / 42% Cupro" })
+    assert_equal({ "viscose" => 77.0, "nylon" => 15.0, "silk" => 8.0 }, GarmentImport::DressCut.fibre_shares("Main: 77% Viscose / 15% Nylon / 8% Silk / Contrast Body: 58% Rayon / 42% Cupro"))
+    assert_equal "silk", mela[:fabric], "a viscose hangs like silk: from its viscose, not its 8% silk"
+    celeste = GarmentImport::DressCut.read({ name: "Kith Women Celeste Micro Wrap Skirt - Black", category: "Mini Skirts",
+                                             description: "Polyester blend Mid-rise waistband Wrap overlay on the front", fabric: "45% Polyester / 35% Viscose / 15% PC / 5% Polyurethane" })
+    assert_equal [ true, "stretch" ], celeste.values_at(:stretch, :fabric)
+    assert_equal "leather", GarmentImport::DressCut.read({ name: "Faux Leather Mini Dress", description: "Material: 54% Polyurethane / 46% Viscose" })[:fabric]
+    assert_equal "halter", GarmentImport::DressCut.read({ name: "Kith Women Sasha Halter Maxi Dress", description: "Viscose blend Halter neckline Back straps" })[:sleeves]
+  end
+
+  test "a dress's photo gives its shape: flaring from the waist, a halter, sleeves the words don't name" do
+    desma = GarmentImport::DressCut.read({ name: "Kith Women Desma Suiting Dress - Black", category: "Mini Dresses", description: LISTINGS[:desma].last,
+                                           dress_shape: { waist: 0.81, waist_at: 0.42, hips: 1.07, hem: 1.35, flare_from: "waist", neck_depth: 0.1, neck_width: 0.75 } })
+    assert_equal [ "flared", true ], desma.values_at(:fit, :waist_flare)
+    assert_equal({ waist: 0.81, waist_at: 0.42, hips: 1.07, hem: 1.35, neck_depth: 0.1, neck_width: 0.75 }, desma[:shape])
+    dalters = GarmentImport::DressCut.read({ name: "Entire Studios Dalters Mini Dress - Java", description: "Nylon blend Shoulder pads Mock neckline Draped construction Relaxed fit",
+                                             dress_shape: { sleeves: "long", neck_depth: 0 } })
+    assert_equal "long", dalters[:sleeves]
+    moon = GarmentImport::DressCut.read({ name: "Frankies Bikinis Moon Cloud Knit Mini Dress", description: "Cowl neckline Self-tie closure on the back Fitted silhouette",
+                                          dress_shape: { halter: true, waist: 0.98, hem: 0.99, hips: 1.1 } })
+    assert_equal [ "halter", "fitted" ], moon.values_at(:sleeves, :fit)
+    # A flounce's width at the hem isn't the body's: the body stays as it is, the flounce goes on.
+    mela = GarmentImport::DressCut.read({ name: "Aya Muse Mela Mini Dress", description: "Ruffled hem Slim fit", dress_shape: { waist: 0.84, hips: 1.1, hem: 1.29, flare_from: "knee" } })
+    assert_equal [ "slim", false ], mela.values_at(:fit, :hem_flare)
+    assert_equal 1.1, mela[:shape][:hem]
   end
 
   test "a flared hem doesn't make a gown an A-line: it keeps its fit over the hips and flares only at the hem" do
