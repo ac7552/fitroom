@@ -179,6 +179,8 @@ class GarmentImportTest < ActiveSupport::TestCase
     # A cardigan is worn open over a top, as a jacket is, so a tee can go under it.
     assert_equal [ "jacket", "cardigan" ], top("Color-Blocked Cardigan").values_at(:garment, :style)
     assert_equal "sweatshirt", top("Undercover Cindy Sherman Sweatshirt")[:style]
+    # A fitted rib "Crewneck Top" Kith files under short-sleeve tops is a T-shirt, not a sweatshirt.
+    assert_equal "tee", top("Alexander Wang Crewneck Top with Jacquard Logo - Black", "Short Sleeve Tops")[:style]
   end
 
   test "a one-word shirt dress is a dress, a quarter zip a top, and a bodysuit a top worn tucked in" do

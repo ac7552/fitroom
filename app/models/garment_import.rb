@@ -1253,6 +1253,13 @@ class GarmentImport
     return "tee" if style == "longsleeve" && product[:category].to_s.match?(/short[- ]?sleeve/i) && !product[:name].to_s.match?(/long[- ]?sleeve|\bl\/s\b/i)
     # A top on straps (a bodysuit or a cami named for neither) is a tank.
     return "tank" if style == "tee" && product[:description].to_s.match?(/sleeveless|(?:shoulder|spaghetti|thin|wide|adjustable) straps?|\bcami(?:sole)?\b/i)
+    # A crewneck or sweater the shop files under short-sleeve tops, or whose description says its sleeves are
+    # short, is a T-shirt (a fitted rib "Crewneck Top") or a short-sleeve knit.
+    if %w[sweatshirt sweater].include?(style)
+      description = product[:description].to_s
+      short = product[:category].to_s.match?(/short[- ]?sleeve/i) || (description.match?(/short[- ]?sleeves?|\bs\/s\b/i) && !description.match?(/long[- ]?sleeves?/i))
+      return short && !product[:name].to_s.match?(/long[- ]?sleeve|\bl\/s\b/i) ? (style == "sweater" ? "shortknit" : "tee") : style
+    end
     # A button-up whose description says its sleeves are short, or whose photo shows them ending well above
     # the elbow (a camp shirt named only "Shirt", a football jersey named "Leon Shirt"), is a short-sleeve one.
     if style == "shirt"
