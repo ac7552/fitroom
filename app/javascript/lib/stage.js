@@ -581,8 +581,13 @@ export class FittingStage {
   wearScarf() {
     const d = this.slots.top
     const place = d?.top.item.cut?.scarf
-    const ready = place && d.shown && d.final && !d.posing && this.view !== "fit"
-    const stamp = ready ? `${d.top.drape.frame}:${d.posedAs}:${place}:${d.top.item.color}` : "none"
+    // Under a jacket or coat it's hidden (laid on the dress, it would poke out through the jacket).
+    const covered = Boolean(this.slots.outer?.shown)
+    // In the colour of the photo laid on the dress, when there is one (the listing's colour can be a neutral
+    // the photo isn't: "White" for a blush print).
+    const color = d?.top.item.photoMap?.color ?? d?.top.item.color
+    const ready = place && !covered && d.shown && d.final && !d.posing && this.view !== "fit"
+    const stamp = ready ? `${d.top.drape.frame}:${d.posedAs}:${place}:${color}` : "none"
     if (stamp === this.scarf.stamp) return
     this.scarf.stamp = stamp
     if (this.scarf.mesh) {
@@ -652,7 +657,7 @@ export class FittingStage {
       for (const side of [-1, 1]) strip([side * 0.035 * s, neckY - 0.01, 0.2], 0.3 * s, 0.07 * s, [0, 0, -1], [1, 0, 0], 0.01 * side)
     }
     // Its own cloth, a shade off the dress's so its edges read.
-    const material = accessoryMaterial("knit", "#" + new THREE.Color(d.top.item.color).offsetHSL(0, 0, -0.06).getHexString())
+    const material = accessoryMaterial("knit", "#" + new THREE.Color(color).offsetHSL(0, 0, -0.06).getHexString())
     const group = new THREE.Group()
     for (const geometry of strips) {
       const part = new THREE.Mesh(geometry, material)

@@ -284,7 +284,7 @@ export default class extends Controller {
           if (dress || kind === "jacket" || kind === "coat" || ["shirt", "shortshirt"].includes(garment.style)) {
             const map = (await readDressPhoto(frontPhoto).catch(() => null)) ?? (frontPhoto !== garment.photo ? await readDressPhoto(garment.photo).catch(() => null) : null)
             if (this.outfit[kind] !== item) return
-            garment.photoMap = map ? { image: map.image, soft: map.soft, layout: map.layout } : null
+            garment.photoMap = map ? { image: map.image, soft: map.soft, layout: map.layout, color: map.color } : null
             if (map) garment.print = null
             if (map && dress) garment.backPrint = garment.sleevePrint = null
           }

@@ -409,14 +409,16 @@ export function sewingFor({ item, body, frame, field, measures }) {
   // and boning do, rather than sliding off the shoulders' slope); pants grip at the waist; others slide over
   // the body as usual.
   const holds = ["strapless", "one_shoulder", "halter", "straps", "thin_straps", "none"].includes(item.cut?.sleeves)
-  // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist. A halter's straps, where
-  // they meet round the back of the neck: held there as a waistband is (its whole weight hangs from them, and
-  // a long one otherwise slides down off the shoulders into a heap at the feet).
+  // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist. A dress with nothing over
+  // its shoulders but what holds it up, held there as a waistband is (its whole weight hangs from it, and it
+  // otherwise slides down into a heap at the feet, or to the waist): a halter by its straps where they meet
+  // round the neck, a strapless one by its top edge (its boning), a one-shoulder one by both.
+  const dressHold = { halter: /^(front|back)\/shoulder_[LR]$/, strapless: /^(front|back)\/top$/, one_shoulder: /^(front|back)\/(?:top|shoulder_L)$/ }[item.cut?.sleeves]
   const ring = bottoms ? {
     points: Object.entries(cloth.edges).filter(([key]) => /^(front|back)(_[LR])?\/waist$/.test(key)).flatMap(([, idx]) => idx),
     length: pattern.measures.waist / 100
-  } : item.cut?.sleeves === "halter" ? {
-    points: Object.entries(cloth.edges).filter(([key]) => /^(front|back)\/shoulder_[LR]$/.test(key)).flatMap(([, idx]) => idx),
+  } : item.style === "dress" && dressHold ? {
+    points: Object.entries(cloth.edges).filter(([key]) => dressHold.test(key)).flatMap(([, idx]) => idx),
     length: null
   } : null
   const drape = new Drape(cloth, positions, { ...body, field }, {
