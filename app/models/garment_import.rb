@@ -137,8 +137,67 @@ class GarmentImport
       import = new
       (import.from_shopify(url) || import.from_page(Fetcher.get(url), source_url: url)).then { with_photo(it) }
     end
+  rescue Fetcher::GaveUp => e
+    from_link(url, because: e.reason)
   rescue Fetcher::Error => e
     raise Error.new("fetch_failed", e.message)
+  end
+
+  # A link whose store wouldn't give its page (it turns apps away, it was too slow, it answered with an error
+  # page): what the link's own words say the garment is, in that kind's usual sizes, with a note saying so.
+  # therealreal.com/products/men/clothing/sweaters/zegna-cashmere-collar-cardigan-x6alq is a men's cardigan
+  # named "Zegna Cashmere Collar Cardigan", worn as a jacket. A link with no words in it is a top.
+  # because: what the store did ("therealreal.com doesn't let apps read its pages").
+  def self.from_link(url, because:) = new.from_link(url, because:)
+
+  # Parts of a link's path that say nothing about the garment.
+  LINK_NOISE = /\A(?:products?|p|dp|pd|item|items|shop|store|collections?|catalog|category|categories|clothing|apparel|
+                  [a-z]{2}(?:[-_][a-z]{2})?|new|new[-_]arrivals|sale|all|view|detail|details|index|default|wom[ae]n|m[ae]n|
+                  mens|womens|wmns|ladies|unisex|kids)\z/ix
+  # The noun the note gives each style ("so this is a men's cardigan").
+  LINK_NOUNS = {
+    "dress" => "a dress", "skirt" => "a skirt", "cardigan" => "a cardigan", "sweater" => "a sweater", "shortknit" => "a sweater",
+    "hoodie" => "a hoodie", "shirt" => "a shirt", "shortshirt" => "a shirt", "tee" => "a T-shirt", "longsleeve" => "a long-sleeve T-shirt",
+    "polo" => "a polo", "tank" => "a tank top", "sweatshirt" => "a sweatshirt", "tailored" => "a blazer", "bomber" => "a bomber jacket",
+    "jeans" => "jeans", "shorts" => "shorts", "joggers" => "joggers", "leggings" => "leggings", "romper" => "a romper", "jumpsuit" => "a jumpsuit"
+  }.freeze
+  # A garment the link says nothing about the colour of shows grey until a photo gives it one.
+  LINK_GREY = "#8c8f95"
+
+  def from_link(url, because:)
+    path = (URI.parse(url.to_s.strip).path rescue "").to_s
+    segments = path.split("/").map { CGI.unescape(it).sub(/\.(?:html?|php|aspx?)\z/i, "") }.reject(&:blank?)
+    words_of = ->(segment) { segment.split(/[-_+\s]+/).reject { it.match?(/\d/) || it.size < 2 } }
+    # The name: the last part of the path that reads as words (less any item code), the category the parts
+    # before it that aren't the store's own sections.
+    at = segments.rindex { words_of.(it).size >= 2 } || segments.rindex { words_of.(it).any? && !it.match?(LINK_NOISE) }
+    name = at ? words_of.(segments[at]).join(" ").titleize : ""
+    category = (at ? segments.first(at) : []).reject { it.match?(LINK_NOISE) || words_of.(it).empty? }.last.to_s.tr("-_", "  ").titleize.presence
+    colour = COLORS.keys.find { name.match?(/\b#{it}\b/i) }
+    product = { name: name.presence || "Top", brand: nil, color: colour&.capitalize, category:, description: nil, fabric: nil, sizes: [], tags: [],
+                sorted: false }
+    product[:women] = women?(product, url)
+
+    kind = name.present? || category ? kind_of(product) : "top"
+    found =
+      if ACCESSORIES.include?(kind) then accessory(product, kind, url)
+      elsif kind == "onepiece" then one_piece(product, url) { |part, part_kind| usual_for(part_kind, top_style_of(part), part) }
+      else
+        chart = if kind == "trousers" then bottom_style_of(product) == "skirt" ? usual_skirts(product) : usual_trousers(product)
+                elsif dress?(kind, product) then DressCut.usual_sizes(DressCut.read(product))
+                else usual_sizes(kind, top_style_of(product), product)
+                end
+        garment(product, chart, kind:, source_url: url)
+      end
+    unless colour
+      found[:color] = LINK_GREY
+      found[:parts]&.each_value { it[:color] = LINK_GREY }
+    end
+    noun = LINK_NOUNS[found[:style]] || { "top" => "a top", "jacket" => "a jacket", "coat" => "a coat", "trousers" => "pants",
+                                          "shoes" => "shoes", "socks" => "socks", "belt" => "a belt", "onepiece" => "a jumpsuit" }.fetch(found[:garment], "a top")
+    noun = noun.sub(/\A(a |)/) { "#{it}#{product[:women] ? "women's" : "men's"} " } if segments.any? { it.match?(/\A(?:wom[ae]n|m[ae]n|mens|womens|wmns|ladies)\z/i) }
+    worn = found[:garment] == "jacket" && found[:style] == "cardigan" ? ", worn open over a top," : ""
+    found.merge(link_note: "#{because}, so this is #{noun}#{worn} in usual sizes.")
   end
 
   KINDS = %w[top jacket coat trousers].freeze

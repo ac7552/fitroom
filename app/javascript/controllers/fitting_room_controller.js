@@ -506,6 +506,37 @@ export default class extends Controller {
     this.update()
   }
 
+  // A garment read from its link's words (the store wouldn't give its page): its sizes, typed or pasted, or a
+  // photo of it make it truer. "Add its sizes" opens the ways to add them, set to its kind.
+  openSizes(event) {
+    const more = this.element.querySelector(".more-ways")
+    if (more) more.open = true
+    const kind = event.currentTarget.dataset.kind
+    if (this.hasItemTypeTarget && [...this.itemTypeTarget.options].some(o => o.value === kind)) {
+      this.itemTypeTarget.value = kind
+      this.changeItemType()
+    }
+    this.chartTextTarget.scrollIntoView({ behavior: "smooth", block: "center" })
+    this.chartTextTarget.focus({ preventScroll: true })
+  }
+
+  // A photo of a garment already on (one read from its link's words): read here for its colour and print,
+  // as a store's photo is, and kept on the device.
+  async addRowPhoto(event) {
+    const input = event.currentTarget, kind = input.dataset.kind
+    const file = input.files[0], item = this.outfit[kind]
+    if (!file || !item) return
+    try {
+      const photo = await smallPhoto(file)
+      if (this.outfit[kind] !== item) return
+      const { photoColor, photoMap, print, backPrint, lookDone, lookChecks, ...garment } = item.garment
+      this.addItem({ ...garment, photo, color: garment.listingColor ?? garment.color })
+      this.update()
+    } catch (error) {
+      this.showImportError(error.message)
+    }
+  }
+
   showImportError(message) {
     this.importErrorTarget.textContent = message
     this.importErrorTarget.hidden = false
@@ -545,6 +576,7 @@ export default class extends Controller {
             <p class="rail-meta">${escape([garment.brand, garment.color_name, garment.fabric && garment.fabric !== "wool" ? garment.fabric : null].filter(Boolean).join(" · "))}</p>
             <p class="rail-size" data-rail-size="${kind}" hidden></p>
             <p class="rail-notes">${escape(capitalize(notes.join(", ")))}.${source}</p>
+            ${garment.link_note ? linkNote(kind, garment) : ""}
           </div>
           <button type="button" class="text-button rail-remove" data-kind="${kind}" data-action="fitting-room#removeItem" aria-label="Remove ${KINDS[kind].toLowerCase()}">Remove</button>
         </div>`
@@ -1763,6 +1795,13 @@ async function shrunkPhoto(src) {
 
 function round(value, steps) {
   return Math.round(value * steps) / steps
+}
+
+// The note on a garment read from its link's words, with what makes it truer: its sizes, or a photo until it
+// has one.
+function linkNote(kind, garment) {
+  const photo = garment.photo ? "" : ` or <label class="text-button link-photo">a photo<input type="file" accept="image/*" data-kind="${kind}" data-action="change->fitting-room#addRowPhoto"></label>`
+  return `<p class="rail-link-note">${escape(garment.link_note)} <button type="button" class="text-button" data-kind="${kind}" data-action="fitting-room#openSizes">Add its sizes</button>${photo} for a truer fit.</p>`
 }
 
 function capitalize(text) {

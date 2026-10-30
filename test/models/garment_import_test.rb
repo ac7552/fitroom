@@ -415,9 +415,32 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "centre_back_guessed", raglan[:chart][:sleeve_from]
   end
 
-  test "a site that turns away every app says so at once, without asking it" do
-    error = assert_raises(GarmentImport::Error) { GarmentImport.from_url("https://www.therealreal.com/products/men/clothing/shirts/a-shirt-x1") }
-    assert_match(/therealreal\.com doesn't let apps read its pages.*just its size/, error.message)
+  test "a site that turns away every app gives the link's own garment in usual sizes, without asking it" do
+    garment = GarmentImport.from_url("https://www.therealreal.com/products/men/clothing/sweaters/zegna-cashmere-collar-cardigan-x6alq")
+    assert_equal "Zegna Cashmere Collar Cardigan", garment[:name]
+    # A cardigan is worn open over a top, as a jacket is.
+    assert_equal [ "jacket", "cardigan" ], garment.values_at(:garment, :style)
+    assert_not garment[:women]
+    assert_equal "sizes", garment[:chart][:kind]
+    assert_equal "therealreal.com doesn't let apps read its pages, so this is a men's cardigan, worn open over a top, in usual sizes.", garment[:link_note]
+    # Grey until a photo gives it its colour.
+    assert_equal GarmentImport::LINK_GREY, garment[:color]
+  end
+
+  test "a link the store won't give reads its words: a women's dress, pants, a colour, a link with no words" do
+    gave_up = "shop.example took too long to answer"
+    dress = GarmentImport.from_link("https://shop.example/en-us/women/dresses/satin-slip-midi-dress-123456.html", because: gave_up)
+    assert_equal [ "top", "dress" ], dress.values_at(:garment, :style)
+    assert dress[:women]
+    assert_equal "midi", dress[:cut][:length]
+    assert_match "a women's dress in usual sizes", dress[:link_note]
+    pants = GarmentImport.from_link("https://shop.example/p/black-pleated-wool-trousers/AB1234", because: gave_up)
+    assert_equal "trousers", pants[:garment]
+    assert_equal GarmentImport::COLORS["black"], pants[:color]
+    assert_equal "shop.example took too long to answer, so this is pants in usual sizes.", pants[:link_note]
+    nothing = GarmentImport.from_link("https://shop.example/p/8812734", because: gave_up)
+    assert_equal [ "top", "Top" ], nothing.values_at(:garment, :name)
+    assert_match "so this is a T-shirt in usual sizes", nothing[:link_note]
   end
 
   test "a link that isn't a Shopify product is left to the page" do

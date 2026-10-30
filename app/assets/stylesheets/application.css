@@ -413,6 +413,10 @@ a { color: inherit; }
 @media (prefers-color-scheme: dark) { .rail-best { color: #e3c27a; } }
 .rail-notes { margin: 8px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
 .rail-notes a { color: var(--ink); }
+.rail-link-note { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.rail-link-note .text-button { font-size: inherit; }
+.link-photo { position: relative; cursor: pointer; }
+.link-photo input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .rail-remove { font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 4px; }
 .rail-remove:hover { color: var(--ink); }
 
