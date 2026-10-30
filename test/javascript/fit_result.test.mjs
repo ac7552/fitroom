@@ -54,7 +54,7 @@ test("the parts that couldn't be checked go in one line", () => {
 test("one sentence says how a size fits: as it is, after a tailor, or what can't be fixed", () => {
   assert.deepEqual(verdictWords({ size: "M", verdict: "fits", checks: [] }, "M", "in"), { lead: "M fits best.", rest: "Nothing needs to change." })
   assert.deepEqual(verdictWords({ size: "L", verdict: "alter", checks: [{ part: "waist", status: "loose", fixable: true, fix: { text: "Take in the waist", amount_cm: 2.54 } }] }, "M", "in"),
-                   { lead: "L fits after a tailor:", rest: "Take in the waist by about 1 inch." })
+                   { lead: "L fits after a tailor:", rest: "take in the waist by about 1 inch." })
   const big = verdictWords({ size: "XL", verdict: "compromise", checks: [
     { part: "shoulders", status: "loose", ease_cm: 6.6, good_cm: [-0.75, 1.5], fixable: false },
     { part: "sleeve", status: "long", ease_cm: 8.6, good_cm: [-1, 1], fixable: false },

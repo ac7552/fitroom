@@ -44,9 +44,11 @@ class GarmentImport
     # sleeve_from: where the chart's sleeve is measured from, when it isn't the shoulder seam: "centre_back"
     # (the chart says so), or "centre_back_guessed" (its sleeves are too long to be from the shoulder, see
     # GarmentImport#shoulder_sleeves). The sizes then hold the sleeve from the shoulder seam, converted once.
-    Chart = Data.define(:sizes, :unit, :kind, :missing, :sleeve_from) do
-      def initialize(sizes:, unit:, kind:, missing:, sleeve_from: nil) = super
-      def as_json(*) = { sizes:, unit:, kind:, missing:, **(sleeve_from ? { sleeve_from: } : {}) }
+    # unused: the header's labels that weren't read as any measurement ("Hem", "Rise" on a jacket's chart), so
+    # a pasted chart can say what it left out.
+    Chart = Data.define(:sizes, :unit, :kind, :missing, :sleeve_from, :unused) do
+      def initialize(sizes:, unit:, kind:, missing:, sleeve_from: nil, unused: nil) = super
+      def as_json(*) = { sizes:, unit:, kind:, missing:, **(sleeve_from ? { sleeve_from: } : {}), **(unused.present? ? { unused: } : {}) }
     end
 
     # A chart that says its sleeves run from the centre of the back of the neck ("sleeve from CB", "centre
@@ -88,7 +90,9 @@ class GarmentImport
       sizes = raw.map { |size| to_garment_cm(size, unit, kind) }
       return unless sizes.all? { |s| s[@key]&.between?(@scheme[:plausible].min, @scheme[:plausible].max) }
 
-      Chart.new(sizes:, unit:, kind:, missing: @columns.keys - columns.keys, sleeve_from: sleeve_from(columns))
+      read = columns.values.map { it[:index] }
+      unused = header.each_with_index.filter_map { |label, i| label.presence if i.positive? && !read.include?(i) && !label.match?(LETTER_SIZE) }
+      Chart.new(sizes:, unit:, kind:, missing: @columns.keys - columns.keys, sleeve_from: sleeve_from(columns), unused: unused.first(8))
     end
 
     private

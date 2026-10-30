@@ -99,42 +99,44 @@
             </label>
           </div>
 
-          <p class="more-way-title more-way-title--or">Or give its sizes</p>
-          <label class="field field--compact">
-            <span class="field-label">What is it?</span>
-            <select autocomplete="off" data-fitting-room-target="itemType" data-action="fitting-room#changeItemType">
-              <option value="top">Shirt or top</option>
-              <option value="jacket">Jacket</option>
-              <option value="coat">Coat</option>
-              <option value="trousers">Pants</option>
-            </select>
-          </label>
-
-          <div class="more-way">
-            <p class="more-way-title">Paste a size chart</p>
-            <p class="tip">Copy the size table from the store's page, then paste it here. If the store only shows a size, like M, type just that.</p>
-            <textarea rows="4" autocomplete="off" spellcheck="false" data-fitting-room-target="chartText"
-                      aria-label="Size chart" placeholder="Size&#9;Chest&#9;Length&#10;M&#9;40&#9;28"></textarea>
-            <button type="button" class="button" data-action="fitting-room#importText">Add chart</button>
-          </div>
-
-          <div class="more-way">
-            <p class="more-way-title">Type in the sizes</p>
-            <p class="tip">Lay the clothes flat and measure them, or copy the numbers from the store.
-              A photo is optional. It stays on your device.</p>
+          <div class="more-way size-editor">
+            <p class="more-way-title">Or give its sizes</p>
+            <p class="tip">Copy the numbers from the store, one size at a time, or lay the clothes flat and measure them.</p>
+            <div class="segmented segmented--big editor-kinds" role="radiogroup" aria-label="What is it?">
+              <% { "top" => "Top", "jacket" => "Jacket", "coat" => "Coat", "trousers" => "Pants" }.each do |kind, label| %>
+                <label><input type="radio" name="own-kind" value="<%= kind %>" <%= "checked" if kind == "top" %> autocomplete="off"
+                              data-fitting-room-target="ownKind" data-action="fitting-room#changeItemType"><span><%= label %></span></label>
+              <% end %>
+            </div>
+            <div class="editor-how">
+              <span class="field-label">Measured</span>
+              <div class="segmented" role="radiogroup" aria-label="How it was measured">
+                <label><input type="radio" name="own-flat" value="round" checked autocomplete="off" data-fitting-room-target="measuredFlat" data-action="fitting-room#changeMeasuredFlat"><span>All the way round</span></label>
+                <label><input type="radio" name="own-flat" value="flat" autocomplete="off" data-fitting-room-target="measuredFlat" data-action="fitting-room#changeMeasuredFlat"><span>Across, flat</span></label>
+              </div>
+            </div>
+            <div class="size-tabs" role="tablist" aria-label="Sizes" data-fitting-room-target="sizeTabs"></div>
+            <div class="editor">
+              <div class="editor-fields" data-fitting-room-target="ownSizes"></div>
+              <div class="editor-diagram" data-fitting-room-target="ownDiagram"></div>
+            </div>
+            <details class="paste-chart">
+              <summary>Paste a chart instead</summary>
+              <p class="tip">Copy the size table from the store's page and paste it here. It fills the sizes above, for you to check.
+                If the store only shows a size, like M, type just that.</p>
+              <textarea rows="4" autocomplete="off" spellcheck="false" data-fitting-room-target="chartText" data-action="paste->fitting-room#pasteChart"
+                        aria-label="Size chart" placeholder="Size&#9;Chest&#9;Length&#10;M&#9;40&#9;28"></textarea>
+              <button type="button" class="button" data-action="fitting-room#importText">Fill the sizes</button>
+            </details>
+            <p class="tip paste-note" role="status" data-fitting-room-target="pasteNote" hidden></p>
             <label class="photo-pick">
               <input type="file" accept="image/*" data-fitting-room-target="photoInput" data-action="change->fitting-room#pickPhoto">
               <img alt="" data-fitting-room-target="photoPreview" hidden>
               <span data-fitting-room-target="photoLabel">+ Add a photo</span>
             </label>
-            <div class="own-sizes" data-fitting-room-target="ownSizes"></div>
-            <label class="check-line">
-              <input type="checkbox" autocomplete="off" data-fitting-room-target="measuredFlat">
-              I measured straight across, from one side to the other. (We will double it.)
-            </label>
+            <p class="import-error" role="alert" data-fitting-room-target="editorError" hidden></p>
             <div class="fit-actions fit-actions--tight">
-              <button type="button" class="button" data-action="fitting-room#addOwnSize">+ Another size</button>
-              <button type="button" class="button button--dark" data-action="fitting-room#useOwnItem">Add these sizes</button>
+              <button type="button" class="button button--dark" data-action="fitting-room#useOwnItem">Add to outfit</button>
             </div>
           </div>
         </details>

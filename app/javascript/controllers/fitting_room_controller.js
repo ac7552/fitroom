@@ -10,6 +10,7 @@ import { knockoutPhoto } from "lib/garments/knockout"
 import { measureFromPhotos } from "lib/measure_photo"
 import { partRow, uncheckedLine, verdictWords } from "lib/fit_bar"
 import { sizeSlider, stopNear } from "lib/size_slider"
+import { chartFromSizes, diagram, filled, nextSizeName, partsFor, sizesFromChart, sliderRange, startingSizes } from "lib/size_editor"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -36,13 +37,8 @@ const ORDER = ["coat", "jacket", "top", "trousers", "belt", "socks", "shoes"]
 const TRY_ON_KINDS = ["coat", "jacket", "top", "trousers"]
 // The AI picture's photo: FASHN's 576 x 864, doubled (see aiPicture).
 const AI_WIDTH = 1152, AI_HEIGHT = 1728
-const OWN_PARTS = {
-  jacket: [["chest", "Chest"], ["waist", "Waist"], ["shoulders", "Shoulders"], ["sleeve", "Sleeve"], ["length", "Length"]],
-  trousers: [["waist", "Waist"], ["seat", "Seat"], ["thigh", "Thigh"], ["inseam", "Inseam"], ["leg_opening", "Opening"]]
-}
 // What the 3D view says while it drapes a top.
 const DRAPE_TEXT = { sewing: "Sewing your size…", settling: "Almost ready…", posing: "Almost ready…" }
-const FLAT_PARTS = ["chest", "waist", "seat", "thigh", "leg_opening"]
 // The page's words for each measurement, for messages about them (see PagesHelper).
 const BODY_WORDS = {
   height: ["height", "Stand up straight, with no shoes on."],
@@ -61,8 +57,8 @@ const PART_NAMES = { inseam: "Leg length", leg_opening: "Leg opening", sleeve: "
 export default class extends Controller {
   static targets = [
     "input", "unit", "unitLabel", "cut", "results", "canvas", "stageNote", "legend", "warnings",
-    "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
-    "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
+    "link", "importButton", "chartText", "importError", "outfitList", "ownKind", "snapInput", "snapLabel", "bodyType", "switches",
+    "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos", "sizeTabs", "ownDiagram", "pasteNote", "editorError",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
     "loading", "loadingLabel", "loadingBar", "loadingActions", "scene", "stage", "aiButton", "stageToast", "seeIn3d",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
@@ -90,7 +86,8 @@ export default class extends Controller {
     this.outfit = {}
     this.tiles = new Map()
     this.renderOutfit()
-    this.renderOwnSizes()
+    this.own = { kind: "top", sizes: startingSizes("top"), at: 2, focus: "chest" }
+    this.renderEditor()
     this.update()
   }
 
@@ -117,9 +114,40 @@ export default class extends Controller {
     if (url) this.importGarment({ url })
   }
 
-  importText() {
+  // A pasted chart (or just a size, like M) is read by the server and fills the size tabs, to be checked
+  // before the garment goes on.
+  async importText() {
     const text = this.chartTextTarget.value.trim()
-    if (text) this.importGarment({ text, garment: this.itemTypeTarget.value })
+    if (!text) return
+    const kind = this.own.kind
+    this.pasteNoteTarget.hidden = true
+    this.editorErrorTarget.hidden = true
+    try {
+      const response = await fetch(this.importUrlValue, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ text, garment: kind }),
+        signal: AbortSignal.timeout(20000)
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message ?? "Couldn't read that as a size chart.")
+      const { sizes, note } = sizesFromChart(data.garment.chart, kind)
+      if (!sizes.length) throw new Error("Couldn't find any sizes in that.")
+      this.own = { ...this.own, sizes, at: 0, focus: partsFor(kind)[0].part }
+      // A chart's numbers are all the way round, as the server reads them.
+      this.measuredFlatTargets.forEach(input => { input.checked = input.value === "round" })
+      this.pasteNoteTarget.textContent = note
+      this.pasteNoteTarget.hidden = false
+      this.renderEditor()
+    } catch (error) {
+      this.editorErrorTarget.textContent = error.name === "TimeoutError" ? "That took too long. Try again." : error.message
+      this.editorErrorTarget.hidden = false
+    }
+  }
+
+  // Pasting straight into the chart box reads it at once.
+  pasteChart() {
+    setTimeout(() => this.importText(), 0)
   }
 
   async importGarment(payload) {
@@ -438,8 +466,131 @@ export default class extends Controller {
     this.update()
   }
 
-  changeItemType() {
-    this.renderOwnSizes()
+  // The size editor (see lib/size_editor): what it is, a tab per size, the size's numbers, and where to
+  // measure them.
+  changeItemType(event) {
+    const kind = event?.target?.value ?? this.ownKindTargets.find(input => input.checked)?.value ?? "top"
+    if (kind === this.own.kind) return
+    // Tops, jackets and coats share their measurements; pants start again.
+    const same = (kind === "trousers") === (this.own.kind === "trousers")
+    this.own = same ? { ...this.own, kind } : { kind, sizes: startingSizes(kind), at: 2, focus: partsFor(kind)[0].part }
+    this.renderEditor()
+  }
+
+  renderEditor() {
+    const { kind, sizes, at, focus } = this.own
+    this.ownKindTargets.forEach(input => { input.checked = input.value === kind })
+    const flat = this.measuredFlatTargets.find(input => input.checked)?.value === "flat"
+    this.sizeTabsTarget.innerHTML = `
+      <button type="button" class="size-tab-arrow" aria-label="Size before" data-step="-1" data-action="fitting-room#stepSizeTab">‹</button>
+      ${sizes.map((size, i) => `
+        <button type="button" role="tab" aria-selected="${i === at}" tabindex="${i === at ? 0 : -1}" class="size-tab${i === at ? " is-on" : ""}"
+                data-index="${i}" data-action="fitting-room#pickSizeTab keydown->fitting-room#keySizeTab">${escape(size.name || "?")}<i class="${filled(size) ? "is-full" : ""}"></i></button>`).join("")}
+      <button type="button" class="size-tab size-tab--add" aria-label="Add a size" data-action="fitting-room#addOwnSize">+</button>
+      <button type="button" class="size-tab-arrow" aria-label="Size after" data-step="1" data-action="fitting-room#stepSizeTab">›</button>`
+    const size = sizes[at]
+    const unit = this.unit
+    this.ownSizesTarget.innerHTML = `
+      <label class="field field--editor">
+        <span class="field-label">Size name</span>
+        <span class="field-input"><input type="text" autocomplete="off" spellcheck="false" value="${escape(size.name)}" data-own="name" data-action="input->fitting-room#editOwnName"></span>
+      </label>
+      ${partsFor(kind).map(p => {
+        const cm = size.cm[p.part]
+        const shown = cm > 0 ? round((unit === "in" ? cm / 2.54 : cm) / (flat && p.flat ? 2 : 1), 4) : ""
+        const [lo, hi] = sliderRange(sizes, at, p.part, p.usual).map(v => (unit === "in" ? v / 2.54 : v) / (flat && p.flat ? 2 : 1))
+        return `
+        <div class="field field--editor${p.part === focus ? " is-focus" : ""}">
+          <label class="field-label" for="own-${p.part}">${p.label}${flat && p.flat ? " <small>across</small>" : ""}</label>
+          <span class="field-input">
+            <input id="own-${p.part}" type="number" inputmode="decimal" min="0" step="0.25" autocomplete="off" value="${shown}"
+                   data-own="${p.part}" data-action="input->fitting-room#editOwnSize focus->fitting-room#focusOwnPart">
+            <span class="field-unit">${unit}</span>
+          </span>
+          <input type="range" class="slider${shown === "" ? " is-unset" : ""}" min="${round(lo, 2)}" max="${round(hi, 2)}" step="${unit === "in" ? 0.25 : 0.5}" value="${shown === "" ? round((lo + hi) / 2, 2) : shown}"
+                 aria-label="${p.label} slider" data-own-slider="${p.part}" data-action="input->fitting-room#slideOwnSize focus->fitting-room#focusOwnPart">
+          <span class="field-help">${p.help}.</span>
+        </div>`
+      }).join("")}`
+    this.ownDiagramTarget.innerHTML = `${diagram(kind, focus)}<p>${escape(partsFor(kind).find(p => p.part === focus)?.help ?? "")}</p>`
+  }
+
+  pickSizeTab(event) {
+    this.own.at = Number(event.currentTarget.dataset.index)
+    this.renderEditor()
+  }
+
+  stepSizeTab(event) {
+    const at = this.own.at + Number(event.currentTarget.dataset.step)
+    if (at < 0 || at >= this.own.sizes.length) return
+    this.own.at = at
+    this.renderEditor()
+  }
+
+  keySizeTab(event) {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key]
+    if (!step) return
+    event.preventDefault()
+    const at = this.own.at + step
+    if (at < 0 || at >= this.own.sizes.length) return
+    this.own.at = at
+    this.renderEditor()
+    this.sizeTabsTarget.querySelector(`.size-tab[data-index="${at}"]`)?.focus()
+  }
+
+  addOwnSize() {
+    this.own.sizes.push({ name: nextSizeName(this.own.sizes), cm: {} })
+    this.own.at = this.own.sizes.length - 1
+    this.renderEditor()
+    this.ownSizesTarget.querySelector('[data-own="name"]')?.select()
+  }
+
+  editOwnName(event) {
+    this.own.sizes[this.own.at].name = event.target.value
+    const tab = this.sizeTabsTarget.querySelector(`.size-tab[data-index="${this.own.at}"]`)
+    if (tab) tab.firstChild.textContent = event.target.value || "?"
+  }
+
+  // A number typed in: kept in cm, the slider and the tab's dot follow.
+  editOwnSize(event) {
+    const part = event.target.dataset.own
+    const value = parseFloat(event.target.value)
+    this.setOwnPart(part, Number.isFinite(value) && value > 0 ? value : null)
+    const slider = this.ownSizesTarget.querySelector(`[data-own-slider="${part}"]`)
+    if (slider && Number.isFinite(value)) slider.value = value
+    slider?.classList.toggle("is-unset", !(value > 0))
+  }
+
+  slideOwnSize(event) {
+    const part = event.target.dataset.ownSlider
+    const value = parseFloat(event.target.value)
+    this.setOwnPart(part, value)
+    const input = this.ownSizesTarget.querySelector(`[data-own="${part}"]`)
+    if (input) input.value = value
+    event.target.classList.remove("is-unset")
+  }
+
+  setOwnPart(part, value) {
+    const flat = this.measuredFlatTargets.find(input => input.checked)?.value === "flat"
+    const spec = partsFor(this.own.kind).find(p => p.part === part)
+    const size = this.own.sizes[this.own.at]
+    if (value == null) delete size.cm[part]
+    else size.cm[part] = round(toCm(value, this.unit) * (flat && spec?.flat ? 2 : 1), 10)
+    this.sizeTabsTarget.querySelector(`.size-tab[data-index="${this.own.at}"] i`)?.classList.toggle("is-full", filled(size))
+    this.editorErrorTarget.hidden = true
+  }
+
+  focusOwnPart(event) {
+    const part = event.target.dataset.own ?? event.target.dataset.ownSlider
+    if (!part || part === this.own.focus) return
+    this.own.focus = part
+    this.ownSizesTarget.querySelectorAll(".field--editor").forEach(field => field.classList.toggle("is-focus", field.querySelector(`[data-own="${part}"]`) !== null))
+    this.ownDiagramTarget.innerHTML = `${diagram(this.own.kind, part)}<p>${escape(partsFor(this.own.kind).find(p => p.part === part)?.help ?? "")}</p>`
+  }
+
+  // Across, flat, or all the way round: the numbers stay the garment's, the boxes show them as measured.
+  changeMeasuredFlat() {
+    this.renderEditor()
   }
 
   // A photo is read locally, for a preview and its colour, and never sent anywhere.
@@ -453,52 +604,26 @@ export default class extends Controller {
     this.photoColor = await clothColor(this.photoUrl)
   }
 
-  renderOwnSizes() {
-    this.ownSizesTarget.innerHTML = ""
-    this.addOwnSize()
-  }
-
-  addOwnSize() {
-    const kind = this.itemTypeTarget.value
-    const trousers = kind === "trousers"
-    const parts = OWN_PARTS[trousers ? "trousers" : "jacket"]   // a top is measured like a jacket
-    const row = document.createElement("div")
-    row.className = "own-size"
-    row.innerHTML = `
-      <label><span>Size</span><input type="text" autocomplete="off" spellcheck="false" placeholder="${trousers ? "32" : kind === "top" ? "M" : "40R"}" data-own="name"></label>
-      ${parts.map(([part, label]) => `
-        <label><span>${label}</span><input type="number" inputmode="decimal" min="0" step="0.25" autocomplete="off" data-own="${part}"></label>`).join("")}`
-    this.ownSizesTarget.append(row)
-  }
-
+  // Every size with its main number in goes on. A garment read from its link's words (see linkNote) keeps
+  // its name, look and photo, now with its own sizes.
   useOwnItem() {
-    const kind = this.itemTypeTarget.value
-    const parts = OWN_PARTS[kind === "trousers" ? "trousers" : "jacket"]
-    const main = parts[0][0]
-    const flat = this.measuredFlatTarget.checked
-    const sizes = [...this.ownSizesTarget.querySelectorAll(".own-size")].map((row, i) => {
-      const size = { name: row.querySelector('[data-own="name"]').value.trim() || `Size ${i + 1}` }
-      for (const [part] of parts) {
-        const value = parseFloat(row.querySelector(`[data-own="${part}"]`).value)
-        size[part] = Number.isFinite(value) && value > 0
-          ? round(toCm(value, this.unit) * (flat && FLAT_PARTS.includes(part) ? 2 : 1), 10)
-          : null
-      }
-      return size
-    }).filter(size => size[main])
-
-    if (sizes.length === 0) {
-      this.showImportError(`Type in at least the ${main} for one size.`)
+    const kind = this.own.kind
+    const chart = chartFromSizes(this.own.sizes, kind, false)
+    if (chart.sizes.length === 0) {
+      this.editorErrorTarget.textContent = `Type in at least the ${partsFor(kind)[0].label.toLowerCase()} for one size.`
+      this.editorErrorTarget.hidden = false
       return
     }
-    this.importErrorTarget.hidden = true
-    const missing = parts.map(([part]) => part).filter(part => sizes.every(size => size[part] == null))
-    this.addItem({
-      name: `Your ${KINDS[kind].toLowerCase()}`, brand: null, color_name: null, color: this.photoColor ?? "#2a3552",
-      source_url: null, garment: kind, photo: this.photoUrl ?? null, fabric: kind === "top" ? "cotton" : "wool",
-      ...(DEFAULT_STYLE[kind] ? { style: DEFAULT_STYLE[kind] } : {}),
-      chart: { sizes, unit: this.unit, kind: "garment", missing }
-    })
+    this.editorErrorTarget.hidden = true
+    const linked = this.outfit[kind]?.garment.link_note ? this.outfit[kind].garment : null
+    const garment = linked
+      ? (({ link_note, photoColor, photoMap, print, backPrint, lookDone, lookChecks, ...rest }) => ({ ...rest, color: rest.listingColor ?? rest.color }))(linked)
+      : {
+          name: `Your ${KINDS[kind].toLowerCase()}`, brand: null, color_name: null, color: this.photoColor ?? "#2a3552",
+          source_url: null, garment: kind, photo: this.photoUrl ?? null, fabric: kind === "top" ? "cotton" : "wool",
+          ...(DEFAULT_STYLE[kind] ? { style: DEFAULT_STYLE[kind] } : {})
+        }
+    this.addItem({ ...garment, photo: this.photoUrl ?? garment.photo ?? null, chart })
     this.photoUrl = null
     this.photoColor = null
     this.photoPreviewTarget.hidden = true
@@ -512,12 +637,9 @@ export default class extends Controller {
     const more = this.element.querySelector(".more-ways")
     if (more) more.open = true
     const kind = event.currentTarget.dataset.kind
-    if (this.hasItemTypeTarget && [...this.itemTypeTarget.options].some(o => o.value === kind)) {
-      this.itemTypeTarget.value = kind
-      this.changeItemType()
-    }
-    this.chartTextTarget.scrollIntoView({ behavior: "smooth", block: "center" })
-    this.chartTextTarget.focus({ preventScroll: true })
+    if (["top", "jacket", "coat", "trousers"].includes(kind)) this.changeItemType({ target: { value: kind } })
+    this.sizeTabsTarget.scrollIntoView({ behavior: "smooth", block: "center" })
+    this.ownSizesTarget.querySelector('input[type="number"]')?.focus({ preventScroll: true })
   }
 
   // A photo of a garment already on (one read from its link's words): read here for its colour and print,
@@ -634,8 +756,7 @@ export default class extends Controller {
     if (next === this.unit) return
 
     const height = this.readHeight()
-    const ownInputs = this.ownSizesTarget.querySelectorAll('input[type="number"]')
-    for (const input of [...this.inputTargets, ...ownInputs]) {
+    for (const input of this.inputTargets) {
       if (input.dataset.part === "height") continue
       const value = parseFloat(input.value)
       if (!Number.isFinite(value)) continue
@@ -645,6 +766,7 @@ export default class extends Controller {
     this.unit = next
     this.writeHeight(height == null ? null : toCm(height, this.unit === "in" ? "cm" : "in"))
     this.showUnit()
+    this.renderEditor()
     this.update()
   }
 

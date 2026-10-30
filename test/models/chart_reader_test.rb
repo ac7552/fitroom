@@ -11,6 +11,13 @@ class ChartReaderTest < ActiveSupport::TestCase
     assert_equal({ sizes: chart.sizes, unit: "cm", kind: "garment", missing: [ "waist" ] }, chart.as_json)
   end
 
+  test "a chart names the columns it didn't read, so a pasted one can say what it left out" do
+    chart = read([ %w[Size Chest Hem Rise Length], %w[M 54 52 30 70], %w[L 57 55 31 72] ], context: "garment measurements in cm")
+
+    assert_equal %w[Hem Rise], chart.unused
+    assert_equal %w[Hem Rise], chart.as_json[:unused]
+  end
+
   test "a sleeve column that says it runs from the centre back is marked so, whatever its length" do
     [ "Sleeve (from center back)", "CB Sleeve", "Sleeve from CB", "Centre back sleeve", "Sleeve length (C.B. to cuff)", "Sleeve from nape" ].each do |label|
       chart = read([ [ "Size", "Chest", "Shoulders", label, "Length" ], %w[M 54 46 44 70], %w[L 57 48 45 72] ], context: "cm")

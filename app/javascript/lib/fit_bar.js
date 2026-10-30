@@ -104,7 +104,7 @@ export function verdictWords(result, best, unit) {
   if (result.verdict === "fits") return { lead: isBest ? `${size} fits best.` : `${size} fits too.`, rest: "Nothing needs to change." }
   if (result.verdict === "alter") {
     const list = fixes.map(c => `${c.fix.text.toLowerCase()} by ${formatAbout(c.fix.amount_cm, unit)}`)
-    return { lead: `${size} fits after a tailor:`, rest: `${capitalize(listed(list))}.` }
+    return { lead: `${size} fits after a tailor:`, rest: `${listed(list)}.` }
   }
   const words = problems.map(c => {
     const how = LENGTHS.includes(c.part) ? (c.status === "short" || c.status === "tight" ? "short" : "long")
