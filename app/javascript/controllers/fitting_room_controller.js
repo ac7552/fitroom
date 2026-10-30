@@ -336,6 +336,15 @@ export default class extends Controller {
       garment.lookChecks = result
       if (!result || result.ok) break
       rememberLookFailure(garment, attempt, result)
+      // Only the back's print didn't match (the front, its sleeves and its print did): the back goes plain and
+      // the front stays as read, then the front alone is checked. Reading everything again the plainest way
+      // would take off sleeve stripes and the front's print that matched.
+      if (result.frontOk && garment.backPrint) {
+        garment.backPrint = null
+        this.renderOutfit()
+        this.render()
+        continue
+      }
       const reading = nextReading(++attempt, result.failed)
       if (!reading) { this.lookStuck(garment); return }
       this.setLookWords(`Adjusting the print (try ${attempt} of 3)…`)
@@ -377,7 +386,7 @@ export default class extends Controller {
     const backShot = await this.stage.lookShot("top", { back: true })
     if (!backShot || !garment.lookPlain.back) return front
     const back = compareLooks(garment.lookPlain.back, findPrint(backShot.data, backShot.width, backShot.height, null, PLAIN)?.look, { unprinted })
-    return { ok: front.ok && back.ok, failed: [...new Set([...front.failed, ...back.failed])], checks: front.checks, back: back.checks, looks: front.looks }
+    return { ok: front.ok && back.ok, frontOk: front.ok, failed: [...new Set([...front.failed, ...back.failed])], checks: front.checks, back: back.checks, looks: front.looks }
   }
 
   // The top's photos read again another way (nextReading) and laid on.
