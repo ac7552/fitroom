@@ -478,9 +478,11 @@ class GarmentImport
     return sizes unless shape[:rise]&.between?(0.18, 0.5)
 
     sizes.map do |size|
-      thigh = shape[:thigh] ? (shape[:thigh] * size["waist"]).clamp(size["seat"] * 0.5, size["seat"] * 0.75).round(1) : size["thigh"] || (size["seat"] * 0.6).round(1)
+      thigh = ((shape[:thigh] || 0) * size["waist"]).clamp(size["seat"] * 0.5, size["seat"] * 0.75).round(1)
+      thigh = size["thigh"].clamp(size["seat"] * 0.5, size["seat"] * 0.75) if !shape[:thigh] && size["thigh"]
       shorts = size["inseam"] < 40
-      opening = (shape[:hem] * size["waist"]).clamp(shorts ? thigh * 0.9 : [ 18, thigh * 0.35 ].max, 80).round(1)
+      least = [ shorts ? thigh * 0.9 : [ 18, thigh * 0.35 ].max, 80 ].min
+      opening = (shape[:hem] * size["waist"]).clamp(least, 80).round(1)
       size.merge("leg_opening" => opening, "thigh" => [ thigh, opening ].max)
     end
   end

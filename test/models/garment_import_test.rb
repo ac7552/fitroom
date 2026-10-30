@@ -581,6 +581,9 @@ class GarmentImportTest < ActiveSupport::TestCase
     cargo = { name: "Stone Island Loose Fit Sweatpant", description: "Elasticated cuffs", bottom_shape: shape.merge(hem: 0.45) }
     assert_nil import.send(:bottoms_cut, cargo, "joggers", trouser_chart([ 81, 81 ]))&.dig(:open_hem)
     assert_nil import.send(:bottoms_cut, essentials.merge(description: "Ribbed cuffs"), "joggers", trouser_chart([ 81, 81 ]))&.dig(:open_hem)
+    # Big shorts (a 4XL's thigh past what an 80 cm opening allows) don't raise.
+    big = import.send(:as_photographed_legs, [ { "name" => "4XL", "waist" => 117.0, "seat" => 146.0, "thigh" => 104.0, "inseam" => 20 } ], shape)
+    assert_equal 80, big.first["leg_opening"]
   end
 
   def trouser_chart(inseams) = GarmentImport::ChartReader::Chart.new(sizes: inseams.each_with_index.map { |inseam, i| { "name" => (44 + 2 * i).to_s, "waist" => 79.0 + 4 * i, "seat" => 108.0 + 4 * i, "inseam" => inseam } }, unit: "cm", kind: "garment", missing: [])
