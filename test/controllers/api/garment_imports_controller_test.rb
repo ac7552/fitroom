@@ -26,13 +26,23 @@ end
 class Api::GarmentImportsImageProxyTest < ActionDispatch::IntegrationTest
   PNG = "\x89PNG\r\n\x1A\n".b + ("\0" * 64).b
 
+  # The fetcher answering with `get_image` for the block's length. (Minitest 6 has no Object#stub.)
+  def with_get_image(get_image)
+    fetcher = GarmentImport::Fetcher
+    original = fetcher.method(:get_image)
+    fetcher.define_singleton_method(:get_image) { |*args, **options| get_image.call(*args, **options) }
+    yield
+  ensure
+    fetcher.define_singleton_method(:get_image, original)
+  end
+
   test "passes a shop's photo through, as an image the browser may cache for an hour" do
     asked = nil
     fetch = lambda do |url, max_bytes:, types:|
       asked = [ url, max_bytes, types ]
       [ PNG, "image/png" ]
     end
-    GarmentImport::Fetcher.stub(:get_image, fetch) do
+    with_get_image(fetch) do
       get image_api_v1_garment_imports_path, params: { url: "https://cdn.example.com/boot.png?width=1000" }
     end
 
@@ -59,7 +69,7 @@ class Api::GarmentImportsImageProxyTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
 
     not_photo = ->(*, **) { raise GarmentImport::Fetcher::Error, "That isn't a photo." }
-    GarmentImport::Fetcher.stub(:get_image, not_photo) do
+    with_get_image(not_photo) do
       get image_api_v1_garment_imports_path, params: { url: "https://shop.example.com/products/boot" }
     end
     assert_response :unprocessable_entity

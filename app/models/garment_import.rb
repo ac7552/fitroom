@@ -70,7 +70,9 @@ class GarmentImport
   # body, its baffles puffed. Not "button-down", nor a shell that's only "padded at the shoulders".
   PUFFER = /puffer|nuptse|\bdown[- ](?:filled|fill|jacket|parka|coat|vest|insulat\w*)|(?:goose|duck) down|down (?:and|&) feather|fill[- ]power|quilted|baffle|\binsulated\b|\bpadded (?:jacket|coat|vest|parka)/i
   # Knitwear: a sweater, a cardigan, anything knitted. Drawn as a knit (ribbed, matte) whatever its fibre.
-  KNITWEAR = /sweater|jumper|cardigan|\bknit(?:ted|wear)?\b|crochet|cable[- ]knit|rib[- ]?knit|merino|cashmere/i
+  KNITWEAR = /sweater|jumper|cardigan|\bknit(?:ted|wear)?\b|crochet|cable[- ]knit|rib[- ]?knit/i
+  # Fibres spun for knitwear: a top of them is a knit (see knitwear?).
+  KNIT_FIBRES = /merino|cashmere/i
   # A top made to sit close: a shrunken or baby fit, a fitted or slim cut. (Not "fitted cuffs" or a
   # "fitted hem", which most sweatshirts have.)
   FITTED_TOP = /shrunken|\bbaby (?:tee|t-?shirt|rib|fit)|\bslim\b|\bfitted\b(?!\s*(?:cuffs?|hems?|waist(?:band)?|sleeves?|neck))|body[- ]?con|second[- ]skin|form[- ]fitting|skin[- ]?tight/i
@@ -79,14 +81,17 @@ class GarmentImport
 
   # How a jacket looks, so the 3D view draws the right one: tailored (blazers, suit and sport jackets),
   # shirt (button-front denim, trucker and work jackets), bomber, or zip (most other outerwear). First match wins.
+  ZIP_FRONT = /two-way zip|zip(?:per)? closure|full[- ]zip|zip[- ]up|front zip/i
   STYLES = [
     [ "cardigan", /cardigan/i ],
     [ "tailored", /blazer|(?<!body|cat)suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
     [ "bomber", /bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington|aviator|blouson/i ],
-    [ "zip", /two-way zip|zip(?:per)? closure|full[- ]zip|zip[- ]up|front zip/i ],
+    [ "zip", ZIP_FRONT ],
     [ "shirt", /denim(?: \w+)? jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|barn jacket|hunting jacket|ranch jacket|coach(?:es)? jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
     [ "zip", /zip|moto\b|biker|leather jacket|shearling|puffer|down jacket|windbreaker|anorak|track jacket|blouson|fleece/i ]
   ].freeze
+  # What only a shirt jacket is called (a "utility" jacket can zip).
+  SHIRT_NAMED = /denim(?: \w+)? jacket|jean jacket|trucker|overshirt|shirt[- ]jacket|shacket|chambray|button/i
   # Shops' outerwear sections, where a jacket that says nothing else is more likely casual than tailored.
   OUTERWEAR = /outerwear|coats?[-_ ](and|&)[-_ ]jackets|jackets?[-_ ](and|&)[-_ ]coats/i
 
@@ -1001,7 +1006,7 @@ class GarmentImport
     fit_cut = kind == "top" ? top_cut(product) : kind == "jacket" ? jacket_cut(product) : kind == "coat" && hooded?(product) ? { hood: true } : nil
     # A bodysuit fastens below, so it's always worn tucked in, and it's cut to sit close and stretch on.
     bodysuit = kind == "top" && product.values_at(:name, :category).join(" ").match?(/bodysuit/i)
-    fit_cut = { fit: "fitted", stretch: true } if bodysuit && fit_cut&.dig(:fit) != "fitted"
+    fit_cut = { **(fit_cut || {}), fit: "fitted", stretch: true } if bodysuit
     # A half-zip or quarter-zip pullover: a stand collar with a short zip down from it (a hoodie keeps its hood).
     fit_cut = (fit_cut || {}).merge(half_zip: true) if kind == "top" && !%w[hoodie dress tank].include?(style) && product.values_at(:name, :description).join(" ").match?(HALF_ZIP)
     {
@@ -1028,7 +1033,16 @@ class GarmentImport
   end
 
   # Whether a listing is knitwear (a sweater, a cardigan, a knit hoodie), by its name, category and description.
-  def knitwear?(product) = product.values_at(:name, :category, :description).join(" ").match?(KNITWEAR)
+  # Knitted, by what it is (a sweater, a cardigan, "knit"), or by what it's spun from when that's what it's
+  # made of: a "Cashmere Hoodie", a "Merino wool" crewneck, "100% Cashmere". Not a polo with 5% cashmere in
+  # its blend, nor (fibres: false) a coat or jacket, whose cashmere or merino is woven.
+  def knitwear?(product, fibres: true)
+    return true if product.values_at(:name, :category, :description).join(" ").match?(KNITWEAR)
+    return false unless fibres
+
+    lead = product[:description].to_s[/\A\W*(\w+(?:\s+\w+){0,2})/, 1]
+    [ product[:name], lead, main_fibre(product[:fabric].presence || product[:description]) ].any? { it.to_s.match?(KNIT_FIBRES) }
+  end
 
   # How a top is cut, when its listing says it sits close: { fit: "fitted", stretch: true/false }. stretch: the
   # cloth gives (a knit, a rib, elastane), so the top is made about the size of the body, or smaller, and
@@ -1132,7 +1146,7 @@ class GarmentImport
     return "denim" if fabric == "cotton" && [ name, product[:category] ].join(" ").match?(FABRICS.to_h.fetch("denim"))
     # Knitwear is a knit whatever it's spun from (a cotton sweater hoodie, a wool cardigan): ribbed and matte,
     # never a woven cloth or a shell. Silk and leather keep their look.
-    return "knit" if kind != "trousers" && knitwear?(product) && !%w[silk leather].include?(fabric)
+    return "knit" if kind != "trousers" && knitwear?(product, fibres: kind == "top") && !%w[silk leather].include?(fabric)
 
     fabric
   end
@@ -1269,6 +1283,10 @@ class GarmentImport
     # The name first: a "Trucker Jacket" whose description mentions a zip pocket is still a trucker.
     named = product.values_at(:name, :category).join(" ")
     found = STYLES.find { |_, pattern| named.match?(pattern) }&.first
+    # A utility, field or work jacket the description says zips up the front is a zip-up (a trucker or an
+    # overshirt with a zip pocket, or one that buttons or snaps, stays a shirt jacket).
+    description = product[:description].to_s
+    return "zip" if found == "shirt" && !named.match?(SHIRT_NAMED) && description.match?(ZIP_FRONT) && !description.match?(/button|snap/i)
     return found if found
     words = product.values_at(:name, :category, :description).join(" ")
     found = STYLES.find { |_, pattern| words.match?(pattern) }&.first
