@@ -38,3 +38,9 @@
 __pycache__/
 *.bundle
 /tmp/shots/
+
+# The validation runner and its data, served by the dev server (see script/validation/README.md).
+/public/validation/
+# Validation outfits pulled out of the page and their contact sheets.
+/script/validation/runs/
+/script/validation/sheets/
