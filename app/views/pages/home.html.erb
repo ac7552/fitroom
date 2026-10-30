@@ -90,13 +90,14 @@
         <details class="more-ways">
           <summary>Other ways to add clothes</summary>
           <div class="more-way more-way--first">
-            <p class="more-way-title">Just add a photo</p>
-            <p class="tip">Take or pick a photo of the clothes, flat or on a hanger, on a plain background.
-              Fitroom works out what it is and puts it on in the usual sizes. The photo stays on your device.</p>
-            <label class="photo-pick photo-pick--big">
-              <input type="file" accept="image/*" data-fitting-room-target="snapInput" data-action="change->fitting-room#importPhoto">
-              <span data-fitting-room-target="snapLabel">+ Add a photo of the clothes</span>
-            </label>
+            <p class="more-way-title">Add photos of it</p>
+            <p class="tip">Pick or drop up to six photos of one garment: its front, flat or on a hanger on a plain background,
+              and its back, a close-up of the cloth, its size tag or a photo of it worn if you have them. The photos stay on your device.</p>
+            <div class="tray" data-fitting-room-target="tray"
+                 data-action="dragover->fitting-room#dragTray dragleave->fitting-room#leaveTray drop->fitting-room#dropTray"></div>
+            <div class="fit-actions fit-actions--tight">
+              <button type="button" class="button button--dark" data-fitting-room-target="trayAdd" data-action="fitting-room#importPhoto" hidden>Add it in the usual sizes</button>
+            </div>
           </div>
 
           <div class="more-way size-editor">
@@ -129,11 +130,7 @@
               <button type="button" class="button" data-action="fitting-room#importText">Fill the sizes</button>
             </details>
             <p class="tip paste-note" role="status" data-fitting-room-target="pasteNote" hidden></p>
-            <label class="photo-pick">
-              <input type="file" accept="image/*" data-fitting-room-target="photoInput" data-action="change->fitting-room#pickPhoto">
-              <img alt="" data-fitting-room-target="photoPreview" hidden>
-              <span data-fitting-room-target="photoLabel">+ Add a photo</span>
-            </label>
+            <p class="tip" data-fitting-room-target="trayNote" hidden>The photos above go on it too.</p>
             <p class="import-error" role="alert" data-fitting-room-target="editorError" hidden></p>
             <div class="fit-actions fit-actions--tight">
               <button type="button" class="button button--dark" data-action="fitting-room#useOwnItem">Add to outfit</button>

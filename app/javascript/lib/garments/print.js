@@ -1479,6 +1479,64 @@ function cutOut(data, w, h) {
   return { lab, bg, garment, far, all: mask }
 }
 
+// What kind of photo of a garment this is, as numbers for photo_roles.js to read: whether a garment stands
+// clear of a plain backdrop (a full shot) or fills the frame (a close-up of its cloth, its size tag), how much
+// of the frame it fills and how many of the frame's edges it runs off, how much of the frame is very dark and
+// very light and how busy it is (a tag's printed words), and how much looks like skin that isn't the
+// garment's own colour (someone wearing it).
+export async function readPhotoTraits(src) {
+  const pixels = await loadPixels(src)
+  return pixels && photoTraits(pixels.data, pixels.w, pixels.h)
+}
+
+export function photoTraits(data, w, h) {
+  const n = w * h
+  const cut = cutOut(data, w, h)
+  const lab = cut?.lab ?? (() => {
+    const out = new Float32Array(3 * n)
+    for (let i = 0; i < n; i++) toLab(data[4 * i], data[4 * i + 1], data[4 * i + 2], out, 3 * i)
+    return out
+  })()
+  let fills = 0, touches = 0, colour = null
+  if (cut) {
+    const mask = cut.garment.mask
+    fills = cut.garment.count / n
+    const edgeShare = cells => cells.filter(i => mask[i]).length / cells.length
+    const rows = (y) => Array.from({ length: w }, (_, x) => y * w + x), cols = (x) => Array.from({ length: h }, (_, y) => y * w + x)
+    touches = [rows(0), rows(h - 1), cols(0), cols(w - 1)].filter(cells => edgeShare(cells) > 0.3).length
+    const inside = []
+    for (let i = 0; i < n; i += 7) if (mask[i]) inside.push(i)
+    colour = [0, 1, 2].map(c => median(inside.map(i => lab[3 * i + c])))
+  } else {
+    // Cloth filling the frame: its own colour is the frame's.
+    const all = []
+    for (let i = 0; i < n; i += 7) all.push(i)
+    colour = [0, 1, 2].map(c => median(all.map(i => lab[3 * i + c])))
+  }
+  let dark = 0, light = 0, busy = 0, skin = 0
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, L = lab[3 * i]
+      if (L < 25) dark++
+      if (L > 82) light++
+      if ((x < w - 1 && Math.abs(L - lab[3 * (i + 1)]) > 25) || (y < h - 1 && Math.abs(L - lab[3 * (i + w)]) > 25)) busy++
+      const r = data[4 * i], g = data[4 * i + 1], b = data[4 * i + 2]
+      const Y = 0.299 * r + 0.587 * g + 0.114 * b, cr = 128 + 0.5 * r - 0.4187 * g - 0.0813 * b, cb = 128 - 0.1687 * r - 0.3313 * g + 0.5 * b
+      const skinLike = L > 45 && Y > 80 && cr > 135 && cr < 172 && cb > 85 && cb < 130 && r > g && g > b
+      const garmentLike = colour && Math.abs(L - colour[0]) < 14 && Math.hypot(lab[3 * i + 1] - colour[1], lab[3 * i + 2] - colour[2]) < 12
+      if (skinLike && !garmentLike) skin++
+    }
+  }
+  return {
+    garment: Boolean(cut) && fills > 0.05 && touches < 3, fills: round3(fills), touches,
+    dark: round3(dark / n), light: round3(light / n), busy: round3(busy / n), skin: round3(skin / n)
+  }
+}
+
+function round3(v) {
+  return Math.round(v * 1000) / 1000
+}
+
 // What a photo of one piece of clothing shows, from its outline: { kind: "top", "jacket" or "trousers",
 // style (a top's "tee", "longsleeve", "sweatshirt", "hoodie", "dress" or "dress_long"; a jacket's "zip") }, or null when it can't
 // be read. For the usual shop photo or a picture of clothes laid flat or on a hanger, on a plain background.

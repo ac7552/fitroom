@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { findPrint, readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
+import { findPrint, readPhoto, readBottomPhoto, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
 import { compareLooks, croppedLengths, nextReading, PLAIN } from "lib/garments/look_check"
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
@@ -10,6 +10,7 @@ import { knockoutPhoto } from "lib/garments/knockout"
 import { measureFromPhotos } from "lib/measure_photo"
 import { partRow, uncheckedLine, verdictWords } from "lib/fit_bar"
 import { sizeSlider, stopNear } from "lib/size_slider"
+import { ROLES, guessRoles, photosByRole } from "lib/garments/photo_roles"
 import { chartFromSizes, diagram, filled, nextSizeName, partsFor, sizesFromChart, sliderRange, startingSizes } from "lib/size_editor"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
@@ -57,8 +58,8 @@ const PART_NAMES = { inseam: "Leg length", leg_opening: "Leg opening", sleeve: "
 export default class extends Controller {
   static targets = [
     "input", "unit", "unitLabel", "cut", "results", "canvas", "stageNote", "legend", "warnings",
-    "link", "importButton", "chartText", "importError", "outfitList", "ownKind", "snapInput", "snapLabel", "bodyType", "switches",
-    "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos", "sizeTabs", "ownDiagram", "pasteNote", "editorError",
+    "link", "importButton", "chartText", "importError", "outfitList", "ownKind", "tray", "trayAdd", "trayNote", "bodyType", "switches",
+    "ownSizes", "measuredFlat", "stagePhotos", "sizeTabs", "ownDiagram", "pasteNote", "editorError",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
     "loading", "loadingLabel", "loadingBar", "loadingActions", "scene", "stage", "aiButton", "stageToast", "seeIn3d",
     "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
@@ -88,6 +89,8 @@ export default class extends Controller {
     this.renderOutfit()
     this.own = { kind: "top", sizes: startingSizes("top"), at: 2, focus: "chest" }
     this.renderEditor()
+    this.trayPhotos = []
+    this.renderTray()
     this.update()
   }
 
@@ -97,7 +100,6 @@ export default class extends Controller {
     clearTimeout(this.timer)
     this.requests?.forEach(r => r.abort())
     this.stage?.dispose()
-    if (this.photoUrl) URL.revokeObjectURL(this.photoUrl)
     this.closeStudio()
   }
 
@@ -251,7 +253,9 @@ export default class extends Controller {
         return bottoms ? readBottomPhoto(front) : readPhoto(front, { shape: frontShape(garment.chart) })
       })
       reading.then(async read => {
-        const color = read?.color ?? await clothColor(garment.photo)
+        // A close-up of plain cloth gives its truest colour (no shadows, no folds).
+        const close = garment.closeup && !read?.print ? await clothColor(garment.closeup).catch(() => null) : null
+        const color = close ?? read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) { garment.lookPending = false; this.queueLookCheck(); return }
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
         // The shop's photo of the back, read the same way, goes on the back.
@@ -430,16 +434,98 @@ export default class extends Controller {
 
   // Just a photo: the page works out what it is (it stays here), and Fitroom gives that kind of thing its
   // usual sizes. The photo's colour and print go on the 3D view as a shop photo's do.
+  // The photo tray: up to six photos of one garment, each with its role (lib/garments/photo_roles). The
+  // front says what it is and gives its colour and print; the back goes on its back; a close-up of plain
+  // cloth gives its colour; a size tag and a photo of it worn are kept with it. The photos stay here.
+  renderTray() {
+    const photos = this.trayPhotos
+    const tiles = photos.map((p, i) => `
+      <div class="tray-shot">
+        <img src="${escape(p.url)}" alt="">
+        <button type="button" class="tray-remove" aria-label="Remove this photo" data-index="${i}" data-action="fitting-room#removeTrayPhoto">×</button>
+        <label class="tray-role"><span class="visually-hidden">What this photo shows</span>
+          <select autocomplete="off" data-index="${i}" data-action="fitting-room#changeTrayRole">${Object.entries(ROLES).map(([key, name]) => `<option value="${key}"${key === p.role ? " selected" : ""}>${name}</option>`).join("")}</select>
+        </label>
+      </div>`).join("")
+    const add = photos.length < 6 ? `
+      <label class="tray-add">
+        <input type="file" accept="image/*" multiple autocomplete="off" data-action="change->fitting-room#pickTrayPhotos">
+        <span>${photos.length ? "+ More" : "+ Add photos"}</span><small>${photos.length ? "Back, close-up, tag" : "Front, back, close-up, tag"}</small>
+      </label>` : ""
+    this.trayTargets.forEach(tray => { tray.innerHTML = tiles + add })
+    this.trayAddTargets.forEach(button => { button.hidden = !photos.length })
+    this.trayNoteTargets.forEach(note => { note.hidden = !photos.length })
+  }
+
+  async pickTrayPhotos(event) {
+    const files = [...event.target.files]
+    event.target.value = ""
+    await this.addTrayFiles(files)
+  }
+
+  dragTray(event) {
+    if (![...(event.dataTransfer?.items ?? [])].some(item => item.kind === "file")) return
+    event.preventDefault()
+    event.currentTarget.classList.add("is-over")
+  }
+
+  leaveTray(event) {
+    event.currentTarget.classList.remove("is-over")
+  }
+
+  async dropTray(event) {
+    event.preventDefault()
+    event.currentTarget.classList.remove("is-over")
+    await this.addTrayFiles([...(event.dataTransfer?.files ?? [])].filter(file => file.type.startsWith("image/")))
+  }
+
+  async addTrayFiles(files) {
+    this.importErrorTarget.hidden = true
+    for (const file of files.slice(0, 6 - this.trayPhotos.length)) {
+      try {
+        const url = await smallPhoto(file)
+        this.trayPhotos.push({ url, traits: await readPhotoTraits(url).catch(() => null), role: null, picked: false })
+      } catch (error) {
+        this.showImportError(error.message)
+      }
+    }
+    this.guessTrayRoles()
+  }
+
+  guessTrayRoles() {
+    guessRoles(this.trayPhotos).forEach((role, i) => { this.trayPhotos[i].role = role })
+    this.renderTray()
+  }
+
+  changeTrayRole(event) {
+    const photo = this.trayPhotos[Number(event.target.dataset.index)]
+    if (!photo) return
+    photo.role = event.target.value
+    photo.picked = true
+    this.guessTrayRoles()
+  }
+
+  removeTrayPhoto(event) {
+    this.trayPhotos.splice(Number(event.currentTarget.dataset.index), 1)
+    this.guessTrayRoles()
+  }
+
+  // The photos the garment keeps, by role, for addItem.
+  trayGarmentPhotos() {
+    const roles = photosByRole(this.trayPhotos)
+    return Object.fromEntries(Object.entries({ photo: roles.front, back_photo: roles.back, closeup: roles.closeup, tag_photo: roles.tag, worn_photo: roles.worn }).filter(([, v]) => v))
+  }
+
+  // From the photos alone: the front says what it is, and it goes on in the usual sizes.
   async importPhoto() {
-    const file = this.snapInputTarget.files[0]
-    if (!file) return
-    const label = this.snapLabelTarget
-    label.textContent = "Looking at the photo…"
+    const photos = this.trayGarmentPhotos()
+    if (!photos.photo) return
+    const button = this.trayAddTargets[0]
+    if (button) button.textContent = "Looking at the photos…"
     this.importErrorTarget.hidden = true
     try {
-      const photo = await smallPhoto(file)
-      const read = await readGarment(photo)
-      if (!read) throw new Error("Couldn't see the clothes in that photo. Try one with the clothes on a plain background.")
+      const read = await readGarment(photos.photo)
+      if (!read) throw new Error("Couldn't see the clothes in the front photo. Try one with the clothes on a plain background.")
       const response = await fetch(this.importUrlValue, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -447,13 +533,14 @@ export default class extends Controller {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message ?? "Couldn't add that.")
-      this.addItem({ ...data.garment, photo })
+      this.addItem({ ...data.garment, ...photos })
+      this.trayPhotos = []
+      this.renderTray()
       this.update()
     } catch (error) {
       this.showImportError(error.message)
     } finally {
-      label.textContent = "+ Add a photo of the clothes"
-      this.snapInputTarget.value = ""
+      if (button) button.textContent = "Add it in the usual sizes"
     }
   }
 
@@ -593,17 +680,6 @@ export default class extends Controller {
     this.renderEditor()
   }
 
-  // A photo is read locally, for a preview and its colour, and never sent anywhere.
-  async pickPhoto() {
-    const file = this.photoInputTarget.files[0]
-    if (!file) return
-    this.photoUrl = URL.createObjectURL(file)
-    this.photoPreviewTarget.src = this.photoUrl
-    this.photoPreviewTarget.hidden = false
-    this.photoLabelTarget.textContent = "Change the photo"
-    this.photoColor = await clothColor(this.photoUrl)
-  }
-
   // Every size with its main number in goes on. A garment read from its link's words (see linkNote) keeps
   // its name, look and photo, now with its own sizes.
   useOwnItem() {
@@ -619,15 +695,13 @@ export default class extends Controller {
     const garment = linked
       ? (({ link_note, photoColor, photoMap, print, backPrint, lookDone, lookChecks, ...rest }) => ({ ...rest, color: rest.listingColor ?? rest.color }))(linked)
       : {
-          name: `Your ${KINDS[kind].toLowerCase()}`, brand: null, color_name: null, color: this.photoColor ?? "#2a3552",
-          source_url: null, garment: kind, photo: this.photoUrl ?? null, fabric: kind === "top" ? "cotton" : "wool",
+          name: `Your ${KINDS[kind].toLowerCase()}`, brand: null, color_name: null, color: "#2a3552",
+          source_url: null, garment: kind, photo: null, fabric: kind === "top" ? "cotton" : "wool",
           ...(DEFAULT_STYLE[kind] ? { style: DEFAULT_STYLE[kind] } : {})
         }
-    this.addItem({ ...garment, photo: this.photoUrl ?? garment.photo ?? null, chart })
-    this.photoUrl = null
-    this.photoColor = null
-    this.photoPreviewTarget.hidden = true
-    this.photoLabelTarget.textContent = "+ Add a photo"
+    this.addItem({ ...garment, ...this.trayGarmentPhotos(), chart })
+    this.trayPhotos = []
+    this.renderTray()
     this.update()
   }
 

@@ -401,7 +401,30 @@ a { color: inherit; }
 .paste-chart { margin-top: 14px; }
 .paste-chart summary { cursor: pointer; font-weight: 600; font-size: 15px; }
 .paste-note { margin-top: 10px; }
-.size-editor .photo-pick { margin-top: 14px; }
+/* The photo tray: a thumbnail per photo with its role under it, and a tile to add more. */
+.tray { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; border-radius: 2px; }
+.tray.is-over { outline: 2px dashed var(--accent); outline-offset: 4px; }
+.tray-shot { position: relative; border: 1px solid var(--line); border-radius: 2px; background: var(--bg); overflow: hidden; }
+.tray-shot img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.tray-remove {
+  position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0;
+  border: 1px solid var(--line); border-radius: 2px; background: var(--surface); color: var(--muted);
+  font: 600 13px/1 var(--font); cursor: pointer;
+}
+.tray-role { display: block; border-top: 1px solid var(--line); }
+.tray-role select {
+  width: 100%; padding: 7px 6px; border: 0; background: var(--surface); color: var(--ink);
+  font: 500 10px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+}
+.tray-add {
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; min-height: 96px;
+  padding: 10px 6px; border: 1px dashed var(--line); border-radius: 2px; text-align: center; cursor: pointer;
+  font-weight: 600; font-size: 15px;
+}
+.tray-add:first-child { grid-column: 1 / -1; min-height: 72px; }
+.tray-add input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.tray-add small { font: 500 9.5px/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.tray-add:focus-within { outline: 2px solid var(--accent); }
 
 .check-line { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 15px; color: var(--muted); }
 
