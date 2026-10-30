@@ -148,18 +148,25 @@ class GarmentImport
       drawn << "tie" if cut[:belt] == "tie" && !words.gsub(TIE_BELT, " ").match?(DETAILS.to_h.fetch("tie"))
       cut[:details] = DETAILS.filter_map { |detail, pattern| detail if words.match?(pattern) && !drawn.include?(detail) }
       shape = product[:dress_shape]
-      shape ? with_photo(cut, shape, words, named_sleeves) : cut
+      told_length = first.(LENGTHS, product[:name]) || product[:description].to_s.match?(/\b(?:mini|midi|maxi|knee)[- ]length\b/i)
+      shape ? with_photo(cut, shape, words, named_sleeves, told_length:) : cut
     end
 
     # The cut, its shape from its photo where the photo is clear (the words still give its cloth, its back and
     # what's on it). The Desma's "Form-fitting silhouette" flares from its waist in its photo; a Dalters
     # whose words never say "sleeves" has them in its photo; a halter's straps meet at the neck.
-    def with_photo(cut, shape, words, named_sleeves)
+    def with_photo(cut, shape, words, named_sleeves, told_length: true)
       cut = cut.dup
       # (Not over sleeves the words name: a "short sleeve" polo dress's collar is narrow at the top too.)
       if shape[:halter] && !%w[strapless one_shoulder long short].include?(named_sleeves) then cut[:sleeves] = "halter"
       elsif shape[:strapless] && named_sleeves.nil? then cut[:sleeves] = "strapless"
       elsif shape[:sleeves] && (named_sleeves.nil? || cut[:sleeves] == "none") then cut[:sleeves] = shape[:sleeves]
+      end
+      # A dress only the shop's category calls a maxi, and its photo shows short (its length under three times
+      # its chest's width: Kith's maxi dresses are three and a half and more, its minis two to three): the
+      # photo's length. (Not the other way: a slip's narrow chest makes a mini look long.)
+      if !told_length && cut[:length] == "maxi" && shape[:length]
+        cut[:length] = shape[:length] < 3 ? "mini" : shape[:length] < 3.4 ? "midi" : "maxi"
       end
       return cut unless shape[:hem] && shape[:waist]
 

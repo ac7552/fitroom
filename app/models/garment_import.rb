@@ -724,7 +724,9 @@ class GarmentImport
       hem: number.("hem", 0.6..3.5), neck_depth: number.("neckDepth", 0..0.6), neck_width: number.("neckWidth", 0..0.95),
       flare_from: DRESS_FLARES.include?(shape["flareFrom"]) ? shape["flareFrom"] : nil,
       halter: shape["halter"] == true, strapless: shape["strapless"] == true,
-      sleeves: %w[long short].include?(shape["sleeves"]) ? shape["sleeves"] : nil
+      sleeves: %w[long short].include?(shape["sleeves"]) ? shape["sleeves"] : nil,
+      # Its length over its chest's width (see DressCut.with_photo).
+      length: number.("length", 0.8..8)
     }
     read.compact.reject { |_, v| v == false }.presence
   end

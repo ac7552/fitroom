@@ -73,6 +73,13 @@ class DressCutTest < ActiveSupport::TestCase
     caftan = GarmentImport::DressCut.read({ name: "Missoni Short Cover-Up Caftan With Batwing Sleeves - Multi", category: "Mini Dresses", description: "",
                                             dress_shape: { halter: true } })
     assert_equal [ "long", "mini" ], caftan.values_at(:sleeves, :length)
+    # Only the shop's category calls the Ionis a maxi; its photo is a mini's. A dress named a maxi stays one.
+    ionis = GarmentImport::DressCut.read({ name: "Aya Muse Ionis Dress - Champagne Beige", category: "Maxi Dresses", description: "Satin Ruched bodice",
+                                           dress_shape: { length: 2.64 } })
+    assert_equal "mini", ionis[:length]
+    vicka = GarmentImport::DressCut.read({ name: "Siedres Vicka Satin Maxi Dress - White", category: "Maxi Dresses", description: "", dress_shape: { length: 2.64 } })
+    assert_equal "maxi", vicka[:length]
+    assert_equal "maxi", GarmentImport::DressCut.read({ name: "Belle Anna Duo Dress - Grey", category: "Maxi Dresses", description: "", dress_shape: { length: 3.91 } })[:length]
     # A flounce's width at the hem isn't the body's: the body stays as it is, the flounce goes on.
     mela = GarmentImport::DressCut.read({ name: "Aya Muse Mela Mini Dress", description: "Ruffled hem Slim fit", dress_shape: { waist: 0.84, hips: 1.1, hem: 1.29, flare_from: "knee" } })
     assert_equal [ "slim", false ], mela.values_at(:fit, :hem_flare)
