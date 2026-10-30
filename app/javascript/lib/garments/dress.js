@@ -4,7 +4,7 @@ import { STYLES, draftTop } from "lib/garments/pattern"
 import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms, riseFor } from "lib/garments/pants"
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
-import { bottomsPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
+import { bottomsPhotoUV, dressPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
 import { Drape } from "lib/garments/drape"
 import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
 
@@ -405,13 +405,19 @@ export function sewingFor({ item, body, frame, field, measures }) {
   const { positions, attach } = placeCloth(cloth, pattern, frame)
   // A skirt hangs round both legs; pants go round each.
   const envelope = bottoms && item.style !== "skirt" ? null : { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor }
-  // A dress held up by straps or round the bust grips where it rests (as straps and boning do, rather than
-  // sliding off the shoulders' slope); pants grip at the waist; others slide over the body as usual.
-  const holds = ["strapless", "one_shoulder", "straps", "thin_straps", "none"].includes(item.cut?.sleeves)
-  // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist.
+  // A dress held up by straps, round the neck (a halter) or round the bust grips where it rests (as straps
+  // and boning do, rather than sliding off the shoulders' slope); pants grip at the waist; others slide over
+  // the body as usual.
+  const holds = ["strapless", "one_shoulder", "halter", "straps", "thin_straps", "none"].includes(item.cut?.sleeves)
+  // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist. A halter's straps, where
+  // they meet round the back of the neck: held there as a waistband is (its whole weight hangs from them, and
+  // a long one otherwise slides down off the shoulders into a heap at the feet).
   const ring = bottoms ? {
     points: Object.entries(cloth.edges).filter(([key]) => /^(front|back)(_[LR])?\/waist$/.test(key)).flatMap(([, idx]) => idx),
     length: pattern.measures.waist / 100
+  } : item.cut?.sleeves === "halter" ? {
+    points: Object.entries(cloth.edges).filter(([key]) => /^(front|back)\/shoulder_[LR]$/.test(key)).flatMap(([, idx]) => idx),
+    length: null
   } : null
   const drape = new Drape(cloth, positions, { ...body, field }, {
     // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
@@ -532,9 +538,10 @@ export class DrapedTop {
     geometry.setAttribute("uv", new THREE.BufferAttribute(Float32Array.from(cloth.points.flatMap(([x, y]) => [x / 100, y / 100])), 2))
     geometry.setAttribute("aEdge", new THREE.BufferAttribute(Float32Array.from(cloth.toEdge), 1))
     geometry.setAttribute("aHem", new THREE.BufferAttribute(Float32Array.from(cloth.toFree, d => Math.min(d, 99)), 1))
-    const front = cloth.panels.indexOf("front"), back = cloth.panels.indexOf("back")
-    const sleeveL = cloth.panels.indexOf("sleeve_L"), sleeveR = cloth.panels.indexOf("sleeve_R")
-    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => (p === front ? 1 : p === back ? 2 : p === sleeveL ? 3 : p === sleeveR ? 4 : 0)), 1))
+    // Which piece each point is on, for the shader: the front 1, the back 2, the sleeves 3 (left) and 4
+    // (right), their cuffs 5 and 6, anything else 0.
+    const PIECES = { front: 1, back: 2, sleeve_L: 3, sleeve_R: 4, cuff_L: 5, cuff_R: 6 }
+    geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => PIECES[cloth.panels[p]] ?? 0), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
     geometry.setAttribute("aPhoto", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
@@ -659,6 +666,16 @@ export class DrapedTop {
   // Graphics on the sleeves from the shop's photos: { right: { front, back }, left: { front, back } }, each a
   // canvas (print.js's sleevePrint, by the wearer's side) or null; null for none. Laid down each sleeve from
   // the top of its cap to its hem, across from its top line to the underarm seam.
+  // The cuffs' own colour, when the sleeves are another colour than the body (print.js's cuffTone: a layered
+  // tee's grey cuffs, at the end of its grey long sleeves), or null.
+  setCuffTone(hex) {
+    if (this.bottoms || !this.pattern.panels.cuff_R) hex = null
+    for (const key of ["main", "rib"]) {
+      const tone = this.materials[key].userData.uniforms.uCuffTone.value
+      if (hex) { const c = new THREE.Color(hex); tone.set(c.r, c.g, c.b, 1) } else tone.w = 0
+    }
+  }
+
   setSleeves(sleeves) {
     if (this.bottoms || !this.pattern.panels.sleeve_R) sleeves = null
     const parts = [sleeves?.right?.front, sleeves?.left?.front, sleeves?.right?.back, sleeves?.left?.back].map(c => c ?? null)
@@ -689,15 +706,16 @@ export class DrapedTop {
 
 
   // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),
-  // laid on the cloth: the photo on the front, its softened copy on the back.
+  // laid on the cloth: the photo on the front, its softened copy on the back. A dress's the same way
+  // (print.js's readDressPhoto, its layout marked dress).
   setPhotoMap(map) {
-    if (!this.bottoms) map = null
+    if (!this.bottoms && !map?.layout?.dress) map = null
     if (map?.image === this.photoImage) return
     this.photoImage = map?.image ?? null
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.photoTextures = []
     if (map) {
-      const uv = bottomsPhotoUV(this.cloth, this.pattern, map.layout, map.back?.layout ?? null)
+      const uv = map.layout.dress ? dressPhotoUV(this.cloth, this.pattern, map.layout) : bottomsPhotoUV(this.cloth, this.pattern, map.layout, map.back?.layout ?? null)
       this.geometry.attributes.aPhoto.array.set(uv)
       this.geometry.attributes.aPhoto.needsUpdate = true
       this.photoTextures = [map.image, map.soft, map.back?.image ?? map.soft].map(canvas => {

@@ -66,7 +66,11 @@ const HEMS = { rib: { height: 6.5, stretch: 0.86, fabric: "rib" }, band: { heigh
 export function draftTop(styleName, size, body, cut = null) {
   if (styleName === "dress" && cut && !["short", "long"].includes(cut.sleeves)) return draftDress(size, body, cut)
   if (styleName === "tank") return draftTank(size, body)
-  const style = dressStyle(STYLES[styleName] ?? STYLES.tee, cut)
+  let style = dressStyle(STYLES[styleName] ?? STYLES.tee, cut)
+  // A jacket or coat with a hood (a parka, a hooded puffer): the hood in place of its collar, worn down.
+  if (cut?.hood && !style.shaped && style.collar !== "hood") style = { ...style, collar: "hood" }
+  // A half-zip or quarter-zip pullover: a stand collar, and a zip from it a little way down the front.
+  if (cut?.half_zip && !style.shaped && style.collar !== "hood") style = { ...style, collar: "stand", closure: "halfzip" }
   const m = measures(style, size, body, cut)
   if (style.neck) m.frontNeck = style.neck
   let flounce = 0

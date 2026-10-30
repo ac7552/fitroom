@@ -826,9 +826,13 @@ export class FittingStage {
     }
     const d = this.slots[slot]
     if (!d) return
+    // (The colour the drape began with is the listing's guess until the photo is read: the collar's leaf, a
+    // scarf and a belt are drawn in this one, as the cloth is.)
+    d.top.item.color = item.color
     d.top.setColor(item.color)
     d.top.setPrint(item.print ?? null, item.backPrint ?? null)
     d.top.setSleeves(item.sleevePrint ?? null)
+    d.top.setCuffTone(item.cuffTone ?? null)
     d.top.setPhotoMap(item.photoMap ?? null)
     d.top.mesh.visible = d.shown
     if (this.view === "fit") d.top.paintFit(item.checks ?? [], STATUS_COLORS)

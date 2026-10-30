@@ -87,4 +87,10 @@ test("a dress's photo says when it's a halter, strapless, or has sleeves", () =>
   // Long sleeves laid along the body, parting from it near their cuffs.
   const sleeved = read(dressMask(y => y > 280 ? [] : y < 200 ? [[30, 170]] : y < 240 ? [[30, 48], [60, 140], [152, 170]] : [[60, 140]]))
   assert.equal(sleeved.sleeves, "long")
+  // A collar is narrow at the very top too, but shoulders as wide as the chest come right below it: a shirt
+  // dress (sleeves lying against the body to the hips) and a polo dress aren't halters.
+  const shirtDress = read(dressMask(y => y > 280 ? [] : y < 8 ? [[94, 106]] : y < 200 ? [[40, 160]] : [[60, 140]]))
+  assert.equal(shirtDress.halter, false)
+  const polo = read(dressMask(y => y > 280 ? [] : y < 6 ? [[92, 108]] : y < 14 ? [[66, 134]] : y < 60 ? [[44, 156]] : [[60, 140]]))
+  assert.equal(polo.halter, false)
 })

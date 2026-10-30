@@ -1,10 +1,11 @@
 // Run with: node --test test/javascript/*.test.mjs
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { findPrint, garmentRows, sidesFromCuffs, stripeStrip, stripeColumns, measureTop, measureBottom, readBottom, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
+import { findPrint, garmentRows, sidesFromCuffs, stripeStrip, stripeColumns, measureTop, measureBottom, readBottom, readDress, shoeColors, shoeSide } from "../../app/javascript/lib/garments/print.js"
 import "./support/lib.mjs"
 
-const { bottomsPhotoUV } = await import("lib/garments/photo_map")
+const { bottomsPhotoUV, dressPhotoUV } = await import("lib/garments/photo_map")
+const { draftTop } = await import("lib/garments/pattern")
 const { draftBottoms } = await import("lib/garments/pants")
 const { buildCloth } = await import("lib/garments/cloth")
 
@@ -174,6 +175,91 @@ test("lays a pants photo on its cloth: the front from the photo, the wearer's le
   const on = i => { const x = Math.round(uv[3 * i] * w), y = Math.round((1 - uv[3 * i + 1]) * h); return data[4 * (y * w + x)] < 100 }
   const off = by("front_L").filter(i => !on(i))
   assert.ok(off.length < by("front_L").length * 0.02, `${off.length} front points off the garment`)
+})
+
+// A layered long-sleeve tee: a navy body with long grey sleeves hanging beside it (as Ksubi's is
+// photographed), and a small patch on a sleeve that's only a graphic.
+function layered({ sleeve = [150, 150, 156], patch = false } = {}) {
+  const w = 240, h = 260, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = [236, 236, 236]
+    const torso = x >= 70 && x < 170 && y >= 30 && y < 200
+    const left = x >= 40 && x < 64 && y >= 30 && y < 225, right = x >= 176 && x < 200 && y >= 30 && y < 225
+    if (left || right || (y >= 30 && y < 52 && x >= 40 && x < 200)) c = sleeve
+    if (torso) c = [31, 44, 77]
+    if (patch && x >= 44 && x < 60 && y >= 90 && y < 110) c = [220, 40, 40]
+    data.set([...c, 255], 4 * (y * w + x))
+  }
+  return { data, w, h }
+}
+
+test("sleeves another colour all round are wrapped round, with their cuffs' colour; a graphic on one isn't", () => {
+  const grey = layered()
+  const found = findPrint(grey.data, grey.w, grey.h)
+  assert.equal(found.color, "#1f2c4d")
+  for (const side of ["left", "right"]) {
+    assert.ok(found.sleeves[side].wrap, side)
+    assert.equal(found.sleeves[side].cuff, "#96969c", side)
+  }
+  const navy = layered({ sleeve: [31, 44, 77], patch: true })
+  const graphic = findPrint(navy.data, navy.w, navy.h)
+  assert.ok(graphic.sleeves.left && !graphic.sleeves.left.wrap && !graphic.sleeves.left.cuff, "a patch is a graphic")
+})
+
+// A made-up dress photo: a wine slip dress on two straps, fitted to the waist and flaring to its hem, with a
+// pale square on the skirt at the photo's right (the wearer's left).
+function dressPhoto() {
+  const w = 200, h = 320, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = [236, 236, 236]
+      const straps = y >= 20 && y < 60 && ((x >= 70 && x < 76) || (x >= 124 && x < 130))
+      const half = y < 60 ? 0 : y < 140 ? 34 : 34 + (y - 140) * 0.3
+      if (straps || (y >= 60 && y < 300 && Math.abs(x - 100) < half)) c = [92, 22, 40]
+      if (y >= 200 && y < 240 && x >= 112 && x < 140) c = [240, 210, 220]
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h }
+}
+
+test("reads a dress photo to lay on the cloth, and lays it: the front from the photo, the back softened", () => {
+  const { data, w, h } = dressPhoto()
+  const read = readDress(data, w, h)
+  assert.ok(read, "read")
+  assert.equal(read.color, "#5c1628")
+  assert.ok(read.layout.dress)
+  assert.ok(Math.abs(read.layout.top - 20) <= 3 && Math.abs(read.layout.bottom - 299) <= 3, `top ${read.layout.top} bottom ${read.layout.bottom}`)
+  const body = { chest: 91.5, waist: 74, hips: 100, shoulders: 39.5, arm: 58, height: 165, neck: 33, armpit: 20.8, bicep: 26, wrist: 15 }
+  const pattern = draftTop("dress", { chest: 87, waist: 70, hips: 95, length: 95 }, body, { sleeves: "thin_straps", neckline: "scoop", length: "midi", fit: "flared", stretch: false, fabric: "silk" })
+  const cloth = buildCloth(pattern, 2)
+  const uv = dressPhotoUV(cloth, pattern, read.layout)
+  const by = name => cloth.points.map((_, i) => i).filter(i => cloth.panels[cloth.panel[i]] === name)
+  for (let i = 0; i < cloth.points.length; i++) assert.ok(uv[3 * i] >= 0 && uv[3 * i] <= 1 && uv[3 * i + 1] >= 0 && uv[3 * i + 1] <= 1, `point ${i} off the photo`)
+  assert.ok(by("front").every(i => uv[3 * i + 2] === 1) && by("back").every(i => uv[3 * i + 2] === 2))
+  // The front's points land on the dress, and the square on the wearer's left of the skirt.
+  const pixel = i => { const x = Math.min(w - 1, Math.round(uv[3 * i] * w)), y = Math.min(h - 1, Math.round((1 - uv[3 * i + 1]) * h)); return [x, y, data[4 * (y * w + x)]] }
+  const off = by("front").filter(i => pixel(i)[2] > 200 && !(pixel(i)[1] >= 200 && pixel(i)[1] < 240))
+  assert.ok(off.length < by("front").length * 0.03, `${off.length} of ${by("front").length} front points off the dress`)
+  const onSquare = by("front").filter(i => { const [x, y] = pixel(i); return y >= 205 && y < 235 && x >= 116 && x < 136 })
+  assert.ok(onSquare.length && onSquare.every(i => cloth.points[i][0] > 0), "the square is on the wearer's left")
+})
+
+test("lays a jacket's photo on it the same way, its hem band along the photo's hem", () => {
+  const { data, w, h } = dressPhoto()
+  const { layout } = readDress(data, w, h)
+  const body = { chest: 101.6, waist: 86.4, shoulders: 45.5, arm: 65.5, height: 178, neck: 40, armpit: 19 }
+  const pattern = draftTop("bomber", { chest: 124, shoulders: 52, sleeve: 64, length: 66 }, body, { hood: true })
+  const cloth = buildCloth(pattern, 2)
+  const uv = dressPhotoUV(cloth, pattern, layout)
+  const on = name => cloth.points.map((_, i) => i).filter(i => cloth.panels[cloth.panel[i]] === name)
+  for (let i = 0; i < cloth.points.length; i++) assert.ok(uv[3 * i] >= 0 && uv[3 * i] <= 1 && uv[3 * i + 1] >= 0 && uv[3 * i + 1] <= 1, `point ${i} off the photo`)
+  assert.ok(on("front").every(i => uv[3 * i + 2] === 1))
+  // The hem band's front half on the photo, at its bottom rows; the hood the softened copy, at its top.
+  const band = on("waistband"), rowOf = i => (1 - uv[3 * i + 1]) * h
+  assert.ok(band.some(i => uv[3 * i + 2] === 1) && band.some(i => uv[3 * i + 2] === 2))
+  assert.ok(band.every(i => rowOf(i) > layout.bottom - (layout.bottom - layout.top) * 0.12), "the band at the hem")
+  assert.ok(on("hood_L").every(i => uv[3 * i + 2] === 2 && rowOf(i) < layout.top + (layout.bottom - layout.top) * 0.2))
 })
 
 test("pants on a hanger: the hook and the hanger's bar aren't taken for the waistband", () => {

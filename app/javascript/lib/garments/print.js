@@ -99,8 +99,11 @@ export async function readPhoto(src, { shape = null, hood = true, patterns = tru
     c.getContext("2d").putImageData(new ImageData(part.data, part.width, part.height), 0, 0)
     return c
   }
-  const sleeves = found.sleeves && (found.sleeves.left || found.sleeves.right) ? { left: canvas(found.sleeves.left), right: canvas(found.sleeves.right) } : null
-  return { color: found.color, print, sleeves, look: found.look }
+  // Sleeves another colour all round (wrap), and their cuffs' colour: a photo may show only one sleeve
+  // clearly, so either says it for both.
+  const { left, right } = found.sleeves ?? {}
+  const sleeves = left || right ? { left: canvas(left), right: canvas(right), wrap: Boolean(left?.wrap || right?.wrap) } : null
+  return { color: found.color, print, sleeves, cuffTone: left?.cuff ?? right?.cuff ?? null, look: found.look }
 }
 
 // A striped front's colours row by row, as a texture a few pixels wide (the same column repeated); a
@@ -493,8 +496,30 @@ export function sleevePrint(data, lab, mask, w, h, front, rows, baseLab, way) {
     covered += a
   }
   const coverage = covered / alpha.length
-  return coverage > 0.01 ? { data: out, width: SLEEVE_ACROSS, height: SLEEVE_ALONG, coverage } : null
+  if (coverage <= 0.01) return null
+  // Most of the sleeve another colour than the body, or another colour from part way down (a varsity
+  // jacket's leather sleeves, a layered tee's long grey ones under its short navy ones): the sleeve's look all
+  // round, so the strip is laid on its back half too (wrap). And its cuff's colour, the strip's last rows'.
+  const wrap = coverage > SLEEVE_WRAP
+  let cuff = null
+  if (wrap) {
+    const marked = []
+    for (let j = Math.floor(SLEEVE_ALONG * 0.8); j < Math.floor(SLEEVE_ALONG * 0.94); j++) {
+      for (let i = 4; i < SLEEVE_ACROSS - 4; i++) { const q = j * SLEEVE_ACROSS + i; if (out[4 * q + 3] > 160) marked.push(q) }
+    }
+    if (marked.length > Math.floor(SLEEVE_ALONG * 0.14) * (SLEEVE_ACROSS - 8) * 0.6) {
+      const lum = q => 0.299 * out[4 * q] + 0.587 * out[4 * q + 1] + 0.114 * out[4 * q + 2]
+      marked.sort((a, b) => lum(a) - lum(b))
+      const mid = marked.slice(Math.floor(marked.length * 0.3), Math.ceil(marked.length * 0.7))
+      cuff = "#" + [0, 1, 2].map(c => Math.round(mid.reduce((sum, q) => sum + out[4 * q + c], 0) / mid.length).toString(16).padStart(2, "0")).join("")
+    }
+  }
+  return { data: out, width: SLEEVE_ACROSS, height: SLEEVE_ALONG, coverage, wrap, cuff }
 }
+// The share of a sleeve another colour takes for the sleeve to be that colour all round, not a graphic on the
+// side the photo saw (the Ksubi layered tee's grey lower sleeves read 0.33 from the front; a big graphic down
+// a sleeve about 0.1).
+const SLEEVE_WRAP = 0.25
 
 // A long sleeve hanging below the hem on its side: { start (the shoulder point, its axis's top), end (the
 // cuff's middle), wide: [its width at the top, at the cuff] (px), inside(x, y) } or null.
@@ -1893,7 +1918,11 @@ export function measureDressMask(mask, w, h) {
   // At the very top: straps meeting at the neck (a halter) span little; straight across (strapless) span
   // the chest and close the middle.
   const topSpan = median([0.005, 0.01, 0.015].map(f => span(row(f))))
-  const halter = armpit < 0 && topSpan < chest * 0.45 && Math.abs((rowMin[row(0.01)] + rowMax[row(0.01)]) / 2 - centre) < chest * 0.15
+  // A collar is as narrow at the very top, but shoulders (and sleeves) come out to the chest's width just
+  // below it; a halter's straps are still closing in on the neck there.
+  let shoulders = 0
+  for (let y = row(0.04); y <= row(0.12); y++) shoulders = Math.max(shoulders, smooth(span, y, 1))
+  const halter = armpit < 0 && topSpan < chest * 0.45 && shoulders < chest * 0.8 && Math.abs((rowMin[row(0.01)] + rowMax[row(0.01)]) / 2 - centre) < chest * 0.15
   const strapless = armpit < 0 && !halter && (neckBottom - top) / tall < 0.03 && topSpan > chest * 0.8
   // The neckline's width just below the top: the open stretch round the middle.
   const neckRow = row(0.02)
@@ -2206,6 +2235,134 @@ export function readBottom(data, w, h) {
   const plain = print.some(Boolean) ? fillIn(Uint8Array.from(inner, (on, i) => (on && !print[i] ? 1 : 0))) : filled
   const soft = blurPixels(plain, inner, w, h, Math.max(3, Math.round(w * 0.025)))
   return { color, filled, soft, print, layout: { w, h, top, bottom, crotch, rows } }
+}
+
+// A dress's shop photo, to lay on the cloth as pants' is (see photo_map.js's dressPhotoUV): its sequins, lace,
+// print, texture and shading as photographed, which a colour and a placed graphic can't give. { color,
+// image, soft, layout } as readBottomPhoto's, the layout's rows the body's own outline (not a sleeve lying
+// apart from it) from its top (the straps' or shoulders') to its hem. Null when the photo doesn't show a
+// dress laid flat or hung from the front.
+export async function readDressPhoto(src) {
+  const image = await loadImage(src).catch(() => null)
+  if (!image) return null
+  const scale = Math.min(1, PHOTO_SIZE / Math.max(image.naturalWidth, image.naturalHeight))
+  const w = Math.max(8, Math.round(image.naturalWidth * scale)), h = Math.max(8, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement("canvas")
+  canvas.width = w
+  canvas.height = h
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, w, h)
+  const read = readDress(context.getImageData(0, 0, w, h).data, w, h)
+  if (!read) return null
+  const toCanvas = pixels => {
+    const out = document.createElement("canvas")
+    out.width = w
+    out.height = h
+    out.getContext("2d").putImageData(new ImageData(pixels, w, h), 0, 0)
+    return out
+  }
+  return { color: read.color, image: toCanvas(read.filled), soft: toCanvas(read.soft), layout: read.layout }
+}
+
+// The same on raw RGBA pixels. layout: { w, h, top, bottom, dress: true, rows: for each row from top to
+// bottom, [left, right] (the body's outer edges there) }.
+export function readDress(data, w, h) {
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const { lab, bg } = cut
+  const hanger = belowHanger(cut.garment.mask, w, h)
+  let mask = hanger.mask
+  if (!measureDressMask(mask, w, h)) return null
+  const rowOf = y => {
+    let a = -1, b = -1
+    for (let x = 0; x < w; x++) if (mask[y * w + x]) { if (a < 0) a = x; b = x }
+    return [a, b]
+  }
+  // From the first row wider than a hanger's hook (as measureDressMask reads it) to the hem.
+  const extent = () => {
+    let widest = 0
+    for (let y = 0; y < h; y++) { const [a, b] = rowOf(y); if (a >= 0) widest = Math.max(widest, b - a + 1) }
+    let top = -1, bottom = -1
+    for (let y = 0; y < h; y++) {
+      const [a, b] = rowOf(y)
+      if (a < 0 || (top < 0 && b - a + 1 < Math.max(3, widest * 0.04))) continue
+      if (top < 0) top = y
+      bottom = y
+    }
+    return [top, bottom]
+  }
+  let [top, bottom] = extent()
+  if (top < 0) return null
+  // The middle, from the skirt's rows (the top can be off centre: one shoulder, a tie).
+  const middles = []
+  for (let f = 0.45; f <= 0.85; f += 0.02) { const [a, b] = rowOf(Math.round(top + (bottom - top) * f)); if (a >= 0) middles.push((a + b) / 2) }
+  const centre = Math.round(median(middles))
+  // The cloth's colour: the commonest colour (with its near neighbours) across the middle half of the body,
+  // from a quarter of the way down to near the hem.
+  const bins = new Map()
+  for (let y = Math.round(top + (bottom - top) * 0.25); y <= top + (bottom - top) * 0.9; y++) {
+    const [a, b] = rowOf(y)
+    if (a < 0) continue
+    const inset = Math.round((b - a) * 0.25)
+    for (let x = a + inset; x <= b - inset; x++) {
+      const i = y * w + x
+      if (!mask[i]) continue
+      const key = (data[4 * i] >> 4) << 8 | (data[4 * i + 1] >> 4) << 4 | (data[4 * i + 2] >> 4)
+      const bin = bins.get(key) ?? [0, 0, 0, 0]
+      bin[0] += data[4 * i]; bin[1] += data[4 * i + 1]; bin[2] += data[4 * i + 2]; bin[3]++
+      bins.set(key, bin)
+    }
+  }
+  if (!bins.size) return null
+  const [best] = [...bins.entries()].sort((p, q) => q[1][3] - p[1][3])
+  const near = (a, b) => Math.abs((a >> 8) - (b >> 8)) <= 1 && Math.abs(((a >> 4) & 15) - ((b >> 4) & 15)) <= 1 && Math.abs((a & 15) - (b & 15)) <= 1
+  const sum = [0, 0, 0, 0]
+  for (const [key, bin] of bins) if (near(key, best[0])) for (let c = 0; c < 4; c++) sum[c] += bin[c]
+  const rgb = [0, 1, 2].map(c => sum[c] / sum[3])
+  const color = "#" + rgb.map(v => Math.round(v).toString(16).padStart(2, "0")).join("")
+  const clothLab = new Float32Array(3)
+  toLab(rgb[0], rgb[1], rgb[2], clothLab, 0)
+  if (hanger.hung) {
+    mask = belowHangerBar(mask, w, h, lab, clothLab, top, bottom)
+    ;[top, bottom] = extent()
+    if (top < 0) return null
+  }
+  // Small holes the backdrop shows through (between a strap and the body, inside a cut-out) aren't cloth.
+  {
+    const apart = Math.hypot(clothLab[0] - bg[0], clothLab[1] - bg[1], clothLab[2] - bg[2])
+    const backdrop = new Uint8Array(w * h)
+    for (let i = 0; i < w * h; i++) backdrop[i] = mask[i] && Math.hypot(lab[3 * i] - bg[0], lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) < Math.max(4, apart * 0.25) ? 1 : 0
+    let area = 0
+    for (let i = 0; i < w * h; i++) area += mask[i]
+    mask = Uint8Array.from(mask)
+    for (const hole of pieces(backdrop, w, h)) if (hole.length < area * 0.01) for (const i of hole) mask[i] = 0
+  }
+  // Each row's outline: the stretch of cloth through the middle (a sleeve lying apart from the body is left
+  // out); where the middle is open (the neckline, between straps), from the first cloth to the last.
+  const gap = Math.max(2, Math.round(w * 0.01))
+  const tall = bottom - top + 1
+  const rows = new Int16Array(2 * tall)
+  for (let y = top; y <= bottom; y++) {
+    const k = 2 * (y - top)
+    let a = -1, b = -1
+    if (mask[y * w + centre]) {
+      a = centre; b = centre
+      for (let x = centre - 1, miss = 0; x >= 0 && miss <= gap; x--) if (mask[y * w + x]) { a = x; miss = 0 } else miss++
+      for (let x = centre + 1, miss = 0; x < w && miss <= gap; x++) if (mask[y * w + x]) { b = x; miss = 0 } else miss++
+    } else [a, b] = rowOf(y)
+    if (a < 0) { if (k) rows.set(rows.slice(k - 2, k), k); continue }
+    rows[k] = a; rows[k + 1] = b
+  }
+  // The backdrop painted over in the dress's nearby colours, its rim too (half backdrop, lit along the
+  // cloth's rounded edge), and a softened copy for the back and the sleeves.
+  const rim = Math.max(1, Math.round(w * 0.012))
+  const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
+  const lit = evenLight(data, inner, w, h)
+  const painted = fillAround(lit, inner, w, h, Math.max(4, Math.round(w * 0.03)))
+  const reached = Uint8Array.from({ length: w * h }, (_, i) => (inner[i] || painted[4 * i + 3] === 254 ? 1 : 0))
+  const filled = fillAround(painted, reached, w, h, Math.max(8, Math.round(w * 0.12)))
+  const soft = blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
+  return { color, filled, soft, layout: { w, h, top, bottom, dress: true, rows } }
 }
 
 // Where a print lies on a bottoms photo (1 per pixel): the garment's pixels far from the cloth's colour, in

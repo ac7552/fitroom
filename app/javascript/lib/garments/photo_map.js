@@ -86,6 +86,81 @@ export function bottomsPhotoUV(cloth, pattern, layout, backLayout = null) {
   return out
 }
 
+// Where each point of a draped dress (or jacket, or coat) lies in its shop photo (print.js's readDress layout),
+// as for pants: the front from its top (the straps' or the shoulders') down to its hem, across from side to
+// side; the back from the same place on the softened copy, mirrored (the photo's left is the wearer's right,
+// on the back as on the front), so the two meet at the side seams; a flounce or hem band along the photo's
+// hem; sleeves, straps, cuffs, a collar or hood the softened copy near the shoulders. Returns [u, v, which]
+// per cloth point, as bottomsPhotoUV.
+export function dressPhotoUV(cloth, pattern, layout) {
+  const m = pattern.measures
+  const out = new Float32Array(3 * cloth.points.length)
+  const { w, h, top, bottom, rows } = layout
+  // A flounce (a dress's) or a hem band (a jacket's) hangs below the body's hem, its own height on: the
+  // photo's hem is its hem.
+  const band = pattern.panels.flounce ? "flounce" : pattern.panels.waistband ? "waistband" : null
+  const hemPoints = band ? pattern.panels[band].edges.flatMap(e => e.points) : []
+  const bandWidth = hemPoints.length ? Math.max(...hemPoints.map(q => q[0])) : 0
+  const long = m.length + (hemPoints.length ? -Math.min(...hemPoints.map(q => q[1])) : 0)
+  // Rows a little inside the outline, as for pants (the cloth's edge, laid flat, catches the light).
+  const edge = Math.max(4, Math.round(w * 0.012))
+  const clampY = y => Math.min(Math.max(y, top + edge), bottom - edge)
+  const rowAt = y => { const k = 2 * (Math.round(clampY(y)) - top); return [rows[k], rows[k + 1]] }
+  const between = (a, b, u) => {
+    const e = Math.min(Math.max(edge, Math.abs(b - a) * 0.04), Math.abs(b - a) / 3) * Math.sign(b - a)
+    return a + e + Math.min(Math.max(u, 0), 1) * (b - a - 2 * e)
+  }
+  const put = (i, x, y, which) => {
+    const yy = clampY(y)
+    out[3 * i] = x / w; out[3 * i + 1] = 1 - yy / h; out[3 * i + 2] = which
+  }
+  const downTo = cm => top + (Math.min(Math.max(cm, 0), long) / long) * (bottom - top)
+  const halves = new Map()
+  cloth.panels.forEach((name, p) => { if (name === "front" || name === "back") halves.set(p, halfWidths(pattern.panels[name].edges)) })
+  for (let i = 0; i < cloth.points.length; i++) {
+    const p = cloth.panel[i], name = cloth.panels[p]
+    const [px, py] = cloth.points[i]
+    if (name === "front" || name === "back") {
+      // +x is the wearer's left on the front (the photo's right) and their right on the back.
+      const half = halves.get(p)(py) || 1
+      const u = name === "front" ? (px / half + 1) / 2 : (1 - px / half) / 2
+      const y = downTo(-py)
+      const [a, b] = rowAt(y)
+      put(i, between(a, b, u), y, name === "front" ? 1 : 2)
+    } else if (name === band) {
+      // Sewn round the hem, the back's half then the front's (pattern.js's band: the back's from its far end,
+      // the front's from the middle to x 0): across the photo's hem rows, the front's half on the photo.
+      const t = px / (bandWidth || 1)
+      const y = downTo(m.length - py)
+      const [a, b] = rowAt(y)
+      const front = t < 0.5
+      put(i, between(a, b, front ? 1 - t * 2 : (t - 0.5) * 2), y, front ? 1 : 2)
+    } else {
+      // A sleeve, a strap, the collar: the softened copy just below the top, at its side.
+      const right = /_R$/.test(name)
+      const y = downTo(long * 0.08)
+      const [a, b] = rowAt(y)
+      put(i, between(a, b, /_L$/.test(name) ? 0.9 : right ? 0.1 : 0.5), y, 2)
+    }
+  }
+  return out
+}
+
+// A front's or back's half width at each height (cm): the furthest any of its edges reaches out there.
+function halfWidths(edges) {
+  const lines = edges.map(e => e.points)
+  return py => {
+    let most = 0
+    for (const points of lines) {
+      for (let k = 1; k < points.length; k++) {
+        const [x0, y0] = points[k - 1], [x1, y1] = points[k]
+        if ((py - y0) * (py - y1) <= 0 && y0 !== y1) most = Math.max(most, Math.abs(x0 + (x1 - x0) * (py - y0) / (y1 - y0)))
+      }
+    }
+    return most
+  }
+}
+
 // Where things are on one photo of the pants (print.js's readBottom layout): its rows, and a point `u` of
 // the way across a leg at a height. behind: it's a photo of the back, so the wearer's left is on its left.
 function onPhoto(layout, m, behind = false) {

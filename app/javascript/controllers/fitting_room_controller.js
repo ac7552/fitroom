@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { findPrint, garmentMask, measureDressMask, readPhoto, readBottomPhoto, readDressShape, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
+import { findPrint, garmentMask, measureDressMask, readPhoto, readBottomPhoto, readDressPhoto, readDressShape, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
 import { compareLooks, compareShapes, croppedLengths, nextReading, PLAIN, reshaped } from "lib/garments/look_check"
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
@@ -273,9 +273,22 @@ export default class extends Controller {
         if (back && (colorGap(back.color, read.color) > 40 || (!bottoms && !read.print && back.print?.coverage > 0.35))) back = null
         if (this.outfit[kind] !== item) return
         if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
-        // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
-        // printed gets the photo's print.
-        else this.applyTopReading(garment, read, back)
+        else {
+          this.applyTopReading(garment, read, back)
+          // A dress, a jacket, a coat or a button-up shirt has its photo laid on the cloth, as pants have: a
+          // dress's sequins, lace, print and texture, a jacket's or shirt's wash, pattern, placket, pockets
+          // and seams, which a colour and a placed graphic can't give. The colour stays for what the photo
+          // doesn't reach (the sleeves, the straps). Nothing goes over a dress's photo; a jacket or shirt
+          // keeps the graphics read off its back and sleeves.
+          const dress = garment.style === "dress"
+          if (dress || kind === "jacket" || kind === "coat" || ["shirt", "shortshirt"].includes(garment.style)) {
+            const map = (await readDressPhoto(frontPhoto).catch(() => null)) ?? (frontPhoto !== garment.photo ? await readDressPhoto(garment.photo).catch(() => null) : null)
+            if (this.outfit[kind] !== item) return
+            garment.photoMap = map ? { image: map.image, soft: map.soft, layout: map.layout } : null
+            if (map) garment.print = null
+            if (map && dress) garment.backPrint = garment.sleevePrint = null
+          }
+        }
         // A cropped top on a guessed chart: its lengths from the photo, and the fit and drape done again.
         const cropped = kind === "top" ? croppedLengths(garment.chart, read?.look) : null
         if (cropped) {
@@ -294,17 +307,22 @@ export default class extends Controller {
   // the back's, and the sleeves' graphics.
   applyTopReading(garment, read, back) {
     // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
-    // printed gets the photo's print.
-    const printed = !(garment.style === "dress" && garment.cut && !garment.cut.printed)
+    // printed gets the photo's print, and none goes over a dress with its photo laid on.
+    const printed = !(garment.style === "dress" && (garment.photoMap?.layout?.dress || (garment.cut && !garment.cut.printed)))
     garment.print = printed ? read?.print ?? null : null
     garment.backPrint = printed && back?.print ? { image: back.print.image } : null
     // The sleeves' graphics, by the wearer's side: the front photo shows the right sleeve on its left,
     // the back photo the left one; the front photo shows each sleeve's front half, the back its back.
     const front = read?.sleeves, behind = back?.sleeves
+    // Sleeves another colour all round (a varsity jacket's, a layered tee's long grey ones under its short
+    // sleeves), with no photo of the back: the front's strips go on the back halves too, and the cuffs take
+    // their colour.
+    const wrap = Boolean(front?.wrap) && !behind
     garment.sleevePrint = printed && (front || behind) ? {
-      right: { front: front?.left ?? null, back: behind?.right ?? null },
-      left: { front: front?.right ?? null, back: behind?.left ?? null }
+      right: { front: front?.left ?? null, back: behind?.right ?? (wrap ? front?.left ?? null : null) },
+      left: { front: front?.right ?? null, back: behind?.left ?? (wrap ? front?.right ?? null : null) }
     } : null
+    garment.cuffTone = printed && wrap ? read?.cuffTone ?? null : null
   }
 
   // The 3D view's check against the shop's photo (look_check.js), for the top: it runs once the clothes are
@@ -451,7 +469,7 @@ export default class extends Controller {
   plainLook() {
     const garment = this.lookStuckOn ?? this.outfit.top?.garment
     if (garment) {
-      garment.print = garment.backPrint = garment.sleevePrint = null
+      garment.print = garment.backPrint = garment.sleevePrint = garment.cuffTone = null
       if (namedColour(garment)) garment.color = garment.photoColor = garment.listingColor
       garment.lookDone = true
     }
@@ -737,7 +755,7 @@ export default class extends Controller {
     this.editorErrorTarget.hidden = true
     const linked = this.outfit[kind]?.garment.link_note ? this.outfit[kind].garment : null
     const garment = linked
-      ? (({ link_note, photoColor, photoMap, print, backPrint, lookDone, lookChecks, ...rest }) => ({ ...rest, color: rest.listingColor ?? rest.color }))(linked)
+      ? (({ link_note, photoColor, photoMap, print, backPrint, cuffTone, lookDone, lookChecks, ...rest }) => ({ ...rest, color: rest.listingColor ?? rest.color }))(linked)
       : {
           name: `Your ${KINDS[kind].toLowerCase()}`, brand: null, color_name: null, color: "#2a3552",
           source_url: null, garment: kind, photo: null, fabric: kind === "top" ? "cotton" : "wool",
@@ -769,7 +787,7 @@ export default class extends Controller {
     try {
       const photo = await smallPhoto(file)
       if (this.outfit[kind] !== item) return
-      const { photoColor, photoMap, print, backPrint, lookDone, lookChecks, ...garment } = item.garment
+      const { photoColor, photoMap, print, backPrint, cuffTone, lookDone, lookChecks, ...garment } = item.garment
       this.addItem({ ...garment, photo, color: garment.listingColor ?? garment.color })
       this.update()
     } catch (error) {
@@ -1776,6 +1794,7 @@ export default class extends Controller {
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
       sleevePrint: garment.sleevePrint ?? null,
+      cuffTone: garment.cuffTone ?? null,
       photoSize: photoSize(garment.chart),
       photoMap: garment.photoMap ?? null,
       fabric: garment.fabric,
@@ -2041,7 +2060,8 @@ function escape(text) {
 
 // A photo's colour, kept true to a neutral the listing names: a white tee shot under cool light reads
 // lavender, so a white, off-white, grey or black one keeps the photo's lightness and the named colour's tint.
-const NEUTRALS = /\b(white|off[- ]white|ivory|cream|ecru|black|grey|gray|heather|charcoal|silver)\b/i
+// ("Heather" alone isn't one: a "Homestead Heather" tee is a heathered tan, as its photo shows.)
+const NEUTRALS = /\b(white|off[- ]white|ivory|cream|ecru|black|grey|gray|charcoal|silver)\b/i
 function asNamed(color, name, named) {
   if (!color || !NEUTRALS.test(name ?? "") || !/^#[0-9a-f]{6}$/i.test(named ?? "")) return color
   // Only a plain neutral ("Black", "Off White"), not one of two colours ("White / Brown": the brown's hue
@@ -2080,7 +2100,7 @@ function namedColour(garment) {
   const name = garment.color_name ?? ""
   // One colour only: "Black / White", a two-tone, names a pattern's colours, not the cloth's.
   if (/\/|&|\band\b|\bmulti/i.test(name)) return null
-  return garment.listingColor && /\b(black|white|off[- ]white|ivory|cream|ecru|grey|gray|charcoal|heather|navy)\b/i.test(name) ? garment.listingColor : null
+  return garment.listingColor && /\b(black|white|off[- ]white|ivory|cream|ecru|grey|gray|charcoal|navy)\b/i.test(name) ? garment.listingColor : null
 }
 
 

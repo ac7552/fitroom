@@ -318,7 +318,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
   })
   const uniforms = {
     uStitch: { value: { hem: 1, topstitch: 2 }[details.stitch] ?? 0 },
-    uClosure: { value: { zip: 1, buttons: 2, placket: 3 }[details.closure] ?? 0 },
+    uClosure: { value: { zip: 1, buttons: 2, placket: 3, halfzip: 4 }[details.closure] ?? 0 },
     uPocket: { value: details.pocket === "kangaroo" ? 1 : 0 },
     uNeckDepth: { value: details.neckDepth ?? 9 },
     uLength: { value: details.length ?? 70 },
@@ -358,6 +358,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // only so many textures a material may read, and the cloth's are nearly all spoken for.
     uSleeveOn: { value: 0 },
     uSleeves: { value: BLANK },
+    // The cuffs' own colour when the sleeves are another colour than the body (rgb, and w 1 when on).
+    uCuffTone: { value: new THREE.Vector4(0, 0, 0, 0) },
     // For the 3D view's check (stage.js's lookShot): only the body's outside is drawn (no sleeves, nor the
     // cloth's inside seen through the neck), as a flat shop photo shows the front.
     uLookOnly: { value: 0 },
@@ -448,6 +450,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uBackOn;
         uniform float uSleeveOn;
         uniform sampler2D uSleeves;
+        uniform vec4 uCuffTone;
         uniform float uLookOnly;
         uniform vec4 uSleeveHave;
         uniform vec3 uSleeveSize;
@@ -502,6 +505,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
         if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy ) ).rgb;
+        // Cuffs in the sleeves' own colour (the sleeves themselves take their strips, see uSleeves).
+        if ( uCuffTone.w > 0.5 && vPiece > 4.5 ) diffuseColor.rgb = uCuffTone.rgb;
         vec3 thread = uThread;
         float groove = 1.0 - smoothstep( 0.0, 0.45, vEdge );
         float stitch = 0.0, metal = 0.0, shadow = 0.0;
@@ -511,7 +516,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         if ( vPiece > 0.5 && vPiece < 1.5 ) {
           float x = abs( vPattern.x ), y = vPattern.y;
           bool placket = y < -uNeckDepth + 0.5;
-          if ( uClosure == 1 && placket ) {
+          // A half zip runs 18 cm down from the collar.
+          if ( uClosure == 4 ) placket = placket && y > -uNeckDepth - 18.0;
+          if ( ( uClosure == 1 || uClosure == 4 ) && placket ) {
             // A zip: its tape, then the teeth down the middle, and the slider with its pull at the top.
             shadow = max( shadow, lineAt( x, 0.0, 0.55 ) * 0.35 );
             float teeth = lineAt( x, 0.0, 0.32 ) * step( 0.35, fract( y / 0.32 ) );
@@ -580,7 +587,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         }
         // A sleeve's graphic: down it by its length from the top of the cap, across it from its top line (x 0)
         // to the underarm seam (x at half its width there), on the half facing the way the photo saw it.
-        if ( uSleeveOn > 0.5 && vPiece > 2.5 && gl_FrontFacing ) {
+        if ( uSleeveOn > 0.5 && vPiece > 2.5 && vPiece < 4.5 && gl_FrontFacing ) {
           bool right = vPiece > 3.5;
           float along = -vPattern.y / uSleeveSize.z;
           float across = abs( vPattern.x ) / mix( uSleeveSize.x, uSleeveSize.y, clamp( along, 0.0, 1.0 ) );
