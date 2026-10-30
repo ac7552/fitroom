@@ -199,7 +199,7 @@ function bottomSurface(style, fabric) {
 // How far round (m) a snug pant hem can stretch: a rib cuff a long way, a stretch knit (leggings) a little.
 // Null for a woven hem, which tilts to rest on the instep and drops behind the heel.
 function snugRound(style, pattern) {
-  const cuff = BOTTOM_STYLES[style]?.cuff
+  const cuff = pattern.panels.cuff_L ? BOTTOM_STYLES[style]?.cuff : null
   const m = pattern.measures
   if (cuff) return (m.opening * cuff.stretch * 1.4) / 100
   return pattern.fabric === "stretch" ? (m.opening * 1.1) / 100 : null

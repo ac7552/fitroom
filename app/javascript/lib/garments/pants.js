@@ -20,6 +20,13 @@ export const BOTTOM_STYLES = {
   shorts: { fabric: "twill", band: { height: 4, stretch: 0.98 }, cuff: null },
   skirt: { fabric: "twill", band: { height: 3.5, stretch: 0.98 }, cuff: null }
 }
+// A style as a pair of pants is cut: sweatpants whose photo shows an open, straight hem (cut.open_hem) have no
+// rib cuff, though they're sold as joggers.
+function styleOf(styleName, cut) {
+  const style = BOTTOM_STYLES[styleName] ?? BOTTOM_STYLES.trousers
+  return cut?.open_hem && style.cuff ? { ...style, cuff: null } : style
+}
+
 
 // How wide a skirt's hem is, over its hips, by its fit: a pencil skirt (fitted), slim, relaxed, an A-line
 // (flared), or pleated (very full).
@@ -39,7 +46,7 @@ export const BACK_RAISE = 4
 // crotch up to the natural waist). style: a BOTTOM_STYLES name.
 export function draftBottoms(styleName, size, body, cut = null) {
   if (styleName === "skirt") return draftSkirt(size, body, cut)
-  const style = BOTTOM_STYLES[styleName] ?? BOTTOM_STYLES.trousers
+  const style = styleOf(styleName, cut)
   const m = bottomMeasures(styleName, size, body, cut)
   // Pull-on pants (an elastic or drawcord waist): the pieces are cut nearly as wide at the top as the seat,
   // and the waistband, at the chart's relaxed waist, gathers them in. Cut at that waist instead, the pieces
@@ -84,7 +91,7 @@ export function draftBottoms(styleName, size, body, cut = null) {
 
 // The finished measurements to cut to: the chart's, and from the body what it doesn't give.
 export function bottomMeasures(styleName, size, body, cut = null) {
-  const style = BOTTOM_STYLES[styleName] ?? BOTTOM_STYLES.trousers
+  const style = styleOf(styleName, cut)
   const hips = body.hips ?? body.waist + 14
   const waist = size.waist ?? body.waist + 2
   const seat = Math.max(size.seat ?? hips + 8, waist + 4)

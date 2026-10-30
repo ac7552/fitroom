@@ -226,7 +226,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 30
+  FORMAT = 31
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -478,7 +478,7 @@ class GarmentImport
     return sizes unless shape[:rise]&.between?(0.18, 0.5)
 
     sizes.map do |size|
-      thigh = (shape[:thigh] * size["waist"]).clamp(size["seat"] * 0.5, size["seat"] * 0.75).round(1)
+      thigh = shape[:thigh] ? (shape[:thigh] * size["waist"]).clamp(size["seat"] * 0.5, size["seat"] * 0.75).round(1) : size["thigh"] || (size["seat"] * 0.6).round(1)
       shorts = size["inseam"] < 40
       opening = (shape[:hem] * size["waist"]).clamp(shorts ? thigh * 0.9 : [ 18, thigh * 0.35 ].max, 80).round(1)
       size.merge("leg_opening" => opening, "thigh" => [ thigh, opening ].max)
@@ -680,8 +680,9 @@ class GarmentImport
       return read.merge(skirt: true)
     end
 
+    # (Wide legs laid touching hide where the thigh is: that one may be missing.)
     read = { thigh: shape["thigh"], hem: shape["hem"], rise: shape["rise"], length: shape["length"] }
-    return if read.values.any? { !(it.is_a?(Numeric) && it.finite? && it.between?(0.05, 6)) }
+    return if read.any? { |key, value| !(value.is_a?(Numeric) && value.finite? && value.between?(0.05, 6)) && !(key == :thigh && value.nil?) }
 
     read
   end
@@ -1032,7 +1033,18 @@ class GarmentImport
     cut[:elastic] = true if !%w[joggers leggings].include?(style) && words.match?(ELASTIC_WAIST)
     cut[:fit] = loose ? "loose" : "slim" if style != "leggings" && loose != slim
     cut[:hem] = "unfinished" if !%w[shorts leggings].include?(style) && unfinished_hem?(chart, words, product[:women])
+    cut[:open_hem] = true if style == "joggers" && open_hem?(product, words)
     cut.presence
+  end
+
+  # Sweatpants sold as joggers whose hem is open, not gathered into a rib cuff: the listing says the leg is
+  # straight or wide, or the shop photo shows the hem wider than about three fifths of the waist (a cuffed
+  # jogger's is under half: the Stone Island cargo sweatpant reads 0.45, the Essentials lounge one 0.69).
+  OPEN_HEM = /\b(?:straight|wide|open)[- ](?:leg|hem)|\bopen hem|\bflared?\b/i
+  def open_hem?(product, words)
+    return false if words.match?(/\bcuff(?:ed|s)?\b|elastic(?:ated)? (?:hem|cuffs?|ankles?)|ribbed (?:hem|cuffs?)/i)
+
+    words.match?(OPEN_HEM) || product[:bottom_shape]&.dig(:hem).to_f >= 0.58
   end
 
   # Pants sold unhemmed, for a tailor to finish to the wearer: the listing says so, or every size has the

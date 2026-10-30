@@ -568,6 +568,21 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "tee", style.({ name: "Home Jersey - Red", category: "Jerseys" })
   end
 
+  test "sweatpants whose photo shows an open, wide hem have no cuffs, and their legs are as wide as the photo's" do
+    import = GarmentImport.new
+    # The Essentials lounge sweatpant: wide legs laid touching (no thigh found), the hem 0.69 of the waist.
+    shape = import.send(:photo_bottom_shape, { "thigh" => nil, "hem" => 0.687, "rise" => 0.331, "length" => 2.65 })
+    assert_equal({ thigh: nil, hem: 0.687, rise: 0.331, length: 2.65 }, shape)
+    essentials = { name: "Essentials MLB Lounge Sweatpant - Black", description: "Elastic waistband Drawcord Relaxed fit", bottom_shape: shape }
+    assert import.send(:bottoms_cut, essentials, "joggers", trouser_chart([ 81, 81 ]))[:open_hem]
+    legs = import.send(:as_photographed_legs, [ { "name" => "L", "waist" => 86.0, "seat" => 110.0, "inseam" => 81 } ], shape)
+    assert_in_delta 59, legs.first["leg_opening"], 1
+    # A cuffed jogger (the Stone Island cargo sweatpant reads 0.45), or one whose listing says it's cuffed, keeps its cuffs.
+    cargo = { name: "Stone Island Loose Fit Sweatpant", description: "Elasticated cuffs", bottom_shape: shape.merge(hem: 0.45) }
+    assert_nil import.send(:bottoms_cut, cargo, "joggers", trouser_chart([ 81, 81 ]))&.dig(:open_hem)
+    assert_nil import.send(:bottoms_cut, essentials.merge(description: "Ribbed cuffs"), "joggers", trouser_chart([ 81, 81 ]))&.dig(:open_hem)
+  end
+
   def trouser_chart(inseams) = GarmentImport::ChartReader::Chart.new(sizes: inseams.each_with_index.map { |inseam, i| { "name" => (44 + 2 * i).to_s, "waist" => 79.0 + 4 * i, "seat" => 108.0 + 4 * i, "inseam" => inseam } }, unit: "cm", kind: "garment", missing: [])
 
   test "pants the shop calls baggy, wide, relaxed or pleated are cut loose; slim, skinny or tapered ones slim" do
