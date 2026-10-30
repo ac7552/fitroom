@@ -364,6 +364,14 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_operator size["sleeve"], :>, 55
   end
 
+  test "a jacket named for nothing is a blazer only if it could have lapels" do
+    style = ->(name, description) { GarmentImport.new.send(:style_of, { name:, category: "Jackets", description: }, "x") }
+    assert_equal "zip", style.("Levi's x Barbour Spey Waxed Jacket - Tobacco Wax / Brown", "Waxed cotton Classic corduroy collar Detachable wax cotton hood")
+    assert_equal "zip", style.("Stand Studio Halle Jacket - Nougat", "Faux fur fabric Snap closure on front Crewneck Padded shoulder")
+    assert_equal "tailored", style.("Rick Owens Concordian Jacket - Black", "Cotton Slim lapel collar Double button closure on the front")
+    assert_equal "tailored", style.("Wool Jacket", "Wool. Fully lined.")
+  end
+
   test "a utility jacket that zips is drawn as a zip-up" do
     garment = GarmentImport.new.from_page(resale("Utility Jacket", "Nylon utility jacket. Two-way zipper closure."), source_url: outerwear)
     assert_equal [ "jacket", "zip", "nylon" ], garment.values_at(:garment, :style, :fabric)

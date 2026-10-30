@@ -1300,6 +1300,9 @@ class GarmentImport
     return found if found
     return "shirt" if fabric_of(product) == "denim"
     return "zip" if %w[leather nylon].include?(fabric_of(product))
+    # Nothing it's called says what it is: a blazer has lapels, so one with a hood (a waxed field jacket) or
+    # without a collar to turn back (a faux fur crewneck) is a casual jacket.
+    return "zip" if hooded?(product) || description.match?(/crew ?neck|collarless|mock neck|funnel neck|stand collar/i)
 
     [ product[:category], source_url ].join(" ").match?(OUTERWEAR) ? "zip" : "tailored"
   end
