@@ -81,7 +81,7 @@ export const SCENES = Object.keys(LOOKS)
 // Contact shading's reach (metres; about a hand's width) and strength.
 const AO = { radius: 0.22, falloff: 1, intensity: 3.2 }
 
-export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "shortshirt", "dress", "polo", "tank", "sweater", "shortknit", "cardigan", "coat"]
+export const DRAPED_STYLES = ["tee", "longsleeve", "sweatshirt", "hoodie", "zip", "bomber", "shirt", "shortshirt", "dress", "polo", "rugby", "tank", "sweater", "shortknit", "cardigan", "coat"]
 
 export const STATUS_COLORS = {
   good: "#3fa672", tight: "#de4f37", short: "#de4f37", loose: "#4f63f0", long: "#4f63f0", unknown: "#9a9ca3"
@@ -667,7 +667,7 @@ export class FittingStage {
   // toward the chest and apart at the front. Laid on the shirt where it hangs, as the scarf is.
   wearCollars() {
     // (A shirt dress has a shirt's collar too.)
-    const slots = ["top", "outer"].filter(slot => ["shirt", "shortshirt", "polo"].includes(this.slots[slot]?.top.item.style) || this.slots[slot]?.top.item.cut?.collar)
+    const slots = ["top", "outer"].filter(slot => ["shirt", "shortshirt", "polo", "rugby"].includes(this.slots[slot]?.top.item.style) || this.slots[slot]?.top.item.cut?.collar)
     const ready = slots.filter(slot => { const d = this.slots[slot]; return d.shown && d.final && !d.posing })
     const stamp = ready.map(slot => `${slot}:${this.slots[slot].top.drape.frame}:${this.slots[slot].posedAs}:${this.slots[slot].top.item.color}`).join("|") + this.view
     if (stamp === this.collars.stamp) return
@@ -1894,7 +1894,7 @@ function collarLeaf(top, scale) {
   }
   mesh.geometry.computeBoundingSphere()
   const caster = new THREE.Raycaster()
-  const polo = top.item.style === "polo"
+  const polo = ["polo", "rugby"].includes(top.item.style)
   const rows = 9, positions = [], index = [], start = []
   for (const column of columns) {
     if (!column) { start.push(-1); continue }

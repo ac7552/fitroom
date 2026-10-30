@@ -29,6 +29,8 @@ export const STYLES = {
   coat: { sleeve: "long", collar: "stand", cuffs: null, hem: null, fabric: "wool", ease: 20, length: 0.55, closure: "buttons" },
   // A polo: a knit collar, a short buttoned placket, banded sleeves.
   polo: { sleeve: "short", collar: "polo", cuffs: null, hem: null, fabric: "jersey", ease: 10, length: 0.41, closure: "placket" },
+  // A rugby shirt: a polo with long sleeves and ribbed cuffs, cut with more room.
+  rugby: { sleeve: "long", collar: "polo", cuffs: "rib", hem: null, fabric: "jersey", ease: 14, length: 0.41, closure: "placket" },
   // A tank top: no sleeves, deep armholes, its straps in from the shoulders.
   tank: { sleeve: null, collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 6, length: 0.41 },
   // Knitwear: a sweater (ribbed neck, cuffs and hem) and a cardigan (the same, buttoned down a V front).

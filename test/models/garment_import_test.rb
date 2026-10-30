@@ -557,6 +557,17 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_not_equal "dress", GarmentImport.new.send(:top_style_of, { name: "Oxford Dress Shirt" })
   end
 
+  test "a rugby shirt is a long-sleeve polo, and a jersey whose photo shows long sleeves has them" do
+    style = ->(product) { GarmentImport.new.send(:top_style_of, product) }
+    assert_equal "rugby", style.({ name: "Nicholas Daley Reggae Klub Rugby Jersey - Black / Midnight", category: "Jerseys", description: "Spread collar Dropped shoulders" })
+    assert_equal "rugby", style.({ name: "Long Sleeve Polo - Navy" })
+    # A jersey named for nothing: its photo's sleeves reach down past the hem (adidas x Willy Chavarria's
+    # Dazzle jersey reads 1.28 and 1.0), or barely leave the shoulder (a football shirt's).
+    assert_equal "longsleeve", style.({ name: "Dazzle Jersey - Black", category: "Jerseys", shape: { sleeve: 1.28, sleeve_down: 1.0, length: 1.28 } })
+    assert_equal "tee", style.({ name: "Home Jersey - Red", category: "Jerseys", shape: { sleeve: 0.45, sleeve_down: 0.3, length: 1.3 } })
+    assert_equal "tee", style.({ name: "Home Jersey - Red", category: "Jerseys" })
+  end
+
   def trouser_chart(inseams) = GarmentImport::ChartReader::Chart.new(sizes: inseams.each_with_index.map { |inseam, i| { "name" => (44 + 2 * i).to_s, "waist" => 79.0 + 4 * i, "seat" => 108.0 + 4 * i, "inseam" => inseam } }, unit: "cm", kind: "garment", missing: [])
 
   test "pants the shop calls baggy, wide, relaxed or pleated are cut loose; slim, skinny or tapered ones slim" do

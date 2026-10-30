@@ -42,6 +42,8 @@ class GarmentImport
     [ "dress", DRESSES ],
     [ "hoodie", /hoodie|hooded/i ],
     [ "tank", /\btanks?\b|tank top|camisole|\bcami\b|singlet|sleeveless/i ],
+    # A rugby shirt (a long-sleeve polo): a collar on a buttoned placket, long sleeves.
+    [ "rugby", /\brugby\b|long[- ]?sleeve polo|\bpolo\b.*long[- ]?sleeve|\bl\/s polo/i ],
     [ "polo", /\bpolos?\b/i ],
     [ "cardigan", /cardigan/i ],
     [ "longsleeve", /long[- ]?sleeve.*\b(t[- ]?shirt|tee)|\b(t[- ]?shirt|tee)s?\b.*long[- ]?sleeve/i ],
@@ -158,7 +160,7 @@ class GarmentImport
   LINK_NOUNS = {
     "dress" => "a dress", "skirt" => "a skirt", "cardigan" => "a cardigan", "sweater" => "a sweater", "shortknit" => "a sweater",
     "hoodie" => "a hoodie", "shirt" => "a shirt", "shortshirt" => "a shirt", "tee" => "a T-shirt", "longsleeve" => "a long-sleeve T-shirt",
-    "polo" => "a polo", "tank" => "a tank top", "sweatshirt" => "a sweatshirt", "tailored" => "a blazer", "bomber" => "a bomber jacket",
+    "polo" => "a polo", "rugby" => "a rugby shirt", "tank" => "a tank top", "sweatshirt" => "a sweatshirt", "tailored" => "a blazer", "bomber" => "a bomber jacket",
     "jeans" => "jeans", "shorts" => "shorts", "joggers" => "joggers", "leggings" => "leggings", "romper" => "a romper", "jumpsuit" => "a jumpsuit"
   }.freeze
   # A garment the link says nothing about the colour of shows grey until a photo gives it one.
@@ -224,7 +226,7 @@ class GarmentImport
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
   BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 29
+  FORMAT = 30
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -246,7 +248,7 @@ class GarmentImport
   # stays on their device: every usual size of that kind of thing, marked as guessed.
   PHOTO_NAMES = {
     "top" => { "tee" => "T-shirt", "longsleeve" => "Long-sleeve T-shirt", "sweatshirt" => "Sweatshirt", "hoodie" => "Hoodie", "shirt" => "Shirt", "shortshirt" => "Short-sleeve shirt",
-               "polo" => "Polo", "tank" => "Tank top", "sweater" => "Sweater", "cardigan" => "Cardigan", "shortknit" => "Short-sleeve sweater",
+               "polo" => "Polo", "rugby" => "Rugby shirt", "tank" => "Tank top", "sweater" => "Sweater", "cardigan" => "Cardigan", "shortknit" => "Short-sleeve sweater",
                "dress" => "Dress", "dress_long" => "Long-sleeve dress" },
     "jacket" => { "zip" => "Zip-up jacket", "bomber" => "Bomber jacket", "shirt" => "Shirt jacket", "tailored" => "Blazer", "cardigan" => "Cardigan" },
     "coat" => {}, "trousers" => {}
@@ -1180,8 +1182,17 @@ class GarmentImport
     return "tee" if style == "longsleeve" && product[:category].to_s.match?(/short[- ]?sleeve/i) && !product[:name].to_s.match?(/long[- ]?sleeve|\bl\/s\b/i)
     # A top on straps (a bodysuit or a cami named for neither) is a tank.
     return "tank" if style == "tee" && product[:description].to_s.match?(/sleeveless|(?:shoulder|spaghetti|thin|wide|adjustable) straps?|\bcami(?:sole)?\b/i)
-    # A "T-shirt" whose description says it has long sleeves is a long-sleeve one.
-    style == "tee" && product[:description].to_s.match?(/long[- ]?sleeve/i) ? "longsleeve" : style
+    # A "T-shirt" whose description says it has long sleeves is a long-sleeve one, and so is a top named for
+    # nothing (a "Jersey") whose photo shows its sleeves reaching down past its hem.
+    return style unless style == "tee"
+    return "longsleeve" if product[:description].to_s.match?(/long[- ]?sleeve/i)
+    long_sleeves_in_photo?(product[:shape]) && !product[:name].to_s.match?(/short[- ]?sleeve|\bs\/s\b|\bt[- ]?shirt|\btee\b/i) ? "longsleeve" : style
+  end
+
+  # Whether a top's photo shows long sleeves: their reach from the shoulder at least the chest's width, and
+  # hanging well down (a T-shirt's reach about half that). Its shape as photo_shape reads it.
+  def long_sleeves_in_photo?(shape)
+    shape.is_a?(Hash) && shape[:sleeve].to_f >= 1.0 && shape[:sleeve_down].to_f >= 0.7
   end
 
   def style_of(product, source_url)

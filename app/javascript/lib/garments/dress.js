@@ -225,7 +225,7 @@ function rimAt(rim, angle) {
 }
 // The tops that tuck in.
 // (Not a tank top: with nothing over the arms to hold it, gathered into the pants it slides down inside them.)
-export const TUCKABLE = ["tee", "longsleeve", "polo", "shirt", "shortshirt"]
+export const TUCKABLE = ["tee", "longsleeve", "polo", "rugby", "shirt", "shortshirt"]
 
 // The wearer as pants are drafted for them: their measurements, the body's, and from the crotch up to the
 // natural waist (about at the navel).
