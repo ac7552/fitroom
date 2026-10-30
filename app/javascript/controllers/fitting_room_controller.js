@@ -247,10 +247,13 @@ export default class extends Controller {
       // First with anything that isn't the garment (a hand, a bag, a hanger) painted out (see segment.js).
       const part = bottoms ? "trousers" : "top"
       let frontPhoto = garment.photo
-      const reading = cleanPhoto(garment.photo, part).then(front => {
-        garment.cleaned = front !== garment.photo
-        frontPhoto = front
-        return bottoms ? readBottomPhoto(front) : readPhoto(front, { shape: frontShape(garment.chart) })
+      const readFront = src => bottoms ? readBottomPhoto(src) : readPhoto(src, { shape: frontShape(garment.chart) })
+      const reading = cleanPhoto(garment.photo, part).then(async front => {
+        const read = await readFront(front)
+        // Painting out took too much (the garment no longer reads as itself): the photo as the shop gave it.
+        if (read || front === garment.photo) { garment.cleaned = front !== garment.photo; frontPhoto = front; return read }
+        garment.cleaned = false
+        return readFront(garment.photo)
       })
       reading.then(async read => {
         // A close-up of plain cloth gives its truest colour (no shadows, no folds).
@@ -262,7 +265,9 @@ export default class extends Controller {
         const backPhoto = garment.back_photo && read ? await cleanPhoto(garment.back_photo, part) : null
         if (backPhoto) garment.backCleaned = backPhoto !== garment.back_photo
         if (kind === "top") garment.lookPhotos = { front: frontPhoto, back: backPhoto }
-        let back = backPhoto ? await (bottoms ? readBottomPhoto(backPhoto) : readPhoto(backPhoto)).catch(() => null) : null
+        const readBack = src => (bottoms ? readBottomPhoto(src) : readPhoto(src)).catch(() => null)
+        let back = backPhoto ? await readBack(backPhoto) : null
+        if (!back && backPhoto && backPhoto !== garment.back_photo) back = await readBack(garment.back_photo)
         // Not the same garment's back after all (a close-up, or a photo on a model): a different colour, or a
         // top that's plain in front showing a print all over its back.
         if (back && (colorGap(back.color, read.color) > 40 || (!bottoms && !read.print && back.print?.coverage > 0.35))) back = null

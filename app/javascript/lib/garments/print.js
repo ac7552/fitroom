@@ -988,9 +988,19 @@ export function keepInside(mask, keep, w, h, data = null, rim = Math.max(3, Math
     }
     inner = next
   }
-  // On the rim itself, only skin goes (a print or logo can reach the very edge).
-  if (data) for (let i = 0; i < w * h; i++) if (mask[i] && !inner[i] && !keep[i] && !isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2])) keep[i] = 1
+  // On the rim itself, only skin goes (a print or logo can reach the very edge), and not the cloth's own
+  // colour (a khaki waistband the model shaved).
+  let cloth = data ? clothColour(mask, keep, data, w, h) : null
+  const lab = new Float32Array(3)
+  const own = i => { if (!cloth) return false; toLab(data[4 * i], data[4 * i + 1], data[4 * i + 2], lab, 0); return Math.hypot(lab[0] - cloth[0], lab[1] - cloth[1], lab[2] - cloth[2]) < 18 }
+  const rimLeft = []
+  if (data) for (let i = 0; i < w * h; i++) {
+    if (!mask[i] || inner[i] || keep[i]) continue
+    if (!isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2]) || own(i)) keep[i] = 1
+    else rimLeft.push(i)
+  }
   mask = inner
+  const restored = new Uint8Array(w * h)
   const left = i => mask[i] && !keep[i]
   const seen = new Uint8Array(w * h), stack = []
   for (let start = 0; start < w * h; start++) {
@@ -1013,9 +1023,49 @@ export function keepInside(mask, keep, w, h, data = null, rim = Math.max(3, Math
     }
     let skin = 0
     if (data) for (const i of part) if (isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2])) skin++
-    if (!edge || !data || skin < part.length * 0.35) for (const i of part) keep[i] = 1
+    if (!edge || !data || skin < part.length * 0.35 || !handLike(part, data, w, cloth)) for (const i of part) { keep[i] = 1; restored[i] = 1 }
+  }
+  // The rim beside a patch that stays, stays with it (the edge of a word down a leg).
+  for (let pass = 0; pass < rim && rimLeft.length; pass++) {
+    for (let k = rimLeft.length - 1; k >= 0; k--) {
+      const i = rimLeft[k], x = i % w
+      if ((x > 0 && restored[i - 1]) || (x < w - 1 && restored[i + 1]) || (i >= w && restored[i - w]) || (i + w < w * h && restored[i + w])) {
+        keep[i] = 1; restored[i] = 1; rimLeft.splice(k, 1)
+      }
+    }
   }
   return keep
+}
+
+// Whether a left-out patch of skin colour is a hand or an arm, not the garment's own (a tan or khaki cloth
+// is skin-coloured too: a waistband the model shaved off; so is beige lettering down a leg, or a drawcord):
+// a hand is a solid blob, not thin strokes, and isn't the cloth's colour.
+function handLike(part, data, w, clothLab) {
+  let x0 = Infinity, x1 = -1, y0 = Infinity, y1 = -1
+  const L = [], A = [], B = []
+  const lab = new Float32Array(3)
+  for (const i of part) {
+    const x = i % w, y = (i - x) / w
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y)
+    toLab(data[4 * i], data[4 * i + 1], data[4 * i + 2], lab, 0)
+    L.push(lab[0]); A.push(lab[1]); B.push(lab[2])
+  }
+  const across = x1 - x0 + 1, down = y1 - y0 + 1
+  const solid = part.length / (across * down) >= 0.4 && part.length / Math.max(across, down) >= Math.max(4, w * 0.02)
+  const own = clothLab && Math.hypot(median(L) - clothLab[0], median(A) - clothLab[1], median(B) - clothLab[2]) < 18
+  return solid && !own
+}
+
+// The cloth's colour (Lab): the middle of what the model kept of the garment.
+function clothColour(mask, keep, data, w, h) {
+  const L = [], A = [], B = []
+  const lab = new Float32Array(3)
+  for (let i = 0; i < w * h; i += 3) {
+    if (!mask[i] || !keep[i]) continue
+    toLab(data[4 * i], data[4 * i + 1], data[4 * i + 2], lab, 0)
+    L.push(lab[0]); A.push(lab[1]); B.push(lab[2])
+  }
+  return L.length ? [median(L), median(A), median(B)] : null
 }
 
 // Whether a colour could be skin, light to deep (in YCbCr's usual skin box, and neither near grey nor

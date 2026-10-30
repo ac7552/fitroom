@@ -71,3 +71,25 @@ test("a print the model left out stays; only what reaches in from the garment's 
   keepInside(prompt.mask, logo, w, h, data)
   assert.equal(logo[110 * w + 53], 1, "the logo at the edge is kept")
 })
+
+test("skin-coloured cloth the model left out stays: a khaki waistband, beige lettering down a leg", () => {
+  // Khaki pants on a light backdrop, beige lettering in thin strokes down the left leg's outer edge.
+  const w = 200, h = 200, data = new Uint8ClampedArray(4 * w * h)
+  const khaki = [179, 149, 111], beige = [222, 196, 160]
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = [235, 235, 235]
+    if (y > 20 && y < 180 && ((x > 60 && x < 98) || (x > 102 && x < 140) || y < 70 && x > 60 && x < 140)) c = khaki
+    data.set([...c, 255], 4 * (y * w + x))
+  }
+  const prompt = promptPoints(data, w, h, "trousers")
+  const keep = Uint8Array.from(prompt.mask)
+  // The model shaved off the waistband's top (on the outline, the cloth's own colour).
+  for (let y = 21; y < 27; y++) for (let x = 61; x < 140; x++) keep[y * w + x] = 0
+  keepInside(prompt.mask, keep, w, h, data)
+  assert.equal(keep[23 * w + 100], 1, "the waistband is kept")
+  // Lettering: thin beige strokes down the outer edge, left out by the model.
+  const letters = Uint8Array.from(prompt.mask)
+  for (let y = 80; y < 170; y++) if (y % 9 < 3) for (let x = 61; x < 72; x++) { data.set([...beige, 255], 4 * (y * w + x)); letters[y * w + x] = 0 }
+  keepInside(prompt.mask, letters, w, h, data)
+  assert.equal(letters[82 * w + 65], 1, "the lettering is kept")
+})
