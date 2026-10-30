@@ -1936,7 +1936,7 @@ export default class extends Controller {
     if (!this.hasStageNoteTarget || !this.items().some(i => i.fit)) return
     const notes = []
     if (this.guessed?.length) notes.push(this.guessed.length === REQUIRED.length ? "An example body." : "Some of your numbers are guesses.")
-    if (this.outfit.coat && this.outfit.jacket) notes.push("The coat over a jacket is drawn from a jacket, so it looks shorter here.")
+    if (this.stage.modelCoat && this.outfit.jacket) notes.push("The coat over a jacket is drawn from a jacket, so it looks shorter here.")
     // A chart of usual sizes, not the clothes' own measurements: the fit shown is an estimate.
     const estimated = this.items().filter(({ garment }) => ["body", "sizes"].includes(garment.chart.kind)).map(({ kind, garment }) => kindLabel(kind, garment).toLowerCase())
     if (estimated.length) notes.push(`Estimated fit: the store doesn't list measurements for the ${listed(estimated)}, so usual sizes are shown.`)

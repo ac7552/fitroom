@@ -335,11 +335,15 @@ export class FittingStage {
     if (worn.jacket && !DRAPED_STYLES.includes(worn.jacket.style) && worn.top?.style === "dress" && !worn.coat) worn.jacket = { ...worn.jacket, style: "coat" }
 
     // A casual jacket is draped like a top, and so is a coat (cut long, its sleeves round the arms), over
-    // the top and the pants; the suit's jacket is drawn from the model, and so is a coat worn over a jacket.
+    // the top and the pants; the suit's jacket is drawn from the model, and so is a coat worn over it. A coat
+    // over a casual jacket is draped over it, the jacket draped in the top's place (a top under both can't be
+    // seen): drawn from the model, the coat had the jacket's cloth poking through it.
     const drapedJacket = Boolean(worn.jacket && DRAPED_STYLES.includes(worn.jacket.style))
     const tailored = Boolean(worn.jacket && !drapedJacket)
-    const drapedCoat = Boolean(worn.coat && !worn.jacket)
+    const coatOverJacket = Boolean(worn.coat && drapedJacket)
+    const drapedCoat = Boolean(worn.coat && (!worn.jacket || coatOverJacket))
     const modelCoat = Boolean(worn.coat && !drapedCoat)
+    this.modelCoat = modelCoat
     const body = this.meshes.body
     body.visible = this.view !== "ghost"
     body.material.userData.hideJacket.value = tailored || modelCoat ? 1 : 0
@@ -372,17 +376,17 @@ export class FittingStage {
 
     // The top, unless the suit's jacket or a coat is over it (those are drawn from the model, and would show
     // it through them), over the pants or tucked into them; and over the top, a casual jacket.
-    const top = worn.top && !tailored && !modelCoat ? worn.top : null
-    this.hiddenTop = Boolean(worn.top && !top)
+    const top = coatOverJacket ? worn.jacket : worn.top && !tailored && !modelCoat ? worn.top : null
+    this.hiddenTop = Boolean(worn.top && top !== worn.top)
     // A romper's or jumpsuit's top hangs over its shorts or pants, in the same cloth, so they read as one
     // piece (it isn't tucked: there's nothing to tuck).
-    this.onePiece = Boolean(worn.top?.onePiece && worn.trousers?.onePiece)
-    const tuck = (this.tucked || Boolean(worn.top?.bodysuit)) && !this.onePiece && this.canTuck()
+    this.onePiece = Boolean(worn.top?.onePiece && worn.trousers?.onePiece) && !coatOverJacket
+    const tuck = (this.tucked || Boolean(worn.top?.bodysuit)) && !this.onePiece && !coatOverJacket && this.canTuck()
     this.order = tuck ? TUCKED_LAYERS : LAYERS
     const items = {
       bottom: worn.trousers ?? null,
       top: top && tuck ? { ...top, tuck: { style: worn.trousers.style ?? "trousers", size: worn.trousers.size, cut: worn.trousers.cut ?? null } } : top,
-      outer: drapedJacket ? worn.jacket : drapedCoat ? { ...worn.coat, style: "coat" } : null
+      outer: drapedCoat ? { ...worn.coat, style: "coat" } : drapedJacket ? worn.jacket : null
     }
     this.dressFeet(worn.shoes ?? null, worn.socks ?? null)
     this.beltItem = worn.belt ?? null
