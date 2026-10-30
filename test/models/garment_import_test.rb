@@ -370,6 +370,8 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "zip", style.("Stand Studio Halle Jacket - Nougat", "Faux fur fabric Snap closure on front Crewneck Padded shoulder")
     assert_equal "tailored", style.("Rick Owens Concordian Jacket - Black", "Cotton Slim lapel collar Double button closure on the front")
     assert_equal "tailored", style.("Wool Jacket", "Wool. Fully lined.")
+    # A tracksuit's top isn't a suit's jacket.
+    assert_equal "zip", GarmentImport.new.send(:style_of, { name: "Courrèges Bicolor Tracksuit Top - Black", category: "Track Jackets", description: "Polyester Mock neckline Two-way zipper closure on the front" }, "x")
   end
 
   test "a utility jacket that zips is drawn as a zip-up" do
