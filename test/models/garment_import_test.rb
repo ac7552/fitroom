@@ -94,6 +94,9 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal GarmentImport::COLORS["white"], import.send(:color_hex, [ "White / Brown" ])
     assert_equal GarmentImport::COLORS["navy"], import.send(:color_hex, [ "Navy/Grey" ])
     assert_equal GarmentImport::COLORS["black"], import.send(:color_hex, [ nil, "Black cotton jersey" ])
+    # Heather is the knit: a "Heather Green" shirt is green, a "Homestead Heather" tee heather until its photo says.
+    assert_equal GarmentImport::COLORS["green"], import.send(:color_hex, [ "Heather Green" ])
+    assert_equal GarmentImport::COLORS["heather"], import.send(:color_hex, [ "Homestead Heather" ])
   end
 
   test "a blend is its main fibre" do
@@ -289,6 +292,51 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal %(hoodies,mens,Sample "Outdoor"), query["tags"]
     assert_equal [ "jacket", "zip", "nylon" ], garment.values_at(:garment, :style, :fabric)
     assert_equal GarmentImport::COLORS["black"], garment[:color]
+    # A down hoodie has its hood.
+    assert garment.dig(:cut, :hood)
+  end
+
+  test "a photo the browser sent is kept when it's a small base64 data URL, checked without a long regexp" do
+    assert GarmentImport.browser_photo?("data:image/jpeg;base64,#{"QUJD" * 500_000}")
+    refute GarmentImport.browser_photo?("data:image/jpeg;base64,QUJD<script>")
+    refute GarmentImport.browser_photo?("data:text/html;base64,QUJD")
+    refute GarmentImport.browser_photo?("data:image/jpeg;base64,#{"A" * 3_600_000}")
+    refute GarmentImport.browser_photo?("")
+  end
+
+  test "a puffer, a shrug, or anything the shop files under outerwear is worn as a jacket" do
+    import = GarmentImport.new
+    assert_equal "jacket", import.send(:kind_of, { name: "Kith Women Shae Cropped Denim Puffer - Washed Black", category: "Puffers", tags: %w[cropped denim outerwear], sorted: true })
+    assert_equal "jacket", import.send(:kind_of, { name: "Kith Ivy for Wilson Women's Court Shrug - White", category: "Outerwear", tags: %w[outerwear tops], sorted: true })
+  end
+
+  test "capri pants end above the ankle, and shorts are as long as their photo shows" do
+    import = GarmentImport.new
+    capri = import.send(:usual_trousers, { name: "NikeSKIMS Studio Stretch Capri Legging - Dark Roast", sizes: %w[XS S M L XL], women: true })
+    assert_in_delta 76 * 0.72, capri.sizes.first["inseam"], 0.2
+    # A knee-length short photographed 1.2 times as long as its waist is wide, a third of it the rise.
+    shorts = import.send(:usual_trousers, { name: "Barena Tarta Shorts - Brown", sizes: %w[46 48 50 52 54], bottom_shape: { thigh: 0.66, hem: 0.62, rise: 0.33, length: 1.2 } })
+    m = shorts.sizes.find { it["name"] == "50" }
+    assert_in_delta 1.2 * m["waist"] / 2 * 0.67, m["inseam"], 0.2
+  end
+
+  test "a half-zip or quarter-zip pullover has its stand collar and short zip" do
+    assert top("vowels Fleece Quarter Zip - Black", "Sweatshirts").dig(:cut, :half_zip)
+    refute top("Kith Williams Crewneck - Black", "Crewnecks").dig(:cut, :half_zip)
+  end
+
+  test "a quilted lining doesn't make a jacket a puffer" do
+    import = GarmentImport.new
+    refute import.send(:puffer?, { name: "Mitchell & Ness Varsity Full-Snap Jacket - Blue / White", description: "Melton wool Quilted lining Stand collar" })
+    assert import.send(:puffer?, { name: "Moncler Down Jacket", description: "Quilted nylon Down filling" })
+  end
+
+  test "a jacket or coat with a hood is drawn with one, unless the hood stows away" do
+    import = GarmentImport.new
+    assert import.send(:hooded?, { name: "Canada Goose Wyndham Parka - Black" })
+    assert import.send(:hooded?, { name: "Moncler Vigiers Jacket", description: "Shearling-effect fleece Hood Zip closure" })
+    refute import.send(:hooded?, { name: "Arc'teryx Beta Jacket", description: "Stowable hood in the collar" })
+    refute import.send(:hooded?, { name: "Kith Bomber Jacket", description: "Rib collar" })
   end
 
   test "a size conversion chart is read as the chest each size fits" do
@@ -566,6 +614,22 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "longsleeve", style.({ name: "Dazzle Jersey - Black", category: "Jerseys", shape: { sleeve: 1.28, sleeve_down: 1.0, length: 1.28 } })
     assert_equal "tee", style.({ name: "Home Jersey - Red", category: "Jerseys", shape: { sleeve: 0.45, sleeve_down: 0.3, length: 1.3 } })
     assert_equal "tee", style.({ name: "Home Jersey - Red", category: "Jerseys" })
+  end
+
+  test "a shirt whose description or photo shows short sleeves is a short-sleeve shirt" do
+    style = ->(product) { GarmentImport.new.send(:top_style_of, product) }
+    # Orlebar Brown's Maitan shirt reads 1.01 and 0.55 in its photo; the Kith & NFL Leon shirt (a jersey) 0.97 and 0.59.
+    assert_equal "shortshirt", style.({ name: "Orlebar Brown Maitan Solstice Shirt - Tarragon Green", category: "Button Up Shirts", shape: { sleeve: 1.01, sleeve_down: 0.55 } })
+    assert_equal "shortshirt", style.({ name: "Teatora Doctoroid Wide Shirt - Black", description: "Boxy fit Short sleeves" })
+    # A long-sleeve one hangs down past seven tenths (Lemaire's reads 1.23 and 0.92), and one with no photo stays long.
+    assert_equal "shirt", style.({ name: "Lemaire Shirt - Caviar", shape: { sleeve: 1.23, sleeve_down: 0.92 } })
+    assert_equal "shirt", style.({ name: "Oxford Shirt - Blue" })
+    # An undershirt is a tee.
+    assert_equal "tee", style.({ name: "Kith 3-Pack Undershirt - White" })
+    # A "Long Sleeve Shirt" is a button-up, not a long-sleeve tee.
+    assert_equal "shirt", style.({ name: "Lemaire Long Sleeve Shirt - Caviar" })
+    assert_equal "shirt", style.({ name: "C.P. Company Linen Long Sleeve Button Lens Shirt - Frozen Dew" })
+    assert_equal "longsleeve", style.({ name: "Long Sleeve T-Shirt - White" })
   end
 
   test "sweatpants whose photo shows an open, wide hem have no cuffs, and their legs are as wide as the photo's" do

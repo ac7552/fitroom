@@ -37,6 +37,8 @@ class DressCutTest < ActiveSupport::TestCase
     refute cut(:zair)[:collar]
     deba = GarmentImport::DressCut.read({ name: "Peachy Den Deba Midi Skirt - Pistachio", category: "Maxi Skirts", description: "Nylon Flared construction Relaxed fit" })
     assert_equal "midi", deba[:length], "its own name, before the shop's category"
+    natalia = GarmentImport::DressCut.read({ name: "Asta Resort Natlaia Dress - Azaelia Sequin Pink", category: "Maxi Dresses", description: "Lustrous knit woven fabric All-over sequins Frayed hem Mini length" })
+    assert_equal "mini", natalia[:length], "its description's length, before the shop's category"
   end
 
   test "the cloth is what most of it is: a little silk doesn't make it silk, a little polyurethane doesn't make it leather" do
@@ -63,6 +65,10 @@ class DressCutTest < ActiveSupport::TestCase
     moon = GarmentImport::DressCut.read({ name: "Frankies Bikinis Moon Cloud Knit Mini Dress", description: "Cowl neckline Self-tie closure on the back Fitted silhouette",
                                           dress_shape: { halter: true, waist: 0.98, hem: 0.99, hips: 1.1 } })
     assert_equal [ "halter", "fitted" ], moon.values_at(:sleeves, :fit)
+    # Sleeves the words name stay, whatever the photo's top looks like; a polo dress has a collar.
+    polo = GarmentImport::DressCut.read({ name: "Alexander Wang Crystal Embellished Polo Dress - Light Pink", description: "Stretch cotton jersey Crystal buttons",
+                                          dress_shape: { halter: true } })
+    assert_equal [ "short", true ], polo.values_at(:sleeves, :collar)
     # A flounce's width at the hem isn't the body's: the body stays as it is, the flounce goes on.
     mela = GarmentImport::DressCut.read({ name: "Aya Muse Mela Mini Dress", description: "Ruffled hem Slim fit", dress_shape: { waist: 0.84, hips: 1.1, hem: 1.29, flare_from: "knee" } })
     assert_equal [ "slim", false ], mela.values_at(:fit, :hem_flare)
@@ -109,6 +115,8 @@ class DressCutTest < ActiveSupport::TestCase
     gaultier = read.("Jean Paul Gaultier The Smoking Women Long Dress - Black", "Printed nylon Semi sheer Raw sleeve cuffs and hem Loop accent on the back Slim fit")
     assert_equal [ "all", "semi", "long" ], gaultier.values_at(:sheer, :sheer_kind, :sleeves)
     assert_equal "sleeves", read.("Mesh Dress", "Sheer sleeves")[:sheer]
+    # A shelf bra lined with power mesh doesn't make a tennis dress see-through.
+    assert_nil read.("Kith Ivy for Wilson Women's Padel Dress - Ivy Green", "Light compressive stretch Interior shelf bra lined with power mesh")[:sheer]
     assert_equal [ "neck" ], [ cut(:cyrielle)[:scarf] ]
     refute_includes cut(:mireli)[:details], "cut-outs"
     assert_equal [ "back" ], cut(:mireli)[:cutouts]

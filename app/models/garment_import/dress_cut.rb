@@ -33,7 +33,7 @@ class GarmentImport
       [ "one_shoulder", /one[- ]shoulder|single[- ]shoulder|asymmetric(?:al)? (?:neck|shoulder)/i ],
       [ "halter", /halter/i ],
       [ "long", /long[- ]sleeves?|\bl\/s\b|full[- ]length sleeves?|bishop sleeves?|raglan sleeves?/i ],
-      [ "short", /short[- ]sleeves?|cap sleeves?|puff sleeves?|t-?shirt dress|tee dress|flutter sleeves?/i ],
+      [ "short", /short[- ]sleeves?|cap sleeves?|puff sleeves?|t-?shirt dress|tee dress|flutter sleeves?|polo dress/i ],
       # Sleeves the listing only mentions in passing ("raw sleeve cuffs", "cold shoulder") are long ones.
       [ "long", /sleeve cuffs?|cold[- ]shoulder|cut[- ]?outs? (?:on|at) the shoulders?/i ],
       [ "thin_straps", /spaghetti|thin straps?|skinny straps?|narrow straps?|slip dress|\bslip\b|cami\b|camisole|adjustable straps?/i ],
@@ -63,7 +63,7 @@ class GarmentImport
     # an A-line, so they're left out of reading its fit.
     HEM_FLARE = /flared? hem|flare (?:at|from) the (?:hem|knee)|mermaid|trumpet|fishtail/i
     SLEEVE_FLARE = /(?:flared?|bell|trumpet|wide) (?:sleeves?|cuffs?)/i
-    SHIRT_COLLAR = /(?:classic|shirt|point|spread|button[- ]down|camp|pointed) collar|\bcollared\b/i
+    SHIRT_COLLAR = /(?:classic|shirt|point|spread|button[- ]down|camp|pointed|polo) collar|\bcollared\b|\bpolo dress|(?<![\w-])shirt ?dress/i
     STRETCH = /elastane|spandex|lycra|stretch|jersey|ribbed|rib[- ]knit|\bknit(?:ted)?\b/i
     # Cloths that hold their shape: stiff to bend, whether they stretch or not.
     STRUCTURED = /suiting|scuba|ponte|neoprene|bonded|\bbon(?:ing|ed)\b|corset|structured|tweed|boucl[eé]|\bcrepe\b(?! de chine)/i
@@ -98,7 +98,10 @@ class GarmentImport
       places.uniq
     end
 
+    # (Mesh inside it, a lining or a shelf bra's, doesn't make a dress see-through.)
+    MESH_INSIDE = /(?:lined|lining)\s+(?:\w+\s+){0,3}(?:power\s+)?mesh|(?:power\s+)?mesh\s+(?:lining|lined|panels?|inserts?|bra)|power mesh/i
     def sheer(words)
+      words = words.gsub(MESH_INSIDE, " ")
       return unless words.match?(/sheer|\bmesh\b|tulle/i)
 
       place = words[/sheer\s+(\w+)/i, 1]
@@ -118,8 +121,10 @@ class GarmentImport
         sleeves:,
         neckline: first.(NECKLINES, words) || { "strapless" => "straight", "thin_straps" => "scoop", "straps" => "scoop",
                                                 "one_shoulder" => "straight" }.fetch(sleeves, "round"),
-        # Its own name first: a "Midi Skirt" Kith files under Maxi Skirts is a midi.
-        length: first.(LENGTHS, product[:name]) || first.(LENGTHS, name) || first.(LENGTHS, words) || "knee",
+        # Its own name first, then its description: a "Midi Skirt" Kith files under Maxi Skirts is a midi, and
+        # so is a dress filed there whose description says "Mini length".
+        length: first.(LENGTHS, product[:name]) || product[:description].to_s[/\b(mini|midi|maxi|knee)[- ]length\b/i, 1]&.downcase || first.(LENGTHS, name) ||
+                first.(LENGTHS, words) || "knee",
         fit: first.(FITS, words.gsub(HEM_FLARE, " ").gsub(SLEEVE_FLARE, " ")) || (stretch ? "fitted" : "slim"),
         hem_flare: words.match?(HEM_FLARE),
         collar: words.match?(SHIRT_COLLAR),
@@ -151,7 +156,8 @@ class GarmentImport
     # whose words never say "sleeves" has them in its photo; a halter's straps meet at the neck.
     def with_photo(cut, shape, words, named_sleeves)
       cut = cut.dup
-      if shape[:halter] && !%w[strapless one_shoulder].include?(cut[:sleeves]) then cut[:sleeves] = "halter"
+      # (Not over sleeves the words name: a "short sleeve" polo dress's collar is narrow at the top too.)
+      if shape[:halter] && !%w[strapless one_shoulder long short].include?(named_sleeves) then cut[:sleeves] = "halter"
       elsif shape[:strapless] && named_sleeves.nil? then cut[:sleeves] = "strapless"
       elsif shape[:sleeves] && (named_sleeves.nil? || cut[:sleeves] == "none") then cut[:sleeves] = shape[:sleeves]
       end

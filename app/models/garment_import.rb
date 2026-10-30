@@ -33,7 +33,7 @@ class GarmentImport
   # A shirt dress, sweater dress or slip dress named in one word ("Shirtdress") is one too.
   DRESSES = /\b(?:dress(?:es)?(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?)\b)|(?:shirt|sweater|slip|tee|knit|tank|polo|wrap)dress(?:es)?|gowns?|maxi|midi|sundress|frock|kaftan|caftan)\b/i
   # (Not a "bodysuit" or a "catsuit".)
-  JACKETS = /jacket|blazer|(?<!body|cat)suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket/i
+  JACKETS = /jacket|blazer|(?<!body|cat)suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket|puffer|windbreaker|anorak|gilet|blouson|shrug|bolero/i
   # T-shirts, shirts, polos, sweatshirts, hoodies and knitwear: worn on the body, under a jacket.
   TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b|bodysuit|quarter[- ]?zip|half[- ]?zip|1\/4[- ]?zip/i
   # How a top looks, for drawing it: the first match in its name wins, then in its category, else a tee.
@@ -47,11 +47,12 @@ class GarmentImport
     [ "polo", /\bpolos?\b/i ],
     [ "cardigan", /cardigan/i ],
     [ "longsleeve", /long[- ]?sleeve.*\b(t[- ]?shirt|tee)|\b(t[- ]?shirt|tee)s?\b.*long[- ]?sleeve/i ],
-    [ "tee", /\bt[- ]?shirts?\b|\btees?\b/i ],
+    [ "tee", /\bt[- ]?shirts?\b|\btees?\b|\bundershirts?\b/i ],
     [ "sweater", /sweater|jumper|knit\b|knitted|cashmere crew|merino/i ],
     [ "sweatshirt", /sweatshirt|pullover|crew ?neck|fleece/i ],
     [ "shortshirt", /short[- ]?sleeve.*shirt|\bs\/s\b.*shirt|camp[- ]?(collar|shirt)|bowling shirt|aloha|hawaiian|resort shirt/i ],
-    [ "shirt", /oxford|flannel|button[- ]?(down|up|front)|poplin|dress shirt|chambray/i ],
+    # (A "Long Sleeve Shirt" is a button-up; a long-sleeve T-shirt was caught above.)
+    [ "shirt", /oxford|flannel|button[- ]?(down|up|front)|poplin|dress shirt|chambray|long[- ]?sleeve\b(?:\s+\w+){0,3}\s+shirt\b|long[- ]?sleeve shirt/i ],
     [ "longsleeve", /long[- ]?sleeve|\bl\/s\b|henley/i ],
     [ "shirt", /shirts?\b/i ],
     # A quarter zip that's none of these (not a "Quarter-Zip Shirt" or a knit one) is a sweatshirt with a zip.
@@ -83,7 +84,7 @@ class GarmentImport
     [ "tailored", /blazer|(?<!body|cat)suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
     [ "bomber", /bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington|aviator|blouson/i ],
     [ "zip", /two-way zip|zip(?:per)? closure|full[- ]zip|zip[- ]up|front zip/i ],
-    [ "shirt", /denim(?: \w+)? jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
+    [ "shirt", /denim(?: \w+)? jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|barn jacket|hunting jacket|ranch jacket|coach(?:es)? jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
     [ "zip", /zip|moto\b|biker|leather jacket|shearling|puffer|down jacket|windbreaker|anorak|track jacket|blouson|fleece/i ]
   ].freeze
   # Shops' outerwear sections, where a jacket that says nothing else is more likely casual than tailored.
@@ -130,10 +131,10 @@ class GarmentImport
     url = url.to_s.strip
     if shop_data.is_a?(Hash) && (garment = new.from_shopify(url, given: shop_data))
       photo = shop_data["photo"].to_s
-      garment = photo.match?(BROWSER_PHOTO) && photo.bytesize < 3_500_000 ? garment.except(:image_url).merge(photo:) : with_photo(garment)
+      garment = browser_photo?(photo) ? garment.except(:image_url).merge(photo:) : with_photo(garment)
       # The shop's photo of the back, which the browser found and read.
       back = shop_data["back_photo"].to_s
-      return garment[:photo] && back.match?(BROWSER_PHOTO) && back.bytesize < 3_500_000 ? garment.merge(back_photo: back) : garment
+      return garment[:photo] && browser_photo?(back) ? garment.merge(back_photo: back) : garment
     end
     Rails.cache.fetch([ "garment_import", FORMAT, Digest::SHA256.hexdigest(url) ], expires_in: 1.hour) do
       import = new
@@ -224,9 +225,20 @@ class GarmentImport
   ].freeze
   SOCK_STYLES = [ [ "knee", /knee|over[- ]the[- ]calf|\bhigh\b/i ], [ "ankle", /ankle|no[- ]show|low[- ]cut|quarter|trainer socks?/i ] ].freeze
   ELASTIC_WAIST = /elastic(?:ated|ised|ized)?\s+(?:waist|waistband)|drawcord|drawstring|pull[- ]on/i
-  BROWSER_PHOTO = %r{\Adata:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+\z}
+  BROWSER_PHOTO = %r{\Adata:image/(?:jpeg|png|webp);base64,}
+
+  # A photo the browser read and sent as a data URL, small enough to keep. Its base64 is checked by counting
+  # (a regular expression over a few megabytes can run past Ruby's match timeout on a busy server, and the
+  # import then fails with a server error).
+  def self.browser_photo?(photo)
+    head = photo.bytesize < 3_500_000 && photo.byteslice(0, 40)[BROWSER_PHOTO]
+    return false unless head
+
+    data = photo.byteslice(head.bytesize..)
+    !data.empty? && data.count("^A-Za-z0-9+/=").zero?
+  end
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 31
+  FORMAT = 32
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -452,6 +464,7 @@ class GarmentImport
     waists = names.filter_map { it.to_s.strip[/\A(2[2-9]|3\d|4[0-6])\z/, 1]&.to_i }
     european = european_waists(names) unless women
     inseam = bottom_style_of(product) == "shorts" ? shorts_inseam(product) : nil
+
     sizes =
       if european
         european.map { |name, w| trouser_size(name, w * 2.54, women, opening, roomy, inseam:) }
@@ -465,6 +478,9 @@ class GarmentImport
       else
         (28..40).step(2).map { |w| trouser_size(w.to_s, w * 2.54, false, opening, roomy, inseam:) }
       end
+    # Capri and cropped pants end above the ankle.
+    short = words.match?(/\bcapri/i) ? 0.72 : words.match?(/\bcropped\b/i) ? 0.88 : nil
+    sizes = sizes.map { it.merge("inseam" => (it["inseam"] * short).round(1)) } if short && !inseam
     sizes = as_photographed_legs(sizes, product[:bottom_shape]) if product[:bottom_shape]
     ChartReader::Chart.new(sizes:, unit: "cm", kind: "sizes", missing: [])
   end
@@ -481,6 +497,11 @@ class GarmentImport
       thigh = ((shape[:thigh] || 0) * size["waist"]).clamp(size["seat"] * 0.5, size["seat"] * 0.75).round(1)
       thigh = size["thigh"].clamp(size["seat"] * 0.5, size["seat"] * 0.75) if !shape[:thigh] && size["thigh"]
       shorts = size["inseam"] < 40
+      # Shorts as long as their photo shows them (a knee-length Bermuda isn't the usual 18 cm): the photo's
+      # length over the waist's flat width, less the rise.
+      if shorts && shape[:length]
+        size = size.merge("inseam" => (shape[:length] * size["waist"] / 2 * (1 - shape[:rise])).clamp(5, 40).round(1))
+      end
       least = [ shorts ? thigh * 0.9 : [ 18, thigh * 0.35 ].max, 80 ].min
       opening = (shape[:hem] * size["waist"]).clamp(least, 80).round(1)
       size.merge("leg_opening" => opening, "thigh" => [ thigh, opening ].max)
@@ -898,11 +919,19 @@ class GarmentImport
     end
     return "trousers" if words.match?(TROUSERS)
     return "top" if words.match?(TOPS)
+    # One the shop files under outerwear is worn as a jacket (a "Court Shrug").
+    return "jacket" if product[:category].to_s.match?(OUTERWEAR) || tags.any? { it.to_s.strip.match?(/\Aouterwear\z/i) }
     # A shop's page that names nothing else is most often a jacket (a "Hudson"); a Shopify listing says what it is.
     return "jacket" unless words.match?(UNSUPPORTED) || product[:sorted]
 
     raise Error.new("not_supported", "Fitroom can't try this on yet. It works with tops, dresses, jackets, coats and pants.")
   end
+
+  # A puffer: quilted or down-filled outside. A quilted lining (a varsity jacket's, a field jacket's) isn't one.
+  QUILTED_INSIDE = /quilted (?:lining|liner|interior)|quilt[- ]lined|lined with (?:a )?quilt\w*/i
+  HALF_ZIP = /half[- ]?zip|quarter[- ]?zip|1\/4[- ]?zip|\bhalf[- ]zipper\b/i
+
+  def puffer?(product) = product.values_at(:name, :description).join(" ").gsub(QUILTED_INSIDE, " ").match?(PUFFER)
 
   def vest?(product) = product.values_at(:name, :category).join(" ").match?(/\bvests?\b/i) && !product.values_at(:name, :description).join(" ").match?(INSULATED)
 
@@ -967,10 +996,12 @@ class GarmentImport
     end
     # A top's cut, when its listing says it sits close or is made oversized (see top_cut); a jacket's, when
     # it's oversized or made to end at the waist (see jacket_cut).
-    fit_cut = kind == "top" ? top_cut(product) : kind == "jacket" ? jacket_cut(product) : nil
+    fit_cut = kind == "top" ? top_cut(product) : kind == "jacket" ? jacket_cut(product) : kind == "coat" && hooded?(product) ? { hood: true } : nil
     # A bodysuit fastens below, so it's always worn tucked in, and it's cut to sit close and stretch on.
     bodysuit = kind == "top" && product.values_at(:name, :category).join(" ").match?(/bodysuit/i)
     fit_cut = { fit: "fitted", stretch: true } if bodysuit && fit_cut&.dig(:fit) != "fitted"
+    # A half-zip or quarter-zip pullover: a stand collar with a short zip down from it (a hoodie keeps its hood).
+    fit_cut = (fit_cut || {}).merge(half_zip: true) if kind == "top" && !%w[hoodie dress tank].include?(style) && product.values_at(:name, :description).join(" ").match?(HALF_ZIP)
     {
       name: product[:name].presence || "Jacket",
       brand: product[:brand],
@@ -989,7 +1020,7 @@ class GarmentImport
       **(kind == "top" && product[:shape] && sleeves_sewn(product[:shape]) == :low ? { dropped: true } : {}),
       **(style == "hoodie" && zipped?(product) ? { zip: true } : {}),
       **(bodysuit ? { bodysuit: true } : {}),
-      **(%w[jacket coat].include?(kind) && product.values_at(:name, :description).join(" ").match?(PUFFER) ? { puffer: true } : {}),
+      **(%w[jacket coat].include?(kind) && puffer?(product) ? { puffer: true } : {}),
       chart: chart.as_json
     }
   end
@@ -1019,8 +1050,18 @@ class GarmentImport
   # (a track jacket, a blouson or bomber: its length is then where it ends, not right or wrong). Nil for neither.
   WAIST_LENGTH = /\btrack\b|blouson|bomber|varsity|letterman|harrington|aviator|\bma-1\b|crop(?:ped)?\b/i
   def jacket_cut(product)
-    cut = { **(oversized?(product) ? { fit: "oversized" } : {}), **(product[:name].to_s.match?(WAIST_LENGTH) ? { ends: "waist" } : {}) }
+    cut = { **(oversized?(product) ? { fit: "oversized" } : {}), **(product[:name].to_s.match?(WAIST_LENGTH) ? { ends: "waist" } : {}),
+            **(hooded?(product) ? { hood: true } : {}) }
     cut.presence
+  end
+
+  # A jacket or coat with a hood (a parka, a hooded puffer): drawn with one, worn down as its photo shows it.
+  # A hood stowed in the collar, or one the listing says it hasn't, isn't drawn.
+  HOODED = /\bhood(?:ed|s|ie|y)?\b|\bparka\b|\banorak\b/i
+  NO_HOOD = /hoodless|no hood|without (?:a )?hood|(?:stowable|packable|concealed|hidden|tuck(?:ed|able)?[- ]away|roll[- ]away) hood|hood (?:stows|packs|tucks|rolls) (?:away|in|into)/i
+  def hooded?(product)
+    words = product.values_at(:name, :description).join(" ")
+    words.match?(HOODED) && !words.match?(NO_HOOD)
   end
 
   # How pants are made, as the fit engine and the 3D view read it: { elastic: true } for pull-on pants
@@ -1196,6 +1237,13 @@ class GarmentImport
     return "tee" if style == "longsleeve" && product[:category].to_s.match?(/short[- ]?sleeve/i) && !product[:name].to_s.match?(/long[- ]?sleeve|\bl\/s\b/i)
     # A top on straps (a bodysuit or a cami named for neither) is a tank.
     return "tank" if style == "tee" && product[:description].to_s.match?(/sleeveless|(?:shoulder|spaghetti|thin|wide|adjustable) straps?|\bcami(?:sole)?\b/i)
+    # A button-up whose description says its sleeves are short, or whose photo shows them ending well above
+    # the elbow (a camp shirt named only "Shirt", a football jersey named "Leon Shirt"), is a short-sleeve one.
+    if style == "shirt"
+      description = product[:description].to_s
+      return "shortshirt" if description.match?(/short[- ]?sleeves?|\bs\/s\b/i) && !description.match?(/long[- ]?sleeves?/i)
+      return short_sleeves_in_photo?(product[:shape]) ? "shortshirt" : style
+    end
     # A "T-shirt" whose description says it has long sleeves is a long-sleeve one, and so is a top named for
     # nothing (a "Jersey") whose photo shows its sleeves reaching down past its hem.
     return style unless style == "tee"
@@ -1207,6 +1255,12 @@ class GarmentImport
   # hanging well down (a T-shirt's reach about half that). Its shape as photo_shape reads it.
   def long_sleeves_in_photo?(shape)
     shape.is_a?(Hash) && shape[:sleeve].to_f >= 1.0 && shape[:sleeve_down].to_f >= 0.7
+  end
+
+  # Whether its photo shows short sleeves: they hang down less than about three fifths of the chest's width
+  # (a T-shirt's about half; a long sleeve's past seven tenths).
+  def short_sleeves_in_photo?(shape)
+    shape.is_a?(Hash) && shape[:sleeve].to_f > 0 && shape[:sleeve_down].to_f.positive? && shape[:sleeve_down].to_f < 0.62
   end
 
   def style_of(product, source_url)
@@ -1224,10 +1278,11 @@ class GarmentImport
   end
 
   # The first of the texts (the product's colour, its description, its name) that names a colour, and the
-  # colour it names first: "White / Brown" is a white garment with brown on it.
+  # colour it names first: "White / Brown" is a white garment with brown on it. "Heather" is how a cloth is
+  # knitted as much as a colour: "Heather Green" is green.
   def color_hex(texts)
     texts.compact.each do |text|
-      found = COLORS.filter_map { |name, hex| (at = text =~ /\b#{name}\b/i) && [ at, -name.length, hex ] }.min
+      found = COLORS.filter_map { |name, hex| (at = text =~ /\b#{name}\b/i) && [ name == "heather" ? 1 : 0, at, -name.length, hex ] }.min
       return found.last if found
     end
     DEFAULT_COLOR
