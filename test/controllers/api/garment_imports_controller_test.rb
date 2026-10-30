@@ -49,7 +49,7 @@ class Api::GarmentImportsImageProxyTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "image/png", response.media_type
     assert_equal PNG, response.body.b
-    assert_equal "public, max-age=3600", response.headers["Cache-Control"]
+    assert_equal %w[max-age=3600 public], response.headers["Cache-Control"].split(/,\s*/).sort
     assert_equal "https://cdn.example.com/boot.png?width=1000", asked[0]
     assert_equal 8_000_000, asked[1]
     assert_match asked[2], "image/webp"
