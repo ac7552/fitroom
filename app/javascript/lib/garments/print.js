@@ -867,8 +867,9 @@ function printAreas(alpha, gap, w, h, least = 0.002) {
 // Long, thin marks aren't a print: a hem's fold catching the light runs across the front in a line, and the
 // shadow between a sleeve and the body runs down its side. Each mark (8-connected) much longer than it is
 // thick, across or down, is cleared. Several running the same way down most of the front are a striped
-// cloth, though, and stay.
-function dropStreaks(alpha, w, h) {
+// cloth, though, and stay; so do three or more solid ones side by side, the same length and running the same
+// way (a sports top's stripes over the shoulders, a chevron): a fold or a seam's shadow is one line, or two.
+export function dropStreaks(alpha, w, h) {
   const seen = new Uint8Array(w * h)
   const stack = [], streaks = []
   for (let start = 0; start < w * h; start++) {
@@ -891,10 +892,29 @@ function dropStreaks(alpha, w, h) {
     // How thick it is: its area over its length (across and down, so a line that turns a corner counts too).
     const thick = piece.length / (across + down)
     const streak = (across >= w * 0.2 || down >= h * 0.15) && thick <= Math.max(2, 0.02 * Math.max(w, h))
-    if (streak) streaks.push({ piece, stripe: down >= h * 0.4 && across <= w * 0.08 })
+    if (streak) streaks.push({ piece, stripe: down >= h * 0.4 && across <= w * 0.08, ...lineOf(piece, alpha, w) })
   }
   const stripes = streaks.filter(s => s.stripe).length >= 3
-  for (const { piece, stripe } of streaks) if (!(stripes && stripe)) for (const k of piece) alpha[k] = 0
+  // Side by side: running the same way (within 12 degrees), about as long, solid, and close (their middles
+  // within a few of their own widths of each other, across the way they run).
+  const banded = streaks.map(a => a.solid > 0.6 && streaks.filter(b => b !== a && b.solid > 0.6 &&
+    Math.abs(Math.sin(a.angle - b.angle)) < 0.21 && b.length > a.length * 0.6 && b.length < a.length / 0.6 &&
+    Math.abs((b.mx - a.mx) * Math.sin(a.angle) - (b.my - a.my) * Math.cos(a.angle)) < a.length * 0.35 &&
+    Math.abs((b.mx - a.mx) * Math.cos(a.angle) + (b.my - a.my) * Math.sin(a.angle)) < a.length * 0.5).length >= 2)
+  streaks.forEach(({ piece, stripe }, n) => { if (!(stripes && stripe) && !banded[n]) for (const k of piece) alpha[k] = 0 })
+}
+
+// A mark's line: its middle (mx, my), the way it runs (angle, from its spread), its length that way, and how
+// solid it is (its mean alpha).
+function lineOf(piece, alpha, w) {
+  let mx = 0, my = 0, solid = 0
+  for (const k of piece) { mx += k % w; my += Math.floor(k / w); solid += alpha[k] }
+  mx /= piece.length; my /= piece.length
+  let sxx = 0, syy = 0, sxy = 0
+  for (const k of piece) { const dx = (k % w) - mx, dy = Math.floor(k / w) - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy }
+  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy)
+  const spread = (sxx + syy) / 2 + Math.sqrt(((sxx - syy) / 2) ** 2 + sxy * sxy)
+  return { mx, my, angle, length: Math.sqrt(12 * spread / piece.length), solid: solid / piece.length }
 }
 
 // Where to point a segmentation model at the garment in a photo (see segment.js): a few points well inside

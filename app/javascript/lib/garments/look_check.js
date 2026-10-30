@@ -36,6 +36,9 @@ export const BARS = {
   likeness: 0.35
 }
 
+// The collar's band at the top of a front, which lookOf (print.js) leaves out: a share of the front's length.
+const COLLAR_BAND = 0.08
+
 // The photo's look and the render's (lookOf), and optionally the likeness score. Returns { ok, failed: [names],
 // checks: { colour, place, printed, likeness? } }, each { score, pass } (score null when it doesn't apply).
 // named: the colour the listing names ("Black"), when it's a plain one, which the photo's reading is held to
@@ -80,13 +83,18 @@ export function compareLooks(photo, render, { likeness = null, named = null, bar
     // A graphic running most of the way across the front (a wide scene, a print to the side seams) is as
     // wide as the front: a worn front shows less of its width than a flat one, so its shape isn't held.
     const wide = p.right - p.left > 0.7
-    const shape = p.shape && r.shape && !wide ? r.shape / p.shape : 1
+    // A graphic just under the collar in the photo (a logo at the back of the neck) runs up into the collar's
+    // band, which isn't read (lookOf), and a render's collar stands a little higher or lower than the photo's:
+    // how much of it is cut off there differs, so its height and shape aren't held, only where it sits. (A
+    // render's graphic pushed up under a collar the photo's isn't under is still held to its size.)
+    const underCollar = p.top <= COLLAR_BAND + 0.005
+    const shape = p.shape && r.shape && !wide && !underCollar ? r.shape / p.shape : 1
     // And for the same reason its middle across is allowed twice as far: a scene to one side of a wide
     // print sits further out on the curve of a worn front (a good render of one read 0.11 off).
     const sideways = wide ? bars.place * 2 : bars.place
     checks.place = {
       score: round(Math.max(top, middle)), top: round(top), middle: round(middle), size: round(size), shape: round(shape),
-      pass: top <= bars.place && middle <= sideways && size <= bars.size && size >= 1 / bars.size && shape <= bars.shape && shape >= 1 / bars.shape
+      pass: top <= bars.place && middle <= sideways && (underCollar || (size <= bars.size && size >= 1 / bars.size)) && shape <= bars.shape && shape >= 1 / bars.shape
     }
   } else if (photo.box && !render.box) {
     // A small logo can read just under the size a graphic needs to have its place found (lookOf): it's

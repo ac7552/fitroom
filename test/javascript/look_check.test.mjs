@@ -128,3 +128,16 @@ test("an unprinted dress is held to its colour and likeness only: its photo's sh
   assert.deepEqual(compareLooks(shiny, { ...plain, color: "#c8b48a" }, { unprinted: true }).failed, ["colour"])
   assert.deepEqual(compareLooks(shiny, plain, { unprinted: true, likeness: 0.2 }).failed, ["likeness"])
 })
+
+test("a logo cut off by the collar's band in the photo is held to where it sits, not its height or shape", () => {
+  // The adidas x Willy Chavarria jersey's back: a rose under the collar, its top in the collar's band in both.
+  const back = { color: "#252628", coverage: 0.0063, allOver: false, box: { left: 0.46, right: 0.552, top: 0.0794, bottom: 0.156, cx: 0.507, shape: 0.97 } }
+  const render = { color: "#242528", coverage: 0.0133, allOver: false, box: { left: 0.419, right: 0.595, top: 0.0796, bottom: 0.116, cx: 0.516, shape: 2.55 } }
+  assert.equal(compareLooks(back, render).ok, true, JSON.stringify(compareLooks(back, render).checks))
+  // Somewhere else on the back, it still fails.
+  const lower = { ...render, box: { ...render.box, top: 0.3, bottom: 0.34 } }
+  assert.ok(compareLooks(back, lower).failed.includes("place"))
+  // A graphic lower down in the photo, pushed up into the band in the render, is still held to its height.
+  const chest = { ...photo, box: { ...photo.box, top: 0.12, bottom: 0.3 } }
+  assert.ok(compareLooks(chest, { ...photo, box: { left: 0.2, right: 0.8, top: 0.08, bottom: 0.15 } }).failed.includes("place"))
+})

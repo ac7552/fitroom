@@ -614,3 +614,33 @@ test("a size label in the neck isn't print on the front", () => {
   const { box } = found.look
   assert.ok(box && box.top > 0.15, `the graphic starts at the logo, not the label: ${JSON.stringify(box)}`)
 })
+
+test("three stripes side by side over each shoulder stay on the front; one diagonal line doesn't", () => {
+  // A black jersey with a red word on its chest and, over each shoulder, `count` red stripes slanting down
+  // from the neck toward the sleeves (as on the adidas x Willy Chavarria jersey).
+  const w = 240, h = 240
+  const make = count => {
+    const data = new Uint8ClampedArray(4 * w * h)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let c = [236, 236, 236]
+      if ((x > 50 && x < 190 && y > 30 && y < 200) || (y > 30 && y < 80 && x > 20 && x < 220)) c = [24, 24, 26]
+      if (x > 90 && x < 150 && y > 100 && y < 114) c = [200, 40, 40]
+      for (let n = 0; n < count; n++) {
+        // Each stripe: 4 px thick, 6 px apart, from the neck out and down (left side, and its mirror).
+        for (const side of [-1, 1]) {
+          const along = side < 0 ? 104 - x : x - 136, off = y - (42 + n * 7) - along * 0.45
+          if (along > 0 && along < 44 && off >= 0 && off < 3) c = [200, 40, 40]
+        }
+      }
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+    return findPrint(data, w, h)
+  }
+  const kept = (found, x, y) => found.print.data[4 * ((y - found.rect[1]) * found.print.width + (x - found.rect[0])) + 3]
+  // A point on the left side's first stripe, halfway out.
+  const x = 104 - 22, y = Math.round(42 + 22 * 0.45 + 1)
+  const three = make(3), one = make(1)
+  assert.ok(kept(three, x, y) > 200, "the stripes stay")
+  assert.ok(kept(one, x, y) < 50, "a single line goes")
+  assert.ok(kept(one, 120, 106) > 200 && kept(three, 120, 106) > 200, "the word stays either way")
+})
