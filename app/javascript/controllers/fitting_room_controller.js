@@ -9,7 +9,7 @@ import { cleanPhoto } from "lib/garments/segment"
 import { knockoutPhoto } from "lib/garments/knockout"
 import { measureFromPhotos } from "lib/measure_photo"
 import { partRow, uncheckedLine, verdictWords } from "lib/fit_bar"
-import { sizeSlider, stopNear } from "lib/size_slider"
+import { sizeSlider } from "lib/size_slider"
 import { ROLES, guessRoles, photosByRole } from "lib/garments/photo_roles"
 import { chartFromSizes, diagram, filled, nextSizeName, partsFor, sizesFromChart, sliderRange, startingSizes } from "lib/size_editor"
 
@@ -1839,17 +1839,23 @@ export default class extends Controller {
           ${unchecked ? `<p class="unchecked">${escape(unchecked)}</p>` : ""}
         </section>`
     }).join("")
+    // A bar of more sizes than fit scrolls: the size shown is brought into view.
+    for (const bar of this.resultsTarget.querySelectorAll(".sizer-bar")) {
+      const on = bar.querySelector(".sizer-stop.is-on")
+      if (on && bar.scrollWidth > bar.clientWidth) bar.scrollLeft = on.offsetLeft - (bar.clientWidth - on.offsetWidth) / 2
+    }
   }
 
-  // Dragging along a size slider picks the stop under the pointer, as tapping it does.
+  // Dragging along a size bar picks the size under the pointer, as tapping it does.
   slideSize(event) {
-    const line = event.currentTarget
-    const stops = [...line.querySelectorAll(".sizer-stop")]
-    if (!stops.length || event.button > 0) return
+    const bar = event.currentTarget
+    const stops = [...bar.querySelectorAll(".sizer-stop")]
+    if (!stops.length || event.button > 0 || event.pointerType === "touch") return
+    // The segment under the pointer, or the nearest one past either end.
     const pick = clientX => {
-      const r = line.getBoundingClientRect()
-      const share = (clientX - r.left - 14) / Math.max(1, r.width - 28)
-      const stop = stops[stopNear(share, stops.length)]
+      const rects = stops.map(stop => stop.getBoundingClientRect())
+      const at = rects.findIndex(r => clientX >= r.left && clientX < r.right)
+      const stop = stops[at >= 0 ? at : clientX < rects[0].left ? 0 : stops.length - 1]
       if (stop.getAttribute("aria-checked") !== "true") stop.click()
     }
     const move = e => pick(e.clientX)
@@ -1870,7 +1876,7 @@ export default class extends Controller {
     const { kind, size } = next.dataset
     this.outfit[kind].selected = size
     this.render()
-    this.resultsTarget.querySelector(`.sizer[data-kind="${kind}"] .sizer-stop[data-size="${CSS.escape(size)}"]`)?.focus()
+    this.resultsTarget.querySelector(`.sizer-bar[data-kind="${kind}"] .sizer-stop[data-size="${CSS.escape(size)}"]`)?.focus()
   }
 
   // Back to step 2, at the first number still to fill in.

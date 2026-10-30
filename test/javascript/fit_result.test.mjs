@@ -4,7 +4,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 const { barPlace, barWords, markClass, partRow, uncheckedLine, verdictWords, OK_FROM, OK_TO } = await import("lib/fit_bar")
-const { namedStops, nearestSize, sizeSlider, stopNear, stopPlaces, waistAndLeg } = await import("lib/size_slider")
+const { namedStops, nearestSize, sizeName, sizeSlider, stopNear, stopPlaces, waistAndLeg } = await import("lib/size_slider")
 
 test("a size's marker sits in the shaded middle third when it fits, and nearer an end the further off it is", () => {
   // Chest: 6 to 14 cm of room fits.
@@ -76,8 +76,18 @@ test("the sizes are evenly spread stops in the store's order, and a drag picks t
   const stops = [...html.matchAll(/data-size="([^"]+)"/g)].map(m => m[1])
   assert.deepEqual(stops, ["S", "M", "L"])
   assert.match(html, /aria-checked="true"[^>]*data-size="L"|data-size="L"[^>]*aria-checked="true"|aria-checked="true" tabindex="0"[\s\S]*?data-size="L"/)
-  assert.equal((html.match(/<small>Best<\/small>/g) ?? []).length, 1)
+  assert.equal((html.match(/<em>★ Best<\/em>/g) ?? []).length, 1)
   assert.match(html, /aria-label="M, best"/)
+})
+
+test("a size named two ways shows its first name, with the second small under it, so it fits its segment", () => {
+  assert.deepEqual(sizeName("XXS / US 34"), { main: "XXS", sub: "US 34" })
+  assert.deepEqual(sizeName("M (2)"), { main: "M", sub: "2" })
+  assert.deepEqual(sizeName("32x30"), { main: "32x30", sub: null })
+  assert.deepEqual(sizeName("One Size"), { main: "One Size", sub: null })
+  const html = sizeSlider({ kind: "top", label: "Top", sizes: [{ size: "S / US 38", verdict: "fits" }, { size: "M / US 40", verdict: "fits" }], shown: "M / US 40", best: "M / US 40" })
+  assert.match(html, /<span>M<\/span><small>US 40<\/small><em>★ Best<\/em>/)
+  assert.match(html, /data-size="S \/ US 38"/)
 })
 
 test("too many sizes to name each: every few are named, and always the ends, the one shown and the best", () => {

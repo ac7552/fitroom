@@ -1,8 +1,10 @@
-// A garment's sizes as stops along a line, in the store's order (XS to XXL, 28 to 38), with the best size
-// marked "Best" under its stop and the size shown filled in. Each stop is a button the page's pickSize
-// answers; dragging along the line or the arrow keys move between them (the page's slideSize and keySize).
-// Pants sold by waist and leg (30x32, 32/34) get one line for the waist and one for the leg, so a store
-// with dozens of them is still two short rows.
+// A garment's sizes as one bar of segments, in the store's order (XS to XXL, 28 to 38), in the look of the
+// page's other controls (the size tabs in step 1, the stage's toggles): the size shown filled in, the best
+// size marked "★ Best" as the garment's row marks it. A size named two ways ("XXS / US 34", "M (2)") shows
+// its first name, with the second small under it, so the names don't run past their segments. Each segment
+// is a button the page's pickSize answers; dragging along the bar or the arrow keys move between them (the
+// page's slideSize and keySize). Many sizes scroll sideways. Pants sold by waist and leg (30x32, 32/34) get
+// one bar for the waist and one for the leg, so a store with dozens of them is still two short rows.
 
 // Each size's place along the line, as a share (0 to 1): evenly spread, a single size in the middle.
 export function stopPlaces(count) {
@@ -47,6 +49,14 @@ export function nearestSize(split, waist, leg) {
   return waists.length ? split.of(waists[0], leg) : null
 }
 
+// A size's name split into what's shown big and what's shown small under it: "XXS / US 34" is XXS over
+// US 34, "M (2)" is M over 2. One name stays whole.
+export function sizeName(name) {
+  const text = String(name ?? "").trim()
+  const two = text.match(/^(.+?)\s*\/\s*(.+)$/) ?? text.match(/^(.+?)\s*\((.+)\)$/)
+  return two && two[1].length <= 6 ? { main: two[1], sub: two[2] } : { main: text, sub: null }
+}
+
 // The slider's HTML. sizes: [{ size, verdict }] in the store's order; shown: the size on the mannequin;
 // best: the best size (null for clothes Fitroom doesn't fit, which get no "Best").
 export function sizeSlider({ kind, label, sizes, shown, best }) {
@@ -70,18 +80,19 @@ export function sizeSlider({ kind, label, sizes, shown, best }) {
 }
 
 function track(kind, label, title, options) {
-  const places = stopPlaces(options.length)
-  const stops = options.map((o, i) => `
+  const stops = options.map(o => {
+    const { main, sub } = sizeName(o.name)
+    return `
       <button type="button" role="radio" aria-checked="${o.on}" tabindex="${o.on ? 0 : -1}"
-              class="sizer-stop${o.on ? " is-on" : ""}${o.verdict ? ` is-${o.verdict}` : ""}${o.sold ? "" : " is-unsold"}${o.named === false ? " is-unnamed" : ""}"
-              style="left:calc(14px + (100% - 28px) * ${places[i].toFixed(4)})"
+              class="sizer-stop${o.on ? " is-on" : ""}${o.verdict ? ` is-${o.verdict}` : ""}${o.sold ? "" : " is-unsold"}"
               data-kind="${kind}" data-size="${escape(o.size)}" data-action="fitting-room#pickSize"
-              aria-label="${escape(o.name)}${o.best ? ", best" : ""}"><i></i><span>${escape(o.name)}</span>${o.best ? "<small>Best</small>" : ""}</button>`).join("")
+              aria-label="${escape(o.name)}${o.best ? ", best" : ""}" title="${escape(o.name)}"><span>${escape(main)}</span>${sub ? `<small>${escape(sub)}</small>` : ""}${o.best ? "<em>★ Best</em>" : ""}</button>`
+  }).join("")
   return `
-    <div class="sizer${title ? " sizer--split" : ""}" role="radiogroup" aria-label="${escape(label)}" data-kind="${kind}"
-         data-action="pointerdown->fitting-room#slideSize keydown->fitting-room#keySize">
+    <div class="sizer${title ? " sizer--split" : ""}">
       ${title ? `<span class="sizer-title">${title}</span>` : ""}
-      <span class="sizer-track"></span>${stops}
+      <div class="sizer-bar" role="radiogroup" aria-label="${escape(label)}" data-kind="${kind}"
+           data-action="pointerdown->fitting-room#slideSize keydown->fitting-room#keySize">${stops}</div>
     </div>`
 }
 
