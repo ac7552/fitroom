@@ -113,4 +113,21 @@ class DressCutTest < ActiveSupport::TestCase
     refute_includes cut(:mireli)[:details], "cut-outs"
     assert_equal [ "back" ], cut(:mireli)[:cutouts]
   end
+
+  test "a flounce at the hem, a side slit and a belt are drawn, so they aren't listed as left out" do
+    read = ->(description) { GarmentImport::DressCut.read({ name: "Midi Dress", category: "Dresses", description: }) }
+    assert_equal [ "buckle", false ], [ cut(:desma)[:belt], cut(:desma)[:details].include?("belt") ]
+    flounce = read.("Ruffled hem Slim fit")
+    assert_equal [ true, [] ], flounce.values_at(:flounce, :details)
+    # Ruffles elsewhere stay a note.
+    assert_equal [ "ruffles" ], read.("Ruffle trim on the neck Ruffled hem")[:details]
+    assert_equal "sides", read.("Side slits Relaxed fit")[:slit]
+    assert_equal "side", read.("Thigh-high slit Relaxed fit")[:slit]
+    # A slit at the back isn't drawn, and belt loops aren't a belt.
+    assert_equal [ nil, nil, [ "slit" ] ], read.("Slit at the back Belt loops at the waist").values_at(:slit, :belt, :details)
+    assert_equal [ "tie", [] ], read.("Self-tie belt at the waist").values_at(:belt, :details)
+    # A tie that closes it, or a sash draped to the hip, isn't a belt.
+    assert_equal [ nil, [ "tie" ] ], read.("Cowl neckline Self-tie closure on the back").values_at(:belt, :details)
+    assert_equal [ nil, [ "tie", "draping" ] ], read.("Draped sash self-tie closure on hip").values_at(:belt, :details)
+  end
 end

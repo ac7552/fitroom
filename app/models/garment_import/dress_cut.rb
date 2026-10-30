@@ -22,7 +22,11 @@ class GarmentImport
   #             (an elastane) a leather one
   #   printed   true when the listing says the cloth is printed or patterned (only then is a print read off
   #             the photo; a dress's ties and pleats aren't a print)
-  #   details   what the 3D view doesn't draw ("belt", "tie", "scarf", "cut-outs" ...), to say so
+  #   flounce   true for a gathered strip at the hem ("ruffled hem", "tiered", "flounce"): drawn on the hem
+  #   slit      "side" (one, up the wearer's left) or "sides" (both) for a slit up the side seam; a front or
+  #             back slit isn't drawn
+  #   belt      "buckle" for a belt at the waist, "tie" for a tie belt or a sash: drawn round the waist
+  #   details   what the 3D view doesn't draw ("tie", "cut-outs", "draping" ...), to say so
   module DressCut
     SLEEVES = [
       [ "strapless", /strapless|bandeau|\btube (?:dress|top)|off[- ]the[- ]shoulders?|off[- ]shoulder|corset bodice/i ],
@@ -65,9 +69,15 @@ class GarmentImport
     STRUCTURED = /suiting|scuba|ponte|neoprene|bonded|\bbon(?:ing|ed)\b|corset|structured|tweed|boucl[eé]|\bcrepe\b(?! de chine)/i
     # A hem with a strip gathered onto it: drawn as the body's shape, with the strip on (not as a flare).
     FLOUNCE = /ruffled? hem|ruffle (?:at|on) the hem|flounce|tiered|tiers\b|peplum hem/i
+    # Slits up the side seams (both, or one), and a belt at the waist ("belt loops" aren't one).
+    SIDE_SLITS = /side slits|slits (?:at|on|up) (?:the|both) sides|split sides|side splits/i
+    SIDE_SLIT = /side slit|side split|slit (?:at|on|up) the side|thigh[- ]high slit|leg slit|high slit/i
+    BELT = /\bbelt(?:ed)?\b(?! loops?)/i
+    # (A "self-tie closure on the back" isn't a belt, nor a sash draped to the hip.)
+    TIE_BELT = /tie belt|self[- ]tie belt|belt that ties|waist tie|ties? at the waist|sash (?:belt|at the waist|round the waist|around the waist)/i
     PRINTED = /print|pattern|floral|graphic|logo|stripe|check|plaid|gingham|polka|leopard|zebra|paisley|motif|parquet|camo|tie[- ]dye/i
     DETAILS = [
-      [ "belt", /\bbelt/i ], [ "tie", /self[- ]tie|\btie\b|sash|bow\b/i ], [ "scarf", /scarf/i ],
+      [ "belt", /\bbelt(?:ed)?\b(?! loops?)/i ], [ "tie", /self[- ]tie|\btie\b|sash|bow\b/i ], [ "scarf", /scarf/i ],
       [ "cut-outs", /cut[- ]?outs?|open back|keyhole/i ], [ "ruffles", /ruffle|frill/i ], [ "sheer panels", /sheer/i ],
       [ "slit", /\bslit\b/i ], [ "draping", /drap(?:ed|ing)/i ], [ "uneven hem", /asymmetric(?:al)? hem|high[- ]low/i ],
       [ "faux fur", /faux fur|shearling/i ]
@@ -120,9 +130,18 @@ class GarmentImport
         sheer: sheer(words)&.first,
         sheer_kind: sheer(words)&.last,
         scarf: words.match?(/scarf/i) ? (words.match?(/scarf\s+(?:on|at)\s+the\s+side|side scarf/i) ? "side" : "neck") : nil,
-        # What the 3D view doesn't draw (cut-outs, sheer parts and scarves it does).
-        details: DETAILS.filter_map { |detail, pattern| detail if words.match?(pattern) && !%w[cut-outs sheer\ panels scarf].include?(detail) }
+        flounce: words.match?(FLOUNCE),
+        slit: if words.match?(SIDE_SLITS) then "sides" elsif words.match?(SIDE_SLIT) then "side" end,
+        belt: if words.match?(TIE_BELT) then "tie" elsif words.match?(BELT) then "buckle" end
       }
+      # What the 3D view doesn't draw (cut-outs, sheer parts and scarves it does; a flounce, a side slit and a
+      # belt too: ruffles elsewhere, a front slit and a tie that isn't a belt it doesn't).
+      drawn = %w[cut-outs sheer\ panels scarf]
+      drawn << "ruffles" if cut[:flounce] && !words.gsub(FLOUNCE, " ").match?(/ruffle|frill/i)
+      drawn << "slit" if cut[:slit]
+      drawn << "belt" if cut[:belt]
+      drawn << "tie" if cut[:belt] == "tie" && !words.gsub(TIE_BELT, " ").match?(DETAILS.to_h.fetch("tie"))
+      cut[:details] = DETAILS.filter_map { |detail, pattern| detail if words.match?(pattern) && !drawn.include?(detail) }
       shape = product[:dress_shape]
       shape ? with_photo(cut, shape, words, named_sleeves) : cut
     end

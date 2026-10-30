@@ -137,6 +137,7 @@ export class FittingStage {
     // Shoes and socks (on the calves' bones, so they follow the pose) and a belt (round the pants' waistband).
     this.feet = { key: null, meshes: [], shoes: {} }
     this.belt = { stamp: null, mesh: null, buckle: null }
+    this.dressBelt = { stamp: null, mesh: null, buckle: null }
     this.scarf = { stamp: null, mesh: null }
     this.collars = { stamp: null, meshes: [] }
     // How the picture is framed: what's laid over its top and bottom (pixels; the figure is centred between),
@@ -710,6 +711,7 @@ export class FittingStage {
   // The belt, laid round the pants' waistband as they're draped now, when nothing hangs over it (a top worn
   // out over the pants would). Redone as the pants move.
   wearBelt() {
+    this.wearDressBelt()
     const bottom = this.slots.bottom
     const covered = Boolean(this.slots.top) && this.order !== TUCKED_LAYERS
     const ready = this.beltItem && bottom?.shown && bottom.final && !bottom.posing && !covered && this.view !== "fit"
@@ -736,6 +738,48 @@ export class FittingStage {
     buckle.position.fromArray(belt.buckle.position)
     this.belt.buckle = buckle
     for (const part of [this.belt.mesh, buckle]) {
+      part.castShadow = part.receiveShadow = true
+      this.scene.add(part)
+    }
+  }
+
+  // A dress's own belt (its cut's belt: "buckle", or "tie" for a tie belt or a sash), laid round its waist as
+  // it's draped now: a narrow band of its cloth's colour, a little darker, with a silver buckle at the front
+  // for a buckled one. Its waist is where the pattern was cut in to it (pattern.js's shapeSkirt).
+  wearDressBelt() {
+    const d = this.slots.top
+    const kind = d?.top.item.cut?.belt
+    const waistAt = d?.top.pattern?.measures?.shaped?.waistAt
+    const ready = kind && waistAt && d.shown && d.final && !d.posing && this.view !== "fit"
+    const stamp = ready ? `${d.top.drape.frame}:${d.posedAs}:${kind}:${d.top.item.color}` : "none"
+    if (stamp === this.dressBelt.stamp) return
+    this.dressBelt.stamp = stamp
+    for (const part of [this.dressBelt.mesh, this.dressBelt.buckle]) {
+      if (!part) continue
+      this.scene.remove(part)
+      part.geometry.dispose()
+      part.material.dispose()
+    }
+    this.dressBelt.mesh = this.dressBelt.buckle = null
+    if (!ready) return
+    const { drape, cloth } = d.top
+    const at = i => { const j = drape.map ? drape.map[i] : i; return [drape.x[3 * j], drape.x[3 * j + 1], drape.x[3 * j + 2]] }
+    // The body's points a little above and below the waist (pattern cm), front and back.
+    const body = new Set(["front", "back"].map(name => cloth.panels.indexOf(name)).filter(i => i >= 0))
+    const near = y => cloth.points.flatMap(([, py], i) => (body.has(cloth.panel[i]) && Math.abs(py - y) < 0.9 ? [at(i)] : []))
+    const s = this.fitted.scale ?? 1
+    const belt = beltGeometry(near(-waistAt + 1.6), near(-waistAt - 1.6), { width: 0.024 * s, out: 0.003, thick: 0.003 })
+    if (!belt) return
+    const color = new THREE.Color(d.top.item.color).offsetHSL(0, 0, -0.06)
+    this.dressBelt.mesh = new THREE.Mesh(belt.geometry, accessoryMaterial(kind === "tie" ? "canvas" : "leather", color))
+    const parts = [this.dressBelt.mesh]
+    if (kind === "buckle") {
+      const buckle = new THREE.Mesh(buckleGeometry(belt.buckle.height), accessoryMaterial("metal", "#c7c9cc"))
+      buckle.position.fromArray(belt.buckle.position)
+      this.dressBelt.buckle = buckle
+      parts.push(buckle)
+    }
+    for (const part of parts) {
       part.castShadow = part.receiveShadow = true
       this.scene.add(part)
     }

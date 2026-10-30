@@ -55,3 +55,40 @@ test("a skirt is as full at its hem as its photo, and a flared hem flares", () =
   assert.ok(flared.hem > straight.hem * 1.15)
   assert.ok(Math.abs(photo.hem / photo.seat - 2.0 / 1.3) < 0.01)
 })
+
+const { buildCloth } = await import("lib/garments/cloth")
+
+test("a flounce is a gathered strip sewn on round the hem, and the dress above it is that much shorter", () => {
+  const cut = { sleeves: "straps", neckline: "scoop", length: "mini", fit: "slim", stretch: false, fabric: "silk" }
+  const plain = draftTop("dress", size, body, cut)
+  const ruffled = draftTop("dress", size, body, { ...cut, flounce: true })
+  const strip = ruffled.panels.flounce
+  assert.ok(strip, "a flounce panel")
+  const deep = Math.max(...strip.edges.flatMap(e => e.points).map(p => p[1])) - Math.min(...strip.edges.flatMap(e => e.points).map(p => p[1]))
+  assert.ok(Math.abs(ruffled.measures.length + deep - plain.measures.length) < 0.01, "as long in all")
+  // Longer round than the hem it's sewn to, so it gathers.
+  const hem = ["front", "back"].reduce((sum, p) => sum + width(edge(ruffled, p, "hem")), 0)
+  assert.ok(width(edge(ruffled, "flounce", "rim")) > hem * 1.4)
+  assert.equal(ruffled.seams.filter(s => s[2] === "flounce" && s[3].startsWith("sewn_")).length, 2)
+  const cloth = buildCloth(ruffled)
+  assert.ok(cloth.sewing.length > buildCloth(plain).sewing.length)
+})
+
+test("a side slit leaves the side seam open from the hem up; one slit only on the wearer's left", () => {
+  const cut = { sleeves: "straps", neckline: "scoop", length: "maxi", fit: "slim", stretch: false, fabric: "silk",
+                shape: { waist: 0.84, waist_at: 0.3, hips: 1.08, hem: 1.12 } }
+  const both = draftTop("dress", { ...size, length: 130 }, body, { ...cut, slit: "sides" })
+  const one = draftTop("dress", { ...size, length: 130 }, body, { ...cut, slit: "side" })
+  const names = d => d.panels.front.edges.map(e => e.name).filter(n => n.startsWith("slit"))
+  assert.deepEqual(names(both).sort(), ["slit_L", "slit_R"])
+  assert.deepEqual(names(one), ["slit_L"])
+  assert.deepEqual(one.panels.back.edges.map(e => e.name).filter(n => n.startsWith("slit")), ["slit_L"])
+  // The slits aren't sewn; the sides above them are, front to back.
+  assert.ok(!both.seams.some(s => s[1].startsWith("slit")))
+  const slit = edge(both, "front", "slit_L")
+  const tall = Math.max(...slit.map(p => p[1])) - Math.min(...slit.map(p => p[1]))
+  assert.ok(tall > 25 && tall < 45, `slit ${tall} cm`)
+  buildCloth(both)
+  // A mini has none.
+  assert.deepEqual(names(draftTop("dress", size, body, { ...cut, length: "mini", shape: { ...cut.shape }, slit: "sides" })), [])
+})

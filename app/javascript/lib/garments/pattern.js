@@ -69,9 +69,12 @@ export function draftTop(styleName, size, body, cut = null) {
   const style = dressStyle(STYLES[styleName] ?? STYLES.tee, cut)
   const m = measures(style, size, body, cut)
   if (style.neck) m.frontNeck = style.neck
+  let flounce = 0
   if (style.shaped) {
     shapeSkirt(m, size, body, cut)
     if (cut?.neckline) m.frontNeck = NECK_DEPTH[cut.neckline] ?? m.frontNeck
+    if (cut?.flounce) { flounce = Math.min(Math.max(m.length * FLOUNCE.height, 6), 18); m.length -= flounce }
+    setSlit(m, cut, flounce)
   }
   const panels = {}
   const seams = []
@@ -120,6 +123,7 @@ export function draftTop(styleName, size, body, cut = null) {
     seams.push(["collar", "end_a", "collar", "end_b"])
   }
 
+  if (flounce) addFlounce(panels, seams, flounce)
   if (style.hem) {
     const hem = HEMS[style.hem]
     const hems = [["back", "hem"], ["front", "hem"]]
@@ -210,20 +214,59 @@ function bodice(m, side) {
   }
   const neckPlus = quarter, neckMinus = reversed(mirrored(quarter))   // +x high point to centre, centre to -x high point
   // A shaped side runs from the hem in over the hips to the waist, then out to the underarm.
-  const { side: sidePlus, hem } = sideAndHem(m, underarm)
+  const { side: sideWhole, hem } = sideAndHem(m, underarm)
   // +x is the wearer's left on the front and their right on the back.
   const plus = side === "front" ? "L" : "R", minus = side === "front" ? "R" : "L"
   const neck = [{ name: `neck_${plus}`, points: neckPlus }, { name: `neck_${minus}`, points: neckMinus }]
+  // A side slit: the side's lowest stretch is its own edge, left unsewn (on the sides m.slitSides names).
+  const slitOn = s => Boolean(m.slit) && m.slitSides.includes(s)
+  const [slitPlus, sidePlus] = slitOn(plus) ? splitAt(sideWhole, -m.length + m.slit) : [null, sideWhole]
+  const [slitMinus, sideMinus] = slitOn(minus) ? splitAt(sideWhole, -m.length + m.slit) : [null, sideWhole]
   return [
     { name: "hem", points: hem },
+    ...(slitPlus ? [{ name: `slit_${plus}`, points: slitPlus }] : []),
     { name: `side_${plus}`, points: sidePlus },
     { name: `armhole_${plus}`, points: armhole },
     { name: `shoulder_${plus}`, points: shoulderLine },
     ...neck,
     { name: `shoulder_${minus}`, points: reversed(mirrored(shoulderLine)) },
     { name: `armhole_${minus}`, points: reversed(mirrored(armhole)) },
-    { name: `side_${minus}`, points: reversed(mirrored(sidePlus)) }
+    { name: `side_${minus}`, points: reversed(mirrored(sideMinus)) },
+    ...(slitMinus ? [{ name: `slit_${minus}`, points: reversed(mirrored(slitMinus)) }] : [])
   ]
+}
+
+// A polyline (running upward) cut in two where it reaches height y: [below, above].
+function splitAt(points, y) {
+  for (let k = 1; k < points.length; k++) {
+    const [x0, y0] = points[k - 1], [x1, y1] = points[k]
+    if ((y0 - y) * (y1 - y) <= 0 && y0 !== y1) {
+      const at = [x0 + ((x1 - x0) * (y - y0)) / (y1 - y0), y]
+      return [[...points.slice(0, k), at], [at, ...points.slice(k)]]
+    }
+  }
+  return [null, points]
+}
+
+// A gathered strip (a flounce, a ruffled hem) sewn on along the dress's hem, longer than it so it gathers,
+// FLOUNCE.height share of the dress's length deep (that much comes off the body, so it ends where it should).
+const FLOUNCE = { gather: 1.6, height: 0.14 }
+function addFlounce(panels, seams, height) {
+  const hems = [["back", "hem"], ["front", "hem"]]
+  panels.flounce = { edges: band(hems.map(([p, e]) => length(edge(panels[p].edges, e))), FLOUNCE.gather, height, "down"), place: { at: "band", toward: "down" }, fabric: "main" }
+  hems.forEach(([p, e], i) => seams.push([p, e, "flounce", `sewn_${i}`]))
+  seams.push(["flounce", "end_a", "flounce", "end_b"])
+}
+
+// A dress's side slit (cut.slit "side": one, up the wearer's left; "sides": both), set on m: how deep it runs
+// up from the hem (cm; a third of the skirt below the waist, for a dress long enough to have one, from the
+// knee down; none under a flounce) and which sides.
+function setSlit(m, cut, flounce) {
+  m.slit = 0
+  m.slitSides = cut?.slit === "sides" ? ["L", "R"] : ["L"]
+  if (!["side", "sides"].includes(cut?.slit) || !m.shaped || flounce || cut.length === "mini") return
+  const skirt = m.length - m.shaped.waistAt
+  if (skirt > 40) m.slit = Math.round(skirt * 0.35)
 }
 
 // A sleeve seen from outside the arm, cap at the top. On the left arm the front of the body is on the
@@ -454,6 +497,9 @@ function draftDress(size, body, cut) {
   const style = { ...STYLES.dress, fabric: DRESS_CLOTH[cut.fabric] ?? "jersey" }
   const m = measures({ ...style, sleeve: "short" }, size, body)
   shapeSkirt(m, size, body, cut)
+  const flounce = cut.flounce ? Math.min(Math.max(m.length * FLOUNCE.height, 6), 18) : 0
+  m.length -= flounce
+  setSlit(m, cut, flounce)
   const neckline = cut.neckline ?? "round"
   m.neckSquare = neckline === "straight" ? 6 : 2
   const panels = {}, seams = []
@@ -495,6 +541,7 @@ function draftDress(size, body, cut) {
       seams.push(["front", `shoulder_${s}`, "back", `shoulder_${s}`])
     }
   }
+  if (flounce) addFlounce(panels, seams, flounce)
   return { panels, seams, style: "dress", closure: null, fabric: style.fabric, measures: m }
 }
 
