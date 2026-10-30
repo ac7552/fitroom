@@ -33,11 +33,42 @@ export const BARS = {
   stray: 0.06,
   // DINOv2 likeness of the two garments (cosine): a flat photo and a worn render are rarely above 0.7, a
   // different garment rarely above 0.3.
-  likeness: 0.35
+  likeness: 0.35,
+  // A dress's flare (its hem's width over its hips') on the render against its photo's, as worn (see
+  // WORN_FLARE): from 1/1.15 to 1.3 times. Renders of twelve Kith dresses that hang as their photos show
+  // read 0.86 to 1.11 (the Desma's and the Saja's, which flare a little less than their photos, 0.86); the
+  // Desma drawn as a tube, 0.77. Too little flare is what goes wrong; a little more is held less tightly.
+  flare: [1 / 1.15, 1.3]
 }
 
 // The collar's band at the top of a front, which lookOf (print.js) leaves out: a share of the front's length.
 const COLLAR_BAND = 0.08
+// How much less a worn dress widens from its hips to its hem than the same dress laid flat (a worn hem
+// curves round the legs; a flat one is spread out): the render's flare is held to the photo's times this,
+// the middle of the matrix renders'.
+export const WORN_FLARE = 0.95
+// A photo whose flare reads outside this wasn't measured right (a hanger's bar, a model's legs): no check.
+const PHOTO_FLARE = [0.8, 2.5]
+
+// A dress's outline against its photo's (print.js's measureDress, of the shop photo and of the render alone):
+// how much each widens from its hips to its hem (a tube's hem is as wide as its hips; an A-line's, wider).
+// { score (the render's flare over the photo's, as worn), photo, render, pass }, or null when either can't
+// be read. A dress drawn as a tube when its photo flares scores well under 1.
+export function compareShapes(photo, render, bars = BARS) {
+  const flare = shape => (shape?.hem > 0 && shape?.hips > 0 ? shape.hem / shape.hips : null)
+  const p = flare(photo), r = flare(render)
+  if (!p || !r || p < PHOTO_FLARE[0] || p > PHOTO_FLARE[1] || r < 0.5) return null
+  const score = r / (p * WORN_FLARE)
+  return { score: round(score), photo: round(p), render: round(r), pass: score >= bars.flare[0] && score <= bars.flare[1] }
+}
+
+// The photo's outline drawn again where a render's didn't match: its hem scaled by how far the render's flare
+// fell short of (or went past) the photo's, at most half again either way. Null when there's nothing to scale.
+export function reshaped(cutShape, check) {
+  if (!cutShape?.hem || !(check?.score > 0)) return null
+  const k = Math.min(1.5, Math.max(1 / 1.5, 1 / check.score))
+  return { ...cutShape, hem: round(Math.max(cutShape.hips ?? 0, cutShape.hem * k)) }
+}
 
 // The photo's look and the render's (lookOf), and optionally the likeness score. Returns { ok, failed: [names],
 // checks: { colour, place, printed, likeness? } }, each { score, pass } (score null when it doesn't apply).

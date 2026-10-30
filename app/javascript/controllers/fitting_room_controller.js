@@ -1,8 +1,8 @@
 import { Controller } from "@hotwired/stimulus"
 import { toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
-import { findPrint, readPhoto, readBottomPhoto, readDressShape, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
-import { compareLooks, croppedLengths, nextReading, PLAIN } from "lib/garments/look_check"
+import { findPrint, garmentMask, measureDressMask, readPhoto, readBottomPhoto, readDressShape, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
+import { compareLooks, compareShapes, croppedLengths, nextReading, PLAIN, reshaped } from "lib/garments/look_check"
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
@@ -336,6 +336,23 @@ export default class extends Controller {
       garment.lookChecks = result
       if (!result || result.ok) break
       rememberLookFailure(garment, attempt, result)
+      // A dress whose outline didn't match its photo's: cut again once, its hem as much wider (or narrower)
+      // as the render fell short (or went past), and checked again. Its print and colour stay as read. A
+      // second miss isn't held against it: the drawing is as near the photo as the cloth will hang.
+      if (result.failed.includes("shape")) {
+        const shape = !garment.reshaped && reshaped(garment.cut?.shape, result.checks.shape)
+        if (shape) {
+          garment.reshaped = true
+          garment.cut = { ...garment.cut, shape }
+          this.renderOutfit()
+          this.render()
+          if (result.failed.length === 1) continue
+        } else {
+          result.failed = result.failed.filter(name => name !== "shape")
+          result.ok = result.failed.length === 0
+          if (result.ok) break
+        }
+      }
       // Only the back's print didn't match (the front, its sleeves and its print did): the back goes plain and
       // the front stays as read, then the front alone is checked. Reading everything again the plainest way
       // would take off sleeve stripes and the front's print that matched.
@@ -353,6 +370,8 @@ export default class extends Controller {
     }
     garment.lookDone = true
     this.setLookWords(null)
+    // Its row says when its outline still isn't its photo's.
+    if (garment.lookChecks?.checks?.shape?.pass === false) this.renderOutfit()
   }
 
   // Until the clothes are on and drawn (a texture laid on is uploaded on the next frame).
@@ -379,6 +398,17 @@ export default class extends Controller {
     // A dress drawn without its photo's print (see applyTopReading) has only its colour and likeness to match.
     const unprinted = garment.style === "dress" && Boolean(garment.cut) && !garment.cut.printed
     const front = compareLooks(garment.lookPlain.front, renderLook, { named, likeness: alike, unprinted })
+    // A dress cut to its photo's outline: the render's outline is held to the photo's (how much it widens
+    // from the waist to the hem).
+    if (garment.style === "dress" && garment.cut?.shape) {
+      garment.lookPlain.dress ??= await readDressShape(photos.front).catch(() => null)
+      const cut = garmentMask(shot.data, shot.width, shot.height)
+      const outline = compareShapes(garment.lookPlain.dress, cut && measureDressMask(cut.mask, cut.w, cut.h))
+      if (outline) {
+        front.checks.shape = outline
+        if (!outline.pass) { front.failed.push("shape"); front.ok = false }
+      }
+    }
     // Both readings go with the result, for the failure log and the look audit (script/spike/look_audit.mjs).
     front.looks = { photo: garment.lookPlain.front, render: renderLook }
     if (!garment.backPrint || !photos.back) return front
@@ -764,7 +794,9 @@ export default class extends Controller {
         // from the shoulder); the import took off half the shoulders.
         chart.sleeve_from === "centre_back" ? "sleeves measured from the centre back, read from the shoulder" : null,
         chart.sleeve_from === "centre_back_guessed" ? "sleeves look measured from the centre back, so they're read from the shoulder" : null,
-        garment.cut?.details?.length ? `the 3D view doesn't show its ${listed(garment.cut.details)}` : null
+        garment.cut?.details?.length ? `the 3D view doesn't show its ${listed(garment.cut.details)}` : null,
+        // Its outline, redrawn once, still not its photo's (see runLookCheck).
+        garment.lookChecks?.checks?.shape?.pass === false ? `the 3D view draws it ${garment.lookChecks.checks.shape.score < 1 ? "straighter" : "fuller"} at the hem than its photo` : null
       ].filter(Boolean)
       // The shop's photo on a tile in the stage's own tone, its white backdrop knocked out (see showTiles);
       // until that's done, blended onto the tile. No photo: a swatch of the colour.

@@ -141,3 +141,22 @@ test("a logo cut off by the collar's band in the photo is held to where it sits,
   const chest = { ...photo, box: { ...photo.box, top: 0.12, bottom: 0.3 } }
   assert.ok(compareLooks(chest, { ...photo, box: { left: 0.2, right: 0.8, top: 0.08, bottom: 0.15 } }).failed.includes("place"))
 })
+
+test("a dress's outline is held to its photo's: a tube drawn for a dress that flares fails, and is cut wider", async () => {
+  const { compareShapes, reshaped } = await import("../../app/javascript/lib/garments/look_check.js")
+  // The Desma's photo: its hem a quarter wider than its hips. Drawn as an A-line it reads 1.02; as a tube, 0.91.
+  const photo = { waist: 0.83, hips: 1.1, hem: 1.376 }
+  assert.equal(compareShapes(photo, { waist: 0.88, hips: 1.19, hem: 1.33 }).pass, true)
+  const tube = compareShapes(photo, { waist: 0.89, hips: 1.2, hem: 1.09 })
+  assert.equal(tube.pass, false)
+  assert.ok(tube.score < 0.8, `score ${tube.score}`)
+  // Cut again with its hem as much wider as it fell short, at most half again; never narrower than its hips.
+  const again = reshaped({ waist: 0.81, hips: 1.07, hem: 1.35 }, tube)
+  assert.ok(again.hem > 1.35 && again.hem <= 1.35 * 1.5 + 1e-9, `hem ${again.hem}`)
+  assert.equal(reshaped({ hips: 1.07, hem: 1.1 }, { score: 2 }).hem, 1.07)
+  // A straight dress drawn flaring fails the other way; no outline, no check.
+  assert.equal(compareShapes({ hips: 1.0, hem: 1.0 }, { hips: 1.0, hem: 1.4 }).pass, false)
+  assert.equal(compareShapes(photo, null), null)
+  // A photo misread (the Raleigh's read its hem a fifth of its hips) isn't held against the render.
+  assert.equal(compareShapes({ hips: 1.06, hem: 0.19 }, { hips: 1, hem: 0.93 }), null)
+})
