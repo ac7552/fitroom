@@ -1,5 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
-import { formatAbout, toCm } from "lib/format"
+import { toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
 import { findPrint, readPhoto, readBottomPhoto, readGarment, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
 import { compareLooks, croppedLengths, nextReading, PLAIN } from "lib/garments/look_check"
@@ -8,6 +8,8 @@ import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/l
 import { cleanPhoto } from "lib/garments/segment"
 import { knockoutPhoto } from "lib/garments/knockout"
 import { measureFromPhotos } from "lib/measure_photo"
+import { partRow, uncheckedLine, verdictWords } from "lib/fit_bar"
+import { sizeSlider, stopNear } from "lib/size_slider"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
 // or a photo with typed measurements), your measurements, and the outfit on a mannequin your shape in
@@ -54,13 +56,11 @@ const BODY_WORDS = {
 const FIT_NAMES = { slim: "Snug", regular: "Regular", classic: "Loose" }
 
 // Plain words for the API's results.
-const STATUS_TEXT = { good: "Fits", tight: "Too tight", loose: "Too loose", short: "Too short", long: "Too long", unknown: "Can't tell" }
-const VERDICT_TEXT = { fits: "Fits", alter: "Fits after a small change from a tailor", compromise: "Won't fit well" }
 const PART_NAMES = { inseam: "Leg length", leg_opening: "Leg opening", sleeve: "Sleeves" }
 
 export default class extends Controller {
   static targets = [
-    "input", "unit", "unitLabel", "cut", "results", "canvas", "sizes", "stageNote", "legend", "warnings",
+    "input", "unit", "unitLabel", "cut", "results", "canvas", "stageNote", "legend", "warnings",
     "link", "importButton", "chartText", "importError", "outfitList", "itemType", "snapInput", "snapLabel", "bodyType", "switches",
     "photoInput", "photoPreview", "photoLabel", "ownSizes", "measuredFlat", "stagePhotos",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
@@ -571,7 +571,7 @@ export default class extends Controller {
         <div class="rail-item" data-kind="${kind}">
           <div class="rail-tile" data-kind="${kind}">${thumb}</div>
           <div class="rail-text">
-            <p class="rail-kind mono">${garment.one_piece ? `One piece · ${kind === "top" ? "top half" : "bottom half"}` : KINDS[kind]}</p>
+            <p class="rail-kind mono">${garment.one_piece ? `One piece · ${kind === "top" ? "top half" : "bottom half"}` : kindLabel(kind, garment)}</p>
             <p class="rail-name">${escape(garment.name)}</p>
             <p class="rail-meta">${escape([garment.brand, garment.color_name, garment.fabric && garment.fabric !== "wool" ? garment.fabric : null].filter(Boolean).join(" · "))}</p>
             <p class="rail-size" data-rail-size="${kind}" hidden></p>
@@ -819,14 +819,10 @@ export default class extends Controller {
         if (!r.height) return 0
         return side === "top" ? Math.max(0, Math.min(canvas.height, r.bottom - canvas.top)) : Math.max(0, Math.min(canvas.height, canvas.bottom - r.top))
       }
-      const rows = over(this.sizesTarget, "bottom")
-      // Things that sit just above the size rows (the sewing note, the legend) follow their height.
-      box.style.setProperty("--rows", `${Math.round(rows)}px`)
-      this.stage.setInsets({ top: Math.round(over(top, "top") + 8), bottom: Math.round(rows + 8) })
+      this.stage.setInsets({ top: Math.round(over(top, "top") + 8), bottom: 8 })
     }
     this.insetWatch = new ResizeObserver(measure)
     this.insetWatch.observe(top)
-    this.insetWatch.observe(this.sizesTarget)
     this.insetWatch.observe(this.canvasTarget)
     this.stage.ready.then(measure)
   }
@@ -956,7 +952,6 @@ export default class extends Controller {
     const items = this.items()
     if (items.length === 0) {
       this.stage.setOutfit([])
-      this.sizesTarget.innerHTML = ""
       this.showEmpty("Nothing to try on yet", "Pick clothes in step 1 to see how they fit.")
       return
     }
@@ -980,7 +975,6 @@ export default class extends Controller {
           return `${capitalize(BODY_WORDS[part]?.[0] ?? part)} ${message}.`
         })
         this.stage.setOutfit([])
-        this.sizesTarget.innerHTML = ""
         this.showEmpty("Check your numbers", problems.join(" ") || "One of the numbers doesn't look right.")
         return
       }
@@ -1269,7 +1263,7 @@ export default class extends Controller {
     const stage = this.hasStageTarget ? this.stageTarget : this.canvasTarget.closest(".stage")
     if (!stage) return
     stage.classList.toggle("stage--covered", on)
-    const under = [stage.querySelector(".stage-top"), this.sizesTarget, this.hasLegendTarget ? this.legendTarget : null, this.hasStagePhotosTarget ? this.stagePhotosTarget : null]
+    const under = [stage.querySelector(".stage-top"), this.hasLegendTarget ? this.legendTarget : null, this.hasStagePhotosTarget ? this.stagePhotosTarget : null]
     for (const element of under) {
       if (!element) continue
       if (on) element.setAttribute("inert", "")
@@ -1565,60 +1559,84 @@ export default class extends Controller {
 
     this.renderStageNote()
 
-    const guessed = this.guessedText()
-    const shown = (this.warnings ?? []).filter(w => !this.guessed?.includes(w.part)).map(warningText)
-    if (guessed) shown.unshift(guessed)
+    // What's guessed, and any number that looks unusual: a line each, in the tips' grey, the guess with a
+    // link back to step 2.
+    const shown = (this.warnings ?? []).filter(w => !this.guessed?.includes(w.part)).map(text => `<p class="tip">${escape(warningText(text))}</p>`)
+    const guessed = this.guessed ?? []
+    const step2 = words => `<button type="button" class="text-button" data-action="fitting-room#goToBody">${words}</button>`
+    if (guessed.length === REQUIRED.length) shown.unshift(`<p class="tip">This is an example body. ${step2("Add your numbers in step 2")} to see the clothes on you.</p>`)
+    else if (guessed.length) shown.unshift(`<p class="tip">We guessed your ${escape(listed(guessed.map(key => BODY_WORDS[key][0])))}. ${step2(`Add ${guessed.length === 1 ? "it" : "them"} in step 2`)} for a truer fit.</p>`)
     this.warningsTarget.hidden = !shown.length
-    this.warningsTarget.innerHTML = shown.map(text => `<p>${escape(text)}</p>`).join("")
-
-    this.sizesTarget.innerHTML = items.map(({ kind, garment, fit, selected }) => {
-      const order = garment.chart.sizes.map(s => s.name)
-      const sizes = [...fit.sizes].sort((a, b) => order.indexOf(a.size) - order.indexOf(b.size))
-      return `
-        <div class="size-row" role="radiogroup" aria-label="${KINDS[kind]} size">
-          <span class="size-row-label">${KINDS[kind]}</span>
-          ${sizes.map(r => `
-            <button type="button" role="radio" aria-checked="${r.size === selected}"
-                    class="size-chip size-chip--${r.verdict}${r.size === fit.best ? " size-chip--best" : ""}"
-                    data-kind="${kind}" data-size="${escape(r.size)}" data-action="fitting-room#pickSize"
-                    title="${escape(VERDICT_TEXT[r.verdict])}">${escape(r.size)}</button>`).join("")}
-        </div>`
-    }).join("")
+    this.warningsTarget.innerHTML = shown.join("")
     this.showRailSizes(items)
 
     this.resultsTarget.innerHTML = items.map(({ kind, garment, fit, selected }) => {
       const result = fit.sizes.find(s => s.size === selected)
+      const order = garment.chart.sizes.map(s => s.name)
+      const sizes = [...fit.sizes].sort((a, b) => order.indexOf(a.size) - order.indexOf(b.size))
+      const label = kindLabel(kind, garment)
       if (ACCESSORIES.includes(kind)) {
         return `
         <section class="result">
-          <p class="results-kicker">${KINDS[kind]} · ${escape(garment.name)}</p>
-          <div class="results-headline"><p class="results-size results-size--compact">${escape(result.size)}</p></div>
-          <p class="results-lede">Shown for the look. Fitroom doesn't check ${KIND_WORDS[kind]} sizes yet, so pick your usual size.</p>
+          <p class="result-kicker">${escape(label)} · ${escape(garment.name)}</p>
+          ${sizeSlider({ kind, label, sizes, shown: selected, best: null })}
+          <p class="verdict"><b>${escape(result.size)}.</b> Shown for the look. Fitroom doesn't check ${KIND_WORDS[kind]} sizes yet, so pick your usual size.</p>
         </section>`
       }
-      const badge = fit.sizes.length === 1 ? '<span class="best-badge">Only size</span>'
-        : result.size === fit.best ? '<span class="best-badge">Best size</span>'
-        : `<button type="button" class="text-button" data-kind="${kind}" data-size="${escape(fit.best)}" data-action="fitting-room#pickSize">Size ${escape(fit.best)} fits better</button>`
+      const words = verdictWords(result, fit.best, this.unit)
+      const better = result.size !== fit.best && result.verdict !== "fits"
+        ? ` <button type="button" class="text-button" data-kind="${kind}" data-size="${escape(fit.best)}" data-action="fitting-room#pickSize">Try ${escape(fit.best)}</button>` : ""
+      const checked = result.checks.filter(c => c.status !== "unknown")
+      const unchecked = uncheckedLine(result.checks)
       return `
         <section class="result">
-          <p class="results-kicker">${KINDS[kind]} · ${escape(garment.name)} · ${FIT_NAMES[this.cut]} fit</p>
-          <div class="results-headline">
-            <p class="results-size${items.length > 1 ? " results-size--compact" : ""}">${escape(result.size)}</p>
-            ${badge}
-          </div>
-          <p class="results-lede">${escape(summary(result))}</p>
-          <ul class="checks">${result.checks.map(check => checkRow(check, this.unit)).join("")}</ul>
+          <p class="result-kicker">${escape(label)} · ${escape(garment.name)} · ${FIT_NAMES[this.cut]} fit</p>
+          ${sizeSlider({ kind, label, sizes, shown: selected, best: fit.sizes.length > 1 ? fit.best : null })}
+          <p class="verdict"><b>${escape(words.lead)}</b> ${escape(words.rest)}${better}</p>
+          <ul class="parts">${checked.map(check => partRow(check, this.unit)).join("")}</ul>
+          ${unchecked ? `<p class="unchecked">${escape(unchecked)}</p>` : ""}
         </section>`
     }).join("")
   }
 
-  // Which numbers are guesses, in plain words, or null when all are the person's own.
-  guessedText() {
-    const guessed = this.guessed ?? []
-    if (!guessed.length) return null
-    if (guessed.length === REQUIRED.length) return "This is an example body. Add your numbers in step 2 to see the clothes on you."
-    const names = guessed.map(key => BODY_WORDS[key][0])
-    return `We guessed your ${listed(names)}. Add ${guessed.length === 1 ? "it" : "them"} in step 2 to see a truer fit.`
+  // Dragging along a size slider picks the stop under the pointer, as tapping it does.
+  slideSize(event) {
+    const line = event.currentTarget
+    const stops = [...line.querySelectorAll(".sizer-stop")]
+    if (!stops.length || event.button > 0) return
+    const pick = clientX => {
+      const r = line.getBoundingClientRect()
+      const share = (clientX - r.left - 14) / Math.max(1, r.width - 28)
+      const stop = stops[stopNear(share, stops.length)]
+      if (stop.getAttribute("aria-checked") !== "true") stop.click()
+    }
+    const move = e => pick(e.clientX)
+    const end = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end) }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", end)
+  }
+
+  // The arrow keys step a size slider along, as a radio group does.
+  keySize(event) {
+    const step = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key]
+    if (!step) return
+    event.preventDefault()
+    const stops = [...event.currentTarget.querySelectorAll(".sizer-stop")]
+    const at = stops.findIndex(s => s.getAttribute("aria-checked") === "true")
+    const next = stops[Math.max(0, Math.min(stops.length - 1, at + step))]
+    if (!next || next === stops[at]) return
+    const { kind, size } = next.dataset
+    this.outfit[kind].selected = size
+    this.render()
+    this.resultsTarget.querySelector(`.sizer[data-kind="${kind}"] .sizer-stop[data-size="${CSS.escape(size)}"]`)?.focus()
+  }
+
+  // Back to step 2, at the first number still to fill in.
+  goToBody() {
+    const empty = this.inputTargets.find(input => !input.closest("[hidden]") && !(parseFloat(input.value) > 0))
+    const target = empty ?? this.element.querySelector("#step-body")
+    target?.scrollIntoView({ behavior: "smooth", block: "center" })
+    empty?.focus({ preventScroll: true })
   }
 
   // While the clothes are sewn, settle and move into a pose: a small pill over the figure saying which, with
@@ -1653,7 +1671,7 @@ export default class extends Controller {
     if (this.guessed?.length) notes.push(this.guessed.length === REQUIRED.length ? "An example body." : "Some of your numbers are guesses.")
     if (this.outfit.coat && this.outfit.jacket) notes.push("The coat over a jacket is drawn from a jacket, so it looks shorter here.")
     // A chart of usual sizes, not the clothes' own measurements: the fit shown is an estimate.
-    const estimated = this.items().filter(({ garment }) => ["body", "sizes"].includes(garment.chart.kind)).map(({ kind }) => KIND_WORDS[kind] ?? kind)
+    const estimated = this.items().filter(({ garment }) => ["body", "sizes"].includes(garment.chart.kind)).map(({ kind, garment }) => kindLabel(kind, garment).toLowerCase())
     if (estimated.length) notes.push(`Estimated fit: the store doesn't list measurements for the ${listed(estimated)}, so usual sizes are shown.`)
     if (this.stage.hiddenTop) notes.push("The top is under the jacket.")
     if (this.limited?.length) notes.push(`The mannequin can't go as far as your ${this.limited.join(" and ")}; it's drawn as near as it can.`)
@@ -1663,8 +1681,8 @@ export default class extends Controller {
   showEmpty(kicker, text) {
     this.resultsTarget.innerHTML = `
       <div class="results-empty">
-        <p class="results-kicker">${escape(kicker)}</p>
-        <p class="results-lede">${escape(text)}</p>
+        <p class="result-kicker">${escape(kicker)}</p>
+        <p class="verdict">${escape(text)}</p>
       </div>`
   }
 
@@ -1678,50 +1696,11 @@ export default class extends Controller {
   }
 }
 
-function summary(result) {
-  const fixes = result.checks.filter(c => c.fix)
-  switch (result.verdict) {
-    case "fits": return "This size fits you. Nothing needs to change."
-    case "alter": return fixes.length === 1 ? "This size fits after one small change from a tailor." : `This size fits after ${fixes.length} small changes from a tailor.`
-    default: {
-      const parts = result.checks.filter(c => !c.fixable).map(c => partName(c).toLowerCase())
-      return `The ${listed(parts)} won't fit well, and a tailor can't fix that.`
-    }
-  }
-}
-
-function checkRow(check, unit) {
-  return `
-    <li class="check">
-      <span class="check-label">${escape(partName(check))}</span>
-      <span class="chip chip--${check.status}">${STATUS_TEXT[check.status]}</span>
-      <span class="check-detail">${escape(detail(check, unit))}</span>
-    </li>`
-}
-
-function partName(check) {
-  return PART_NAMES[check.part] ?? check.label
-}
-
-function detail(check, unit) {
-  if (check.note) return check.note
-  if (check.status === "unknown") return "The size chart doesn't say."
-  if (check.fix) return `A tailor can fix this: ${check.fix.text.toLowerCase()} by ${formatAbout(check.fix.amount_cm, unit)}.`
-
-  const amount = formatAbout(check.ease_cm, unit)
-  switch (check.part) {
-    case "sleeve":
-    case "length":
-    case "inseam":
-      return check.status === "good" ? "Just right." : `${capitalize(amount)} too ${check.status}. A tailor can't fix this.`
-    case "shoulders":
-      if (check.status === "good") return "The seam sits on your shoulder."
-      return check.status === "tight" ? `${capitalize(amount)} too narrow. A tailor can't fix this.` : `${capitalize(amount)} too wide. A tailor can't fix this.`
-    default:
-      if (check.ease_cm < 0) return `${capitalize(amount)} smaller than you.`
-      if (check.status === "good") return `${capitalize(amount)} of room. Good.`
-      return check.status === "tight" ? `Only ${amount} of room.` : `${capitalize(amount)} of room. That's too much.`
-  }
+// What to call an item: its kind, or a dress or a skirt for those (a dress is fitted as a top, a skirt as pants).
+function kindLabel(kind, garment) {
+  if (garment?.style === "dress") return "Dress"
+  if (garment?.style === "skirt") return "Skirt"
+  return KINDS[kind]
 }
 
 // A warning about a measurement that looks unusual, in plain words.

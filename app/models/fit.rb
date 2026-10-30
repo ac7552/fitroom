@@ -157,8 +157,10 @@ module Fit
   Fix = Data.define(:action, :text, :amount)
   # status is "unknown" when the size chart doesn't give that measurement; ease is nil then.
   # note describes a measurement that has no right answer, such as where a coat's hem falls.
-  Check = Data.define(:part, :label, :ease, :status, :fix, :penalty, :note) do
-    def initialize(part:, label:, ease:, status:, fix:, penalty:, note: nil) = super
+  # good is the range of ease that fits for the cut chosen (cm), so a result can show where this size falls in
+  # it; nil when a check has no such range (a hem that only says where it ends).
+  Check = Data.define(:part, :label, :ease, :status, :fix, :penalty, :note, :good) do
+    def initialize(part:, label:, ease:, status:, fix:, penalty:, note: nil, good: nil) = super
     def fixable? = %w[good unknown].include?(status) || !fix.nil?
   end
   Result = Data.define(:size, :checks, :penalty) do
@@ -430,12 +432,13 @@ module Fit
         if snug && diff.between?(-SNUG_SHORT, TOP_LENGTH_TOLERANCE)
           next check(:length, "Length", diff, "good").with(note: knit ? "Made short, to end near your waist." : "A baby tee: made short, to end near your waist.")
         end
-        next check(:length, "Length", diff, "good") if diff.abs <= TOP_LENGTH_TOLERANCE
+        good = -TOP_LENGTH_TOLERANCE..TOP_LENGTH_TOLERANCE
+        next check(:length, "Length", diff, "good", good:) if diff.abs <= TOP_LENGTH_TOLERANCE
         if (roomy || dropped) && diff.negative? && diff >= -BOXY_SHORT
           next check(:length, "Length", diff, "good").with(note: "Made short and boxy. It ends at your hips.")
         end
 
-        check(:length, "Length", diff, diff.positive? ? "long" : "short", nil, (diff.abs - TOP_LENGTH_TOLERANCE) * WEIGHT[:length])
+        check(:length, "Length", diff, diff.positive? ? "long" : "short", nil, (diff.abs - TOP_LENGTH_TOLERANCE) * WEIGHT[:length], good:)
       end
     ]
     Result.new(size: size["name"], checks:, penalty: checks.sum(&:penalty).round(2))
@@ -475,9 +478,10 @@ module Fit
   end
 
   def hem_check(diff)
-    return check(:inseam, "Length", diff, "good") if diff.abs <= HEM_TOLERANCE
+    good = -HEM_TOLERANCE..HEM_TOLERANCE
+    return check(:inseam, "Length", diff, "good", good:) if diff.abs <= HEM_TOLERANCE
 
-    altered(:inseam, "Length", diff, diff.positive? ? "long" : "short", diff.abs - HEM_TOLERANCE)
+    altered(:inseam, "Length", diff, diff.positive? ? "long" : "short", diff.abs - HEM_TOLERANCE, good:)
   end
 
   def coat_length(length, height)
@@ -496,35 +500,37 @@ module Fit
 
   # rule: which weight and alterations apply; shown_as: the part name the API reports, when it differs.
   def range_check(rule, label, ease, range, shown_as: nil)
-    return check(shown_as || rule, label, ease, "good") if range.cover?(ease)
+    return check(shown_as || rule, label, ease, "good", good: range) if range.cover?(ease)
 
     status = ease < range.min ? "tight" : "loose"
     off = ease < range.min ? range.min - ease : ease - range.max
-    altered(rule, label, ease, status, off, shown_as:)
+    altered(rule, label, ease, status, off, shown_as:, good: range)
   end
 
   def sleeve_check(diff)
-    return check(:sleeve, "Sleeves", diff, "good") if diff.abs <= SLEEVE_TOLERANCE
+    good = -SLEEVE_TOLERANCE..SLEEVE_TOLERANCE
+    return check(:sleeve, "Sleeves", diff, "good", good:) if diff.abs <= SLEEVE_TOLERANCE
 
-    altered(:sleeve, "Sleeves", diff, diff.positive? ? "long" : "short", diff.abs)
+    altered(:sleeve, "Sleeves", diff, diff.positive? ? "long" : "short", diff.abs, good:)
   end
 
   def length_check(diff)
-    return check(:length, "Length", diff, "good") if diff.abs <= LENGTH_TOLERANCE
+    good = -LENGTH_TOLERANCE..LENGTH_TOLERANCE
+    return check(:length, "Length", diff, "good", good:) if diff.abs <= LENGTH_TOLERANCE
 
-    altered(:length, "Length", diff, diff.positive? ? "long" : "short", diff.abs - LENGTH_TOLERANCE)
+    altered(:length, "Length", diff, diff.positive? ? "long" : "short", diff.abs - LENGTH_TOLERANCE, good:)
   end
 
-  def altered(rule, label, ease, status, off, shown_as: nil)
+  def altered(rule, label, ease, status, off, shown_as: nil, good: nil)
     action, text, limit = ALTERATIONS.dig(rule, status.to_sym)
     if action && off <= limit
-      check(shown_as || rule, label, ease, status, Fix.new(action:, text:, amount: off.round(2)), off * WEIGHT[rule])
+      check(shown_as || rule, label, ease, status, Fix.new(action:, text:, amount: off.round(2)), off * WEIGHT[rule], good:)
     else
-      check(shown_as || rule, label, ease, status, nil, off * WEIGHT[rule] + UNFIXABLE)
+      check(shown_as || rule, label, ease, status, nil, off * WEIGHT[rule] + UNFIXABLE, good:)
     end
   end
 
-  def check(part, label, ease, status, fix = nil, penalty = 0)
-    Check.new(part: part.to_s, label:, ease: ease.round(2), status:, fix:, penalty: penalty.round(2))
+  def check(part, label, ease, status, fix = nil, penalty = 0, good: nil)
+    Check.new(part: part.to_s, label:, ease: ease.round(2), status:, fix:, penalty: penalty.round(2), good:)
   end
 end

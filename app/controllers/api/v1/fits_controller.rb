@@ -91,6 +91,7 @@ module Api
               part: check.part,
               label: check.label,
               ease_cm: check.ease,
+              good_cm: check.good && [ check.good.min.to_f.round(2), check.good.max.to_f.round(2) ],
               status: check.status,
               fixable: check.fixable?,
               note: check.note,

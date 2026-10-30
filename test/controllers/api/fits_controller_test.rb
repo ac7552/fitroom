@@ -17,6 +17,12 @@ class Api::FitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "cm", json["units"]
     assert_equal 18, json["sizes"].size
     assert_equal %w[shoulders chest waist sleeve length], json["sizes"].first["checks"].map { it["part"] }
+    # Each check says the range of ease that fits for the cut, so the page can show where a size falls in it.
+    best = json["sizes"].find { it["size"] == "40R" }["checks"].index_by { it["part"] }
+    chest = best["chest"]
+    assert_equal 2, chest["good_cm"].size
+    assert chest["good_cm"].first < chest["good_cm"].last
+    assert_equal [ -1.0, 1.0 ], best["sleeve"]["good_cm"]
   end
 
   test "explains what's missing or out of range" do
