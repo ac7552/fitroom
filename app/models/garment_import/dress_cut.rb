@@ -32,7 +32,7 @@ class GarmentImport
       [ "strapless", /strapless|bandeau|\btube (?:dress|top)|off[- ]the[- ]shoulders?|off[- ]shoulder|corset bodice/i ],
       [ "one_shoulder", /one[- ]shoulder|single[- ]shoulder|asymmetric(?:al)? (?:neck|shoulder)/i ],
       [ "halter", /halter/i ],
-      [ "long", /long[- ]sleeves?|\bl\/s\b|full[- ]length sleeves?|bishop sleeves?|raglan sleeves?/i ],
+      [ "long", /long[- ]sleeves?|\bl\/s\b|full[- ]length sleeves?|bishop sleeves?|raglan sleeves?|batwing|dolman|kimono sleeves?|\b[ck]aftan\b/i ],
       [ "short", /short[- ]sleeves?|cap sleeves?|puff sleeves?|t-?shirt dress|tee dress|flutter sleeves?|polo dress/i ],
       # Sleeves the listing only mentions in passing ("raw sleeve cuffs", "cold shoulder") are long ones.
       [ "long", /sleeve cuffs?|cold[- ]shoulder|cut[- ]?outs? (?:on|at) the shoulders?/i ],

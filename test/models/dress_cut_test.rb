@@ -69,6 +69,10 @@ class DressCutTest < ActiveSupport::TestCase
     polo = GarmentImport::DressCut.read({ name: "Alexander Wang Crystal Embellished Polo Dress - Light Pink", description: "Stretch cotton jersey Crystal buttons",
                                           dress_shape: { halter: true } })
     assert_equal [ "short", true ], polo.values_at(:sleeves, :collar)
+    # A caftan's batwing sleeves are wide at the top of its photo, not a halter's narrow neck.
+    caftan = GarmentImport::DressCut.read({ name: "Missoni Short Cover-Up Caftan With Batwing Sleeves - Multi", category: "Mini Dresses", description: "",
+                                            dress_shape: { halter: true } })
+    assert_equal [ "long", "mini" ], caftan.values_at(:sleeves, :length)
     # A flounce's width at the hem isn't the body's: the body stays as it is, the flounce goes on.
     mela = GarmentImport::DressCut.read({ name: "Aya Muse Mela Mini Dress", description: "Ruffled hem Slim fit", dress_shape: { waist: 0.84, hips: 1.1, hem: 1.29, flare_from: "knee" } })
     assert_equal [ "slim", false ], mela.values_at(:fit, :hem_flare)
