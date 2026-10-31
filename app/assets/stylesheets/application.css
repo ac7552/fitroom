@@ -547,32 +547,8 @@ a { color: inherit; }
 }
 .stage--studio .stage-photo, .stage--daylight .stage-photo { border-color: rgb(16 18 22 / 0.12); }
 
-/* The view, pose and body switches float at the bottom of the screen once the 3D view has scrolled away. */
+/* The view, pose and body switches sit in the 3D view's top bar. */
 .stage-switches { display: contents; }
-.stage-switches.is-floating {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 16px;
-  z-index: 20;
-  width: fit-content;
-  margin-inline: auto;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  max-width: calc(100vw - 32px);
-  padding: 8px;
-  border: 1px solid #343841;
-  border-radius: 6px;
-  background: rgb(21 23 27 / 0.92);
-  color: #e9ebef;
-  --ink: #e9ebef;
-  --bg: #15171b;
-  --line: #343841;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
-  backdrop-filter: blur(8px);
-}
 /* The AI picture's button, when the server has a try-on service: in the same graphite glass. */
 .studio-start { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .studio-take { padding: 9px 14px; border: 1px solid #e9ebef; border-radius: 4px; background: #e9ebef; color: #101216; font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
@@ -801,16 +777,16 @@ a { color: inherit; }
   border-top: 1px solid var(--line);
 }
 .part-name { font: 500 10.5px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
-.part-bar { position: relative; height: 30px; }
+.part-bar { position: relative; height: 34px; }
 .part-bar--none { height: 0; }
-.part-line { position: absolute; left: 0; right: 0; top: 11px; height: 1px; background: var(--line); }
-.part-ok { position: absolute; top: 6px; height: 11px; background: var(--frost); }
-.part-ends { position: absolute; left: 0; right: 0; top: 20px; display: flex; justify-content: space-between; font: 500 8.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.part-mark { position: absolute; top: 2px; width: 2px; height: 19px; margin-left: -1px; background: var(--ink); }
-.part-mark::after { content: ""; position: absolute; left: -3px; top: -3px; width: 8px; height: 8px; }
-.part-mark--good::after { background: #3fa672; }
-.part-mark--tight::after { background: #de4f37; }
-.part-mark--loose::after { background: #4f63f0; }
+/* Each bar is drawn like the measurement sliders: a thin rounded track, the range that fits filled in the
+   middle, and a round thumb where this size falls (ink when it fits, the fit view's colour when it doesn't). */
+.part-line { position: absolute; left: 0; right: 0; top: 9px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--ink) 12%, transparent); }
+.part-ok { position: absolute; top: 9px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--ink) 38%, transparent); }
+.part-ends { position: absolute; left: 0; right: 0; top: 23px; display: flex; justify-content: space-between; font: 500 9.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.part-mark { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 2px var(--surface), 0 1px 3px rgb(0 0 0 / 0.25); }
+.part-mark--tight { background: #de4f37; }
+.part-mark--loose { background: #4f63f0; }
 .part-say { font-size: 14px; line-height: 1.35; color: var(--muted); }
 .unchecked { margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
 

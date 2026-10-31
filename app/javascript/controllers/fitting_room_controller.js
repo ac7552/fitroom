@@ -76,7 +76,6 @@ export default class extends Controller {
     this.showScene(this.sceneTargets.find(radio => radio.checked)?.value ?? "studio")
     // On the page, a garment just put on gets its slow turn round (not in a still picture).
     this.stage.revealTurns = true
-    this.floatSwitches()
     this.watchInsets()
     // One garment done isn't the outfit done: the loader goes when the stage says everything is on.
     this.stage.onDrape = phase => {
@@ -95,7 +94,6 @@ export default class extends Controller {
   }
 
   disconnect() {
-    this.switchWatch?.disconnect()
     this.insetWatch?.disconnect()
     clearTimeout(this.timer)
     this.requests?.forEach(r => r.abort())
@@ -1115,20 +1113,6 @@ export default class extends Controller {
   showsExample(example) {
     const measurements = this.readMeasurements()
     return REQUIRED.every(key => measurements[key] > 0 && Math.abs(toCm(measurements[key], this.unit) - example[key]) < 1)
-  }
-
-  // The view, pose and body switches float with the page while the 3D view is off screen and the fitting room
-  // is on it, so they're always at hand.
-  floatSwitches() {
-    if (!this.hasSwitchesTarget || !("IntersectionObserver" in window)) return
-    const seen = new Map()
-    this.switchWatch = new IntersectionObserver(entries => {
-      for (const entry of entries) seen.set(entry.target, entry.isIntersecting)
-      const stageSeen = seen.get(this.canvasTarget) ?? true, roomSeen = seen.get(this.element) ?? false
-      this.switchesTarget.classList.toggle("is-floating", !stageSeen && roomSeen)
-    }, { threshold: 0.05 })
-    this.switchWatch.observe(this.canvasTarget)
-    this.switchWatch.observe(this.element)
   }
 
   useDress() {
