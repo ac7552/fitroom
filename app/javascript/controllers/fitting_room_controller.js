@@ -2216,6 +2216,10 @@ async function readBackPhoto(images, { shape, bottomShape }) {
   if (!pick) return null
   const photo = await readShopPhoto(pick.src)
   if (!photo || named) return photo
+  // Not a photo of it worn (Kith's second photo of jeans is on a model, his loafers at the hems, cut off by
+  // the frame's top): laid out or hung for its photo, a garment stands clear of the frame's edges.
+  const traits = await readPhotoTraits(photo).catch(() => null)
+  if (!traits?.garment || traits.touches > 0 || traits.skin > 0.002) return null
   const near = (a, b) => a && b && Math.abs(a / b - 1) < 0.15
   // Either reading matching is enough: a top is read as trousers too (a hoodie's body and hood as legs and
   // a waist), and that reading moves a lot with a hood up or down.

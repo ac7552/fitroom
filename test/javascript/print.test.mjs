@@ -797,3 +797,20 @@ test("the cuffs of sleeves folded behind, peeking out at the hem's corners, aren
   assert.equal(low, 0, "nothing printed by the hem's corners")
   assert.ok(found.print.coverage > 0.02, "the logo stays")
 })
+
+test("the backdrop's shadow down the pants' side isn't laid on the leg as a pale stripe", () => {
+  const { data, w, h } = bottoms({ hem: 48 })
+  // A soft shadow 14 px wide down the photo's right leg's outer side, from the light at the left.
+  for (let y = 24; y < 290; y++) for (let x = 170; x < 184; x++) {
+    const k = 4 * (y * w + x)
+    if (data[k] < 100) continue
+    const v = Math.round(236 - 16 * (1 - (x - 170) / 14))
+    data.set([v, v, v + 2, 255], k)
+  }
+  const read = readBottom(data, w, h)
+  // The leg's outer edge at the knee is the cloth's, not the shadow's.
+  const { rows, top, bottom } = read.layout
+  const k = Math.round((bottom - top) * 0.6)
+  const right = Math.max(...rows.slice(4 * k, 4 * k + 4))
+  assert.ok(right < 172, `right edge ${right}`)
+})

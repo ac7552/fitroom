@@ -465,14 +465,14 @@ function shadowless(cut, w, h) {
 }
 
 // The garment's outline less the backdrop's soft shadow round its edge: what's darker than the backdrop by a
-// little, in its grey, and nearer its colour than the cloth's, reached from outside the outline. A white
+// little, in its own grey (a cream logo down a seam is warmer), and nearer its colour than the cloth's, reached from outside the outline. A white
 // graphic or white sleeves (lighter than the backdrop) aren't shadow; an off-white cloth is nearer its own
 // colour.
 export function withoutShadow(mask, lab, bg, baseLab, w, h) {
   const backdrop = i => {
     const dl = bg[0] - lab[3 * i], dc = Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2])
     const toCloth = Math.hypot(lab[3 * i] - baseLab[0], lab[3 * i + 1] - baseLab[1], lab[3 * i + 2] - baseLab[2])
-    return dl >= -1 && dl <= 18 && dc <= 8 && Math.hypot(dl, dc) < toCloth
+    return dl >= -1 && dl <= 18 && dc <= 5 && Math.hypot(dl, dc) < toCloth
   }
   const out = Uint8Array.from(mask), stack = []
   for (let y = 0; y < h; y++) {
@@ -2253,6 +2253,17 @@ export function readBottom(data, w, h) {
   if (hanger.hung) {
     mask = belowHangerBar(mask, w, h, lab, clothLab, top, bottom)
     ;[top, bottom] = extent()
+  }
+  // The backdrop's soft shadow down a leg's side and under the hems is outline too: laid on the 3D pants, it
+  // was a pale stripe down the outer seam.
+  {
+    let before = 0
+    for (let i = 0; i < w * h; i++) before += mask[i]
+    const piece = largestPiece(withoutShadow(mask, lab, bg, clothLab, w, h), w, h)
+    if (piece.count > before * 0.6) {
+      mask = piece.mask
+      ;[top, bottom] = extent()
+    }
   }
   // The backdrop seen through the garment (inside a drawcord's loop, between a pocket and the leg) isn't
   // cloth: small backdrop-coloured holes are painted over like the backdrop round it, rather than laid on
