@@ -36,7 +36,8 @@ Optional settings are environment variables, listed in `.env.example`; copy it t
 4. **Pick a size.** The best size is marked with a star. Tap any other size to see it drape. Each part
    (shoulders, chest, waist, sleeves, length) says if it fits, and what a tailor could fix.
 5. **Check the fit.** **Fit colors** paints the cloth by how each part fits. **Clothes only** hides the
-   mannequin.
+   mannequin. **Take a photo** saves what's on screen; with ComfyUI running on your computer (see
+   `docs/handoff-plan.md`, "Studio look"), it's also finished to look like a studio shot.
 
 ## Features
 

@@ -275,12 +275,14 @@
               <label title="<%= label %>"><input type="radio" name="tone" value="<%= color %>" <%= "checked" if i.zero? %> autocomplete="off" data-action="fitting-room#changeTone"><span style="background: <%= color %>" aria-hidden="true"></span><span class="visually-hidden"><%= label %></span></label>
             <% end %>
           </div>
-          <% if TryOn.available? %>
-            <div class="studio-start">
+          <div class="studio-start">
+            <button type="button" class="studio-take" data-action="fitting-room#studioPhoto"
+                    title="A still photo of what's on screen, made on this device. With the studio program running on this computer, it's also finished to look like a studio shot, here too.">Take a photo</button>
+            <% if TryOn.available? %>
               <button type="button" class="studio-take" data-fitting-room-target="aiButton" data-action="fitting-room#aiPicture"
                       title="AI paints the stores' own photos of your clothes onto this picture. Only the picture and the stores' photos are sent, and nothing is kept.">Real clothes (AI)</button>
-            </div>
-          <% end %>
+            <% end %>
+          </div>
           <p class="stage-note" data-fitting-room-target="stageNote"></p>
         </div>
         <div class="stage-loading" role="status" aria-live="polite" data-fitting-room-target="loading" hidden>

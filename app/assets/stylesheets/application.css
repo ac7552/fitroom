@@ -554,6 +554,9 @@ a { color: inherit; }
 .studio-take { padding: 9px 14px; border: 1px solid #e9ebef; border-radius: 4px; background: #e9ebef; color: #101216; font: 500 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
 .studio-take:hover { background: transparent; color: #e9ebef; }
 .studio-take:focus-visible { outline: 2px solid #8fb0ff; outline-offset: 2px; }
+/* On the pale studio and daylight backdrops, ink on light would vanish: the buttons go dark there. */
+.stage--studio .stage-top .studio-take, .stage--daylight .stage-top .studio-take { background: #101216; border-color: #101216; color: #f4f2ee; }
+.stage--studio .stage-top .studio-take:hover, .stage--daylight .stage-top .studio-take:hover { background: transparent; color: #101216; }
 /* While a garment is sewn: a soft band of light sweeps down over the figure (the one it replaces stays on
    until the new one is ready), with a small line saying what's happening and how far along it is, low in the
    picture above the size rows. It fades once the clothes are on (and comes back at once, with no fade in, so
