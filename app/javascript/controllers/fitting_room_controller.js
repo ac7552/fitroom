@@ -2212,24 +2212,27 @@ async function readShoePhotos(images, first) {
 async function readBackPhoto(images, { shape, bottomShape }) {
   const rest = (images ?? []).slice(1, 6)
   const named = rest.find(image => /back/i.test(String(image.src).split("/").pop().split("?")[0]))
-  const pick = named ?? rest[0]
-  if (!pick) return null
-  const photo = await readShopPhoto(pick.src)
-  if (!photo || named) return photo
-  // Not a photo of it worn (Kith's second photo of jeans is on a model, his loafers at the hems, cut off by
-  // the frame's top): laid out or hung for its photo, a garment stands clear of the frame's edges.
-  const traits = await readPhotoTraits(photo).catch(() => null)
-  if (!traits?.garment || traits.touches > 0 || traits.skin > 0.002) return null
+  if (named) return readShopPhoto(named.src)
   const near = (a, b) => a && b && Math.abs(a / b - 1) < 0.15
-  // Either reading matching is enough: a top is read as trousers too (a hoodie's body and hood as legs and
-  // a waist), and that reading moves a lot with a hood up or down.
-  if (shape) {
-    const other = await readTopShape(photo).catch(() => null)
-    if (other && near(other.length, shape.length) && near(other.waist, shape.waist)) return photo
-  }
-  if (bottomShape) {
-    const other = await readBottomShape(photo).catch(() => null)
-    if (other && near(other.length, bottomShape.length) && near(other.hips, bottomShape.hips)) return photo
+  // The first of the other photos that's the garment laid out or hung as the front is (standing clear of the
+  // frame's edges: not on a model, cut off by the frame, nor a close-up of its cloth or a pocket), and its
+  // shape. Kith's jeans: a model shot, then the back on the hanger, then close-ups.
+  for (const image of rest) {
+    const small = await readShopPhoto(image.src, 400)
+    const traits = small ? await readPhotoTraits(small).catch(() => null) : null
+    if (!traits?.garment || traits.touches > 0) continue
+    const photo = await readShopPhoto(image.src)
+    if (!photo) continue
+    // Either reading matching is enough: a top is read as trousers too (a hoodie's body and hood as legs and
+    // a waist), and that reading moves a lot with a hood up or down.
+    if (shape) {
+      const other = await readTopShape(photo).catch(() => null)
+      if (other && near(other.length, shape.length) && near(other.waist, shape.waist)) return photo
+    }
+    if (bottomShape) {
+      const other = await readBottomShape(photo).catch(() => null)
+      if (other && near(other.length, bottomShape.length) && near(other.hips, bottomShape.hips)) return photo
+    }
   }
   return null
 }
