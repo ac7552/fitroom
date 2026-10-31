@@ -206,6 +206,30 @@ test("sleeves another colour all round are wrapped round, with their cuffs' colo
   assert.ok(graphic.sleeves.left && !graphic.sleeves.left.wrap && !graphic.sleeves.left.cuff, "a patch is a graphic")
 })
 
+// A navy crewneck on a hanger, its sleeves folded behind it, with the backdrop's soft shadow down its left side
+// and under its hem (as Kith's Needlepoint Box Logo Nelson Crewneck is photographed).
+function shadowed() {
+  const w = 240, h = 260, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = [236, 236, 236]
+    const t = (y >= 40 && y < 222 && x >= 46 && x < 70) ? 1 - (70 - x) / 24 : (y >= 200 && y < 214 && x >= 52 && x < 196) ? 1 - (y - 200) / 14 : 0
+    if (t > 0) c = [222, 222, 225].map(v => Math.round(236 + (v - 236) * (0.4 + 0.6 * t)))
+    const torso = x >= 70 && x < 190 && y >= 40 && y < 200
+    const shoulders = y >= 30 && y < 60 && x >= 64 + (60 - y) * 0.3 && x < 196 - (60 - y) * 0.3
+    if (torso || shoulders) c = [22, 28, 41]
+    data.set([...c, 255], 4 * (y * w + x))
+  }
+  return { data, w, h }
+}
+
+test("the backdrop's shadow beside a garment isn't read as a grey sleeve and wrapped round it", () => {
+  const { data, w, h } = shadowed()
+  const found = findPrint(data, w, h)
+  assert.equal(found.color, "#161c29")
+  assert.equal(found.sleeves.left, null)
+  assert.equal(found.sleeves.right, null)
+})
+
 // A made-up dress photo: a wine slip dress on two straps, fitted to the waist and flaring to its hem, with a
 // pale square on the skirt at the photo's right (the wearer's left).
 function dressPhoto() {
