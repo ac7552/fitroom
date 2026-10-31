@@ -331,6 +331,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uPrintOn: { value: 0 },
     uPrintHalf: { value: 26 },
     uPrintLength: { value: 70 },
+    // How far below the shoulders' high points the photo's front (and its back's) starts, in cm.
+    uPrintTop: { value: 0 },
+    uBackTop: { value: 0 },
     // An all-over print: the printed cloth itself (a piece of the photo's front), repeated over every other
     // piece at its size on the garment (uTile: across and down, cm, and how far below the shoulders it starts).
     uPrintTile: { value: BLANK },
@@ -435,6 +438,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPrintOn;
         uniform float uPrintHalf;
         uniform float uPrintLength;
+        uniform float uPrintTop;
+        uniform float uBackTop;
         uniform sampler2D uPrintTile;
         uniform float uAllOver;
         uniform vec3 uTile;
@@ -572,14 +577,14 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           diffuseColor.rgb = gl_FrontFacing ? stripe : mix( diffuseColor.rgb, stripe, 0.8 );
         }
         if ( backPhoto && gl_FrontFacing ) {
-          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
+          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), ( -vPattern.y - uBackTop ) / ( uPrintLength - uBackTop ) );
           if ( st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0 ) {
             vec4 printed = texture2D( uBack, vec2( st.x, 1.0 - st.y ) );
             diffuseColor.rgb = mix( diffuseColor.rgb, printed.rgb, printed.a );
           }
         }
         if ( uPrintOn > 0.5 && vPiece > 0.5 && vPiece < 1.5 && gl_FrontFacing ) {
-          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), -vPattern.y / uPrintLength );
+          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), ( -vPattern.y - uPrintTop ) / ( uPrintLength - uPrintTop ) );
           if ( st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0 ) {
             vec4 printed = texture2D( uPrint, vec2( st.x, 1.0 - st.y ) );
             diffuseColor.rgb = mix( diffuseColor.rgb, printed.rgb, printed.a );

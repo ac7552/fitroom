@@ -85,7 +85,7 @@ export async function readPhoto(src, { shape = null, hood = true, patterns = tru
     out.getContext("2d").putImageData(new ImageData(found.print.data, found.print.width, found.print.height), 0, 0)
     const strip = found.print.strip
     print = {
-      image: out, coverage: found.print.coverage, spread: found.print.spread, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes,
+      image: out, coverage: found.print.coverage, spread: found.print.spread, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes, fromTop: found.print.fromTop ?? 0,
       strip: strip ? stripCanvas(strip) : null, vertical: Boolean(strip?.vertical),
       stripSpan: strip && !strip.vertical ? strip.span : 1, stripAcross: strip?.vertical ? { from: strip.from, span: strip.span } : null
     }
@@ -152,7 +152,11 @@ function allOverTile(print) {
 export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, patterns = true, sleeves: sleeveGuess = true } = {}) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
-  const { lab, bg, garment, far } = cut
+  const { lab, bg, far } = cut
+  // The backdrop's soft shadow round the garment (darker than the backdrop, in its grey) is outline too: left
+  // in, it widens the front on its side and lengthens it below the hem, so a chest logo in the middle of the
+  // front is laid off to one side and too high, and the shadow down a side was read as a grey sleeve.
+  const garment = shadowless(cut, w, h)
 
   // Its rows from the shoulders to the hem (not a hood standing up above them, nor sleeves hanging below
   // it), and the torso: as wide as the garment is near its hem (the sleeves stick out higher up), centred
@@ -336,15 +340,18 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   if (patterned && !strong) for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
   const allOver = (strong && patterns) || patterned
   // A small logo or a line of text counts: 0.3% of the front (a chest patch is about 1%).
-  const print = coverage > 0.003 || patterned ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip } : null
-  // A graphic on a sleeve (an all-over print or stripes already cover them). The sleeves are looked for in
-  // the outline less the backdrop's soft shadow round it: a hanging garment's shadow down its side (and
-  // below its hem) is outline too, and was read as a sleeve standing clear of the body in the backdrop's
-  // grey, then wrapped all round the sleeve.
-  const cloth = allOver || !sleeveGuess ? null : withoutShadow(garment.mask, lab, bg, baseLab, w, h)
-  const sleeves = !cloth ? { left: null, right: null } : {
-    left: sleevePrint(data, lab, cloth, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
-    right: sleevePrint(data, lab, cloth, w, h, { x0, x1, top, bottom }, rows, baseLab, 1)
+  // The 3D view lays the print from the shoulders' high points down to the hem; the front here starts at the
+  // shoulder line, a little lower. The top of the collar above it is about the high points (the hook above
+  // that is far narrower), so the print starts that share of the way down (a chest logo was drawn about
+  // 5 cm too high).
+  let collarTop = top
+  if (!hood) while (collarTop > 0 && rows.rowMax[collarTop - 1] - rows.rowMin[collarTop - 1] >= Math.max(3, widest * 0.12)) collarTop--
+  const fromTop = Math.min(0.25, Math.max(0, (top - collarTop) / Math.max(1, bottom - collarTop)))
+  const print = coverage > 0.003 || patterned ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip, fromTop } : null
+  // A graphic on a sleeve (an all-over print or stripes already cover them).
+  const sleeves = allOver || !sleeveGuess ? { left: null, right: null } : {
+    left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
+    right: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, 1)
   }
   const look = lookOf(out, pw, ph, coverage, allOver, color)
   // The front's length over its width, shoulders to hem (a cropped top is about 0.5 to 1; a tee about 1.4).
@@ -438,14 +445,32 @@ export function printSpread(alpha, pw, ph, cloth) {
   return cells ? printed / cells : 0
 }
 
-// The garment's outline less the backdrop round its edge: what's nearer the backdrop's colour than the
-// cloth's (a soft shadow, the backdrop between a sleeve and the body), reached from outside the outline. A
-// white graphic inside the outline isn't reached; an off-white cloth is nearer its own colour.
+// The garment's outline (cutOut's) less the backdrop's soft shadow round it, and its largest piece then. The
+// cloth's colour is the commonest over the middle of the outline. Kept as cut when taking the shadow off
+// would take most of the garment with it (a grey garment on a grey backdrop).
+function shadowless(cut, w, h) {
+  const { lab, bg, garment } = cut
+  let x0 = w, x1 = -1, y0 = h, y1 = -1
+  for (let i = 0; i < w * h; i++) if (garment.mask[i]) { const x = i % w, y = (i - x) / w; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y) }
+  const middle = []
+  for (let y = Math.round(y0 + (y1 - y0) * 0.3); y <= y0 + (y1 - y0) * 0.7; y++) {
+    for (let x = Math.round(x0 + (x1 - x0) * 0.3); x <= x0 + (x1 - x0) * 0.7; x++) if (garment.mask[y * w + x]) middle.push(y * w + x)
+  }
+  if (!middle.length) return garment
+  const cloth = [0, 1, 2].map(c => median(middle.map(i => lab[3 * i + c])))
+  const piece = largestPiece(withoutShadow(garment.mask, lab, bg, cloth, w, h), w, h)
+  return piece.count > garment.count * 0.6 ? piece : garment
+}
+
+// The garment's outline less the backdrop's soft shadow round its edge: what's darker than the backdrop by a
+// little, in its grey, and nearer its colour than the cloth's, reached from outside the outline. A white
+// graphic or white sleeves (lighter than the backdrop) aren't shadow; an off-white cloth is nearer its own
+// colour.
 export function withoutShadow(mask, lab, bg, baseLab, w, h) {
   const backdrop = i => {
-    const dl = Math.abs(lab[3 * i] - bg[0]), dc = Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2])
+    const dl = bg[0] - lab[3 * i], dc = Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2])
     const toCloth = Math.hypot(lab[3 * i] - baseLab[0], lab[3 * i + 1] - baseLab[1], lab[3 * i + 2] - baseLab[2])
-    return dl <= 18 && dc <= 12 && Math.hypot(dl, dc) < toCloth
+    return dl >= -1 && dl <= 18 && dc <= 8 && Math.hypot(dl, dc) < toCloth
   }
   const out = Uint8Array.from(mask), stack = []
   for (let y = 0; y < h; y++) {

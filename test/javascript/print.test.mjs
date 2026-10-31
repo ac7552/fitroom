@@ -222,12 +222,18 @@ function shadowed() {
   return { data, w, h }
 }
 
-test("the backdrop's shadow beside a garment isn't read as a grey sleeve and wrapped round it", () => {
+test("the backdrop's shadow beside a garment isn't read as a grey sleeve, nor as front", () => {
   const { data, w, h } = shadowed()
   const found = findPrint(data, w, h)
   assert.equal(found.color, "#161c29")
   assert.equal(found.sleeves.left, null)
   assert.equal(found.sleeves.right, null)
+  // The front is the body's own, side to side and down to its hem: a logo in its middle is laid in the middle.
+  assert.deepEqual([found.rect[0], found.rect[2], found.rect[3]], [70, 189, 199])
+  // White sleeves (lighter than the backdrop) aren't shadow: they're still wrapped round.
+  const white = layered({ sleeve: [250, 250, 250] })
+  const sleeved = findPrint(white.data, white.w, white.h)
+  assert.ok(sleeved.sleeves.left?.wrap && sleeved.sleeves.right?.wrap)
 })
 
 // A made-up dress photo: a wine slip dress on two straps, fitted to the waist and flaring to its hem, with a
@@ -753,4 +759,21 @@ test("three stripes side by side over each shoulder stay on the front; one diago
   assert.ok(kept(three, x, y) > 200, "the stripes stay")
   assert.ok(kept(one, x, y) < 50, "a single line goes")
   assert.ok(kept(one, 120, 106) > 200 && kept(three, 120, 106) > 200, "the word stays either way")
+})
+
+test("a print is laid from the top of the collar (about the shoulders' high points), not the shoulder line", () => {
+  const w = 200, h = 220, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = [236, 236, 236]
+    const collar = y >= 20 && y < 34 && x >= 80 && x < 120
+    const shoulders = y >= 34 && y < 44 && x >= 80 - (y - 34) * 4 && x < 120 + (y - 34) * 4
+    const body = x > 50 && x < 150 && y >= 44 && y < 180
+    if (collar || shoulders || body) c = [31, 44, 77]
+    if (x > 85 && x < 115 && y > 70 && y < 90) c = [250, 250, 250]
+    data.set([...c, 255], 4 * (y * w + x))
+  }
+  const found = findPrint(data, w, h)
+  // The front is read from the shoulder line (y 36) to the hem (179); the collar's top is 16 rows above it.
+  assert.equal(found.rect[1], 36)
+  assert.ok(Math.abs(found.print.fromTop - 16 / 159) < 0.01, `fromTop ${found.print.fromTop}`)
 })

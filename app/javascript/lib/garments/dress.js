@@ -623,6 +623,9 @@ export class DrapedTop {
     const shown = this.item.photoSize ?? { chest: m.chest, length: m.length + band }
     uniforms.uPrintHalf.value = shown.chest / 4
     uniforms.uPrintLength.value = shown.length
+    // Where the photo's front starts below the shoulders' high points (print.js's fromTop), front and back.
+    uniforms.uPrintTop.value = (print?.fromTop ?? 0) * shown.length
+    uniforms.uBackTop.value = (back?.fromTop ?? 0) * shown.length
     const texture = (canvas, wrap = false) => {
       const t = new THREE.CanvasTexture(canvas)
       t.colorSpace = THREE.SRGBColorSpace
