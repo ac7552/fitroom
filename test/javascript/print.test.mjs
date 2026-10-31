@@ -777,3 +777,23 @@ test("a print is laid from the top of the collar (about the shoulders' high poin
   assert.equal(found.rect[1], 36)
   assert.ok(Math.abs(found.print.fromTop - 16 / 159) < 0.01, `fromTop ${found.print.fromTop}`)
 })
+
+test("the cuffs of sleeves folded behind, peeking out at the hem's corners, aren't print", () => {
+  const w = 240, h = 260, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = [236, 236, 236]
+    const torso = x >= 70 && x < 190 && y >= 40 && y < 200
+    const shoulders = y >= 30 && y < 60 && x >= 64 + (60 - y) * 0.3 && x < 196 - (60 - y) * 0.3
+    if (torso || shoulders) c = [22, 28, 41]
+    // The cuffs' rib, lit, at the hem's corners; a logo on the chest.
+    if (y >= 182 && y < 198 && ((x >= 74 && x < 84) || (x >= 176 && x < 186))) c = [120, 128, 150]
+    if (x >= 110 && x < 150 && y >= 70 && y < 86) c = [190, 40, 60]
+    data.set([...c, 255], 4 * (y * w + x))
+  }
+  const found = findPrint(data, w, h)
+  const { width: pw, height: ph, data: px } = found.print
+  let low = 0
+  for (let y = Math.floor(ph * 0.75); y < ph; y++) for (let x = 0; x < pw; x++) if (px[4 * (y * pw + x) + 3] > 60) low++
+  assert.equal(low, 0, "nothing printed by the hem's corners")
+  assert.ok(found.print.coverage > 0.02, "the logo stays")
+})

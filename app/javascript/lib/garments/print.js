@@ -302,6 +302,8 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   const whole = printAreas(alpha, gap, pw, ph)
   // The size label printed inside the back of the neck, seen through the neck opening: not on the front.
   dropNeckLabel(alpha, whole, pw, ph)
+  // Nor the cuffs of sleeves folded behind, peeking out at the hem's corners.
+  dropCornerBits(alpha, whole, pw, ph)
   let covered = 0
   const out = new Uint8ClampedArray(4 * pw * ph)
   for (let k = 0; k < pw * ph; k++) {
@@ -607,6 +609,34 @@ export function sidesFromCuffs(mask, w, rows, x0, x1) {
 // A neck label (a size and brand printed inside the back of the neck, seen through the neck opening): a
 // small piece of print high up in the middle, above where any graphic on the front starts. Painted out of
 // the print (alpha, and the print's filled areas, whole) in place.
+// The cuffs of long sleeves folded behind a top on a hanger show at the hem's corners, their rib darker than
+// the front: small marks at a side of the front, low down. Painted out of the print (alpha, and the print's
+// filled areas, whole) in place.
+export function dropCornerBits(alpha, whole, pw, ph) {
+  const on = new Uint8Array(pw * ph)
+  for (let k = 0; k < pw * ph; k++) if (Math.max(alpha[k], whole[k]) >= 0.05) on[k] = 1
+  const seen = new Uint8Array(pw * ph)
+  for (let k = 0; k < pw * ph; k++) {
+    if (!on[k] || seen[k]) continue
+    const members = [], stack = [k]
+    let left = pw, right = -1, top = ph
+    seen[k] = 1
+    while (stack.length) {
+      const i = stack.pop(), x = i % pw, y = (i - x) / pw
+      members.push(i)
+      left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y)
+      for (const j of [x > 0 ? i - 1 : -1, x < pw - 1 ? i + 1 : -1, i - pw, i + pw]) {
+        if (j < 0 || j >= pw * ph || seen[j] || !on[j]) continue
+        seen[j] = 1
+        stack.push(j)
+      }
+    }
+    // Near a side of the front, all of it in its bottom quarter, and small: a cuff, not a graphic.
+    const side = right < pw * 0.2 || left > pw * 0.8
+    if (side && top >= ph * 0.75 && members.length < pw * ph * 0.015) for (const i of members) { alpha[i] = 0; whole[i] = 0 }
+  }
+}
+
 export function dropNeckLabel(alpha, whole, pw, ph) {
   const on = new Float32Array(pw * ph)
   let total = 0
