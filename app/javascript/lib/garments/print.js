@@ -2330,18 +2330,30 @@ export function readBottom(data, w, h) {
   // The back isn't photographed, and takes the softened copy: a print on the front (lettering down a leg, a
   // hip logo, a contrast pocket) would show on it as a mirrored smear, so it's painted over in the cloth
   // round it there, like the backdrop is. The cloth's wash and fading, its seams and its bands stay.
+  // An all-over print (a camo, a plaid, a floral) is on the back too: its cloth, repeated (see printSwatch),
+  // from the seat (below the waistband, above the crotch) or a skirt's body.
+  const kind = printSwatch(data, lab, clothLab, inner, w, h, {
+    rowAt: y => [rows[4 * (y - top)], rows[4 * (y - top) + 1]],
+    y0: top + (crotch === null ? 0.2 : 0.12) * tall, y1: crotch === null ? top + 0.9 * tall : crotch - 2
+  })
+  if (kind.allOver) return { color, filled, soft: tileSwatch(filled, kind, w, h), print: new Uint8Array(w * h), allOver: true, repeat: kind.repeat, layout: { w, h, top, bottom, crotch, rows } }
   const print = bottomsPrint(lab, clothLab, inner, w, h, runs)
   const plain = print.some(Boolean) ? fillIn(Uint8Array.from(inner, (on, i) => (on && !print[i] ? 1 : 0))) : filled
   const soft = blurPixels(plain, inner, w, h, Math.max(3, Math.round(w * 0.025)))
-  return { color, filled, soft, print, layout: { w, h, top, bottom, crotch, rows } }
+  return { color, filled, soft, print, allOver: false, layout: { w, h, top, bottom, crotch, rows } }
 }
 
 // A dress's shop photo, to lay on the cloth as pants' is (see photo_map.js's dressPhotoUV): its sequins, lace,
 // print, texture and shading as photographed, which a colour and a placed graphic can't give. { color,
-// image, soft, layout } as readBottomPhoto's, the layout's rows the body's own outline (not a sleeve lying
-// apart from it) from its top (the straps' or shoulders') to its hem. Null when the photo doesn't show a
-// dress laid flat or hung from the front.
-export async function readDressPhoto(src) {
+// image, soft, layout, allOver, plain } as readBottomPhoto's, the layout's rows the body's own outline (not a
+// sleeve lying apart from it) from its top (the straps' or shoulders') to its hem. Null when the photo doesn't
+// show a dress laid flat or hung from the front. soft, for what the photo doesn't show (the back, the straps):
+// an all-over print's own cloth, repeated (see printSwatch); else the photo softened. `flatten` (a dress, not
+// a jacket's wash): a plain one's folds and shadows as photographed are evened out (see flattenFolds); and
+// `draped` (its listing says so: a cowl, a blouson, gathers), a plain one's photo is mostly its softened copy,
+// the drape only hinted: those folds are the cut's own, which the 3D cloth doesn't make, and painted on a
+// smooth bodice their pale crests read as skin showing through.
+export async function readDressPhoto(src, { flatten = false, draped = false } = {}) {
   const image = await loadImage(src).catch(() => null)
   if (!image) return null
   const scale = Math.min(1, PHOTO_SIZE / Math.max(image.naturalWidth, image.naturalHeight))
@@ -2351,7 +2363,7 @@ export async function readDressPhoto(src) {
   canvas.height = h
   const context = canvas.getContext("2d", { willReadFrequently: true })
   context.drawImage(image, 0, 0, w, h)
-  const read = readDress(context.getImageData(0, 0, w, h).data, w, h)
+  const read = readDress(context.getImageData(0, 0, w, h).data, w, h, { flatten, draped })
   if (!read) return null
   const toCanvas = pixels => {
     const out = document.createElement("canvas")
@@ -2360,12 +2372,12 @@ export async function readDressPhoto(src) {
     out.getContext("2d").putImageData(new ImageData(pixels, w, h), 0, 0)
     return out
   }
-  return { color: read.color, image: toCanvas(read.filled), soft: toCanvas(read.soft), layout: read.layout }
+  return { color: read.color, image: toCanvas(read.filled), soft: toCanvas(read.soft), layout: read.layout, allOver: read.allOver, plain: read.plain }
 }
 
 // The same on raw RGBA pixels. layout: { w, h, top, bottom, dress: true, rows: for each row from top to
 // bottom, [left, right] (the body's outer edges there) }.
-export function readDress(data, w, h) {
+export function readDress(data, w, h, { flatten = false, draped = false } = {}) {
   const cut = cutOut(data, w, h)
   if (!cut) return null
   const { lab, bg } = cut
@@ -2456,12 +2468,164 @@ export function readDress(data, w, h) {
   // cloth's rounded edge), and a softened copy for the back and the sleeves.
   const rim = Math.max(1, Math.round(w * 0.012))
   const inner = boxBlur(Float32Array.from(mask), w, h, rim).map(v => (v > 0.999 ? 1 : 0))
-  const lit = evenLight(data, inner, w, h)
+  // Is it printed all over (its back is too), plain, or neither (a graphic, a patch)?
+  const kind = printSwatch(data, lab, clothLab, inner, w, h, {
+    rowAt: y => [rows[2 * (y - top)], rows[2 * (y - top) + 1]], y0: top + 0.35 * (bottom - top), y1: top + 0.92 * (bottom - top)
+  })
+  // A plain dress's folds and shadows as photographed, laid on the 3D cloth that has folds of its own, look
+  // painted on (a cowl's pale fold reads as skin showing through): evened out, its colour and seams kept.
+  const lit = flatten && kind.plain ? flattenFolds(data, inner, w, h) : evenLight(data, inner, w, h)
   const painted = fillAround(lit, inner, w, h, Math.max(4, Math.round(w * 0.03)))
   const reached = Uint8Array.from({ length: w * h }, (_, i) => (inner[i] || painted[4 * i + 3] === 254 ? 1 : 0))
   const filled = fillAround(painted, reached, w, h, Math.max(8, Math.round(w * 0.12)))
-  const soft = blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
-  return { color, filled, soft, layout: { w, h, top, bottom, dress: true, rows } }
+  // What the photo doesn't show (the back, the straps): an all-over print's cloth, repeated, as the back is
+  // cut from the same cloth; anything else softened (a graphic on the front isn't on the back).
+  const soft = kind.allOver ? tileSwatch(filled, kind, w, h) : blurPixels(filled, inner, w, h, Math.max(3, Math.round(w * 0.025)))
+  const shown = flatten && draped && kind.plain ? mixPixels(filled, soft, DRAPE_HINT) : filled
+  return { color, filled: shown, soft, allOver: kind.allOver, plain: kind.plain, repeat: kind.repeat, layout: { w, h, top, bottom, dress: true, rows } }
+}
+
+// How much of a plain draped dress's photo shows over its softened copy.
+const DRAPE_HINT = 0.35
+
+// a's pixels over b's, `share` of a.
+function mixPixels(a, b, share) {
+  const out = new Uint8ClampedArray(a.length)
+  for (let i = 0; i < a.length; i++) out[i] = a[i] * share + b[i] * (1 - share)
+  return out
+}
+
+// Away from the cloth's colour by this much (Lab, its lightness a 2.5th as much), a pixel is print, not cloth
+// in shadow or light.
+const DRESS_PRINT_APART = 14
+
+// Whether a dress's (or pants', or a skirt's) photo shows a print all over: print (pixels well away from the cloth's colour)
+// over at least an eighth of a clean block of the body (below the bust, above the hem, in from its sides)
+// and in nearly every part of it, or in a pattern that repeats. Plain: almost none. Neither: a graphic, a
+// patch, a contrast panel. For an all-over print, the piece to repeat: the cell from one motif to the same
+// one along and down (its repeat, read from how the block matches itself shifted), or where it doesn't
+// repeat (an irregular floral, a camo), the whole block, mirrored at its edges.
+// Returns { allOver, plain, coverage, spread, repeat: { across, down } (px, 0 for none) | null, cell:
+// [x, y, width, height] | null, mirror: [across, down] }.
+// rowAt(y): the garment's outer edges on row y; [y0, y1]: the rows of the block (a dress's, from a third of
+// the way down to near the hem; pants', from below the waistband to the crotch).
+export function printSwatch(data, lab, clothLab, inner, w, h, { rowAt, y0, y1 }) {
+  const none = { allOver: false, plain: false, coverage: 0, spread: 0, repeat: null, cell: null, mirror: [true, true] }
+  y0 = Math.round(y0); y1 = Math.round(y1)
+  let x0 = 0, x1 = w
+  for (let y = y0; y <= y1; y++) {
+    const [a, b] = rowAt(y)
+    if (a < 0) continue
+    x0 = Math.max(x0, Math.round(a + (b - a) * 0.08)); x1 = Math.min(x1, Math.round(b - (b - a) * 0.08))
+  }
+  const bw = x1 - x0, bh = y1 - y0
+  if (bw < 12 || bh < 24) return none
+  // How much of the block is print, and in how many of its parts (4 across by 6 down).
+  const GX = 4, GY = 6, cells = new Float32Array(GX * GY), counts = new Float32Array(GX * GY)
+  let printed = 0, total = 0
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = y * w + x
+      if (!inner[i]) continue
+      // (Lightness counts for less: a fold's pale crest or its shadow is the cloth's own colour, lighter or darker.)
+      const apart = Math.hypot((lab[3 * i] - clothLab[0]) / 2.5, lab[3 * i + 1] - clothLab[1], lab[3 * i + 2] - clothLab[2]) > DRESS_PRINT_APART
+      const c = Math.min(GY - 1, Math.floor(((y - y0) / (bh + 1)) * GY)) * GX + Math.min(GX - 1, Math.floor(((x - x0) / bw) * GX))
+      counts[c]++; total++
+      if (apart) { cells[c]++; printed++ }
+    }
+  }
+  if (!total) return none
+  const coverage = printed / total
+  let spread = 0
+  for (let c = 0; c < GX * GY; c++) if (counts[c] && cells[c] / counts[c] >= 0.04) spread++
+  spread /= GX * GY
+  // The repeat, on the photo's lightness blurred a little (a print's fine lines and the cloth's grain would
+  // otherwise match themselves only a pixel or two along): the shift, along and down, with the strongest
+  // match after the match has first fallen away.
+  let grey = new Float32Array(w * h)
+  for (let i = 0; i < w * h; i++) grey[i] = 0.299 * data[4 * i] + 0.587 * data[4 * i + 1] + 0.114 * data[4 * i + 2]
+  grey = boxBlur(grey, w, h, Math.max(2, Math.round(w * 0.004)))
+  const match = (dx, dy) => {
+    let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0, n = 0
+    for (let y = y0; y + dy <= y1; y += 2) {
+      for (let x = x0; x + dx < x1; x += 2) {
+        const a = grey[y * w + x], b = grey[(y + dy) * w + x + dx]
+        sa += a; sb += b; saa += a * a; sbb += b * b; sab += a * b; n++
+      }
+    }
+    if (n < 20) return 0
+    const ma = sa / n, mb = sb / n, va = saa / n - ma * ma, vb = sbb / n - mb * mb
+    return va < 4 || vb < 4 ? 0 : (sab / n - ma * mb) / Math.sqrt(va * vb)
+  }
+  // (The first of the strongest: a repeat matches again at twice and three times its step.)
+  const repeatAlong = (most, at) => {
+    const peaks = []
+    let fallen = false, before = at(1), here = at(2)
+    for (let d = 2; d < most; d++) {
+      const next = at(d + 1)
+      if (here < 0.05) fallen = true
+      if (fallen && here > 0.3 && here >= before && here >= next) peaks.push([d, here])
+      before = here; here = next
+    }
+    if (!peaks.length) return 0
+    const strongest = Math.max(...peaks.map(([, m]) => m))
+    return peaks.find(([, m]) => m >= strongest - 0.08)[0]
+  }
+  const repeat = coverage >= 0.05 ? { across: repeatAlong(Math.floor(bw * 0.75), d => match(d, 0)), down: repeatAlong(Math.floor(bh * 0.6), d => match(0, d)) } : null
+  const repeats = Boolean(repeat && (repeat.across || repeat.down))
+  const allOver = (coverage >= 0.12 && spread >= 0.85) || (repeats && spread >= 0.6)
+  const plain = coverage < 0.03 && !repeats
+  if (!allOver) return { ...none, plain, coverage, spread }
+  const cw = repeat?.across || bw, ch = repeat?.down || bh
+  const cell = [Math.round(x0 + (bw - cw) / 2), Math.round(y0 + (bh - ch) / 2), cw, ch]
+  return { allOver, plain: false, coverage, spread, repeat, cell, mirror: [!repeat?.across, !repeat?.down] }
+}
+
+// The swatch laid over the whole photo's size, repeated from its cell (mirrored where it doesn't repeat).
+function tileSwatch(data, { cell, mirror }, w, h) {
+  const [cx, cy, cw, ch] = cell
+  const wrap = (v, n, mirrored) => {
+    if (!mirrored) return ((v % n) + n) % n
+    const m = ((v % (2 * n)) + 2 * n) % (2 * n)
+    return m < n ? m : 2 * n - 1 - m
+  }
+  const out = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) {
+    const sy = cy + wrap(y - cy, ch, mirror[1])
+    for (let x = 0; x < w; x++) {
+      const from = 4 * (sy * w + cx + wrap(x - cx, cw, mirror[0])), to = 4 * (y * w + x)
+      out[to] = data[from]; out[to + 1] = data[from + 1]; out[to + 2] = data[from + 2]; out[to + 3] = 255
+    }
+  }
+  return out
+}
+
+// A plain garment's shading as photographed, evened out: each pixel's lightness brought to the cloth's,
+// against the lightness round it (about 1.5% of the photo across, so a fold's shadow and its pale crest go,
+// and the grain, the seams and the stitching stay). Far lighter or darker than round it isn't shading but a
+// patch or a seam's shadow line, and is left; nothing is changed by more than about a half.
+export function flattenFolds(data, mask, w, h) {
+  const lum = new Float32Array(w * h), on = new Float32Array(w * h)
+  let sum = 0, count = 0
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue
+    lum[i] = 0.299 * data[4 * i] + 0.587 * data[4 * i + 1] + 0.114 * data[4 * i + 2]
+    on[i] = 1
+    sum += lum[i]; count++
+  }
+  if (!count) return data
+  const r = Math.max(2, Math.round(w * 0.015))
+  const near = boxBlur(lum, w, h, r), weight = boxBlur(on, w, h, r)
+  const level = sum / count
+  const out = Uint8ClampedArray.from(data)
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i] || weight[i] < 1e-3) continue
+    const ratio = (level + 1) / (near[i] / weight[i] + 1)
+    if (ratio < 0.5 || ratio > 2) continue
+    const k = Math.min(Math.max(ratio, 0.6), 1.6)
+    out[4 * i] = data[4 * i] * k; out[4 * i + 1] = data[4 * i + 1] * k; out[4 * i + 2] = data[4 * i + 2] * k
+  }
+  return out
 }
 
 // Where a print lies on a bottoms photo (1 per pixel): the garment's pixels far from the cloth's colour, in

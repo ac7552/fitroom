@@ -40,6 +40,8 @@ class GarmentImport
       [ "straps", /wide straps?|\bstraps?\b|racer ?back|tank dress|\btank\b|square neck/i ],
       [ "none", /sleeveless/i ]
     ].freeze
+    # An "asymmetrical off-shoulder neckline" is off one shoulder: the other is covered.
+    OFF_ONE_SHOULDER = /asymmetric(?:al)?\s+off[- ](?:the[- ])?shoulders?/i
     NECKLINES = [
       [ "plunge", /plung|deep[- ]v|v[- ]neck|\bv\b neck|wrap front/i ],
       [ "high", /high[- ]neck|mock[- ]neck|turtle ?neck|funnel neck|halter neck/i ],
@@ -90,10 +92,21 @@ class GarmentImport
     CUTOUT_PLACES = { "shoulders" => /shoulders?/i, "back" => /back/i, "front" => /front|chest|bust|neck/i, "sides" => /sides?/i, "waist" => /waist|hips?|midriff/i }.freeze
     SHEER_PLACES = { "sleeves" => /sleeves?/i, "back" => /back/i, "sides" => /sides?|panels?/i, "skirt" => /skirt|hem|overlay/i }.freeze
 
+    # A keyhole is small, and at the neck in front unless the listing puts it on the back ("keyhole cutout on
+    # the back" isn't an open back). "Cutouts on the front and back" are in both places; one "cutout on the
+    # front and side" wraps round from the front, so it's in front.
+    KEYHOLE_BACK = /keyhole(?:\s+cut[- ]?outs?)?\s+(?:on|at)\s+(?:the\s+)?back/i
     def cutouts(words)
-      places = words.scan(/cut[- ]?outs?\s+(?:on|at|along|to|across)\s+(?:the\s+)?(\w+)/i).flatten.filter_map { |w| CUTOUT_PLACES.find { |_, p| w.match?(p) }&.first }
+      keyhole_back = words.match?(KEYHOLE_BACK)
+      words = words.gsub(KEYHOLE_BACK, " ")
+      named = words.scan(/cut[- ]?out(s?)\s+(?:on|at|along|to|across)\s+(?:the\s+)?(\w+)(?:\s+(?:and|&)\s+(?:the\s+)?(\w+))?/i)
+                   .flat_map { |plural, first, second| plural.empty? ? [ first ] : [ first, second ].compact }
+      places = named.filter_map { |w| CUTOUT_PLACES.find { |_, p| w.match?(p) }&.first }
+      # An asymmetrical one in front is off to one side, by the neck, not a keyhole down the middle.
+      places.map! { it == "front" ? "front_side" : it } if words.match?(/asymmetric(?:al)?\s+cut[- ]?outs?\s+(?:on|at)\s+(?:the\s+)?front/i)
       places << "back" if words.match?(/open[- ]back|backless|low[- ]back|cut[- ]?out back/i)
       places << "front" if words.match?(/keyhole/i)
+      places << "back_keyhole" if keyhole_back
       places << "waist" if places.empty? && words.match?(/cut[- ]?outs?/i)
       places.uniq
     end
@@ -114,6 +127,8 @@ class GarmentImport
       words = [ name, product[:description], product[:fabric] ].join(" ")
       first = ->(rules, text) { rules.find { |_, pattern| text.to_s.match?(pattern) }&.first }
       named_sleeves = first.(SLEEVES, name) || first.(SLEEVES, words)
+      # "Off Shoulder" in its name and "asymmetrical off-shoulder neckline" in its description: off one shoulder.
+      named_sleeves = "one_shoulder" if named_sleeves == "strapless" && words.match?(OFF_ONE_SHOULDER)
       sleeves = named_sleeves || "none"
       shares = fibre_shares(product[:fabric].presence || product[:description])
       stretch = words.match?(STRETCH) || STRETCHY.sum { shares[it].to_f } >= 3

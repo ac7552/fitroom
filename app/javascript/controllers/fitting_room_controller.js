@@ -280,7 +280,8 @@ export default class extends Controller {
           // keeps the graphics read off its back and sleeves.
           const dress = garment.style === "dress"
           if (dress || kind === "jacket" || kind === "coat" || ["shirt", "shortshirt"].includes(garment.style)) {
-            const map = (await readDressPhoto(frontPhoto).catch(() => null)) ?? (frontPhoto !== garment.photo ? await readDressPhoto(garment.photo).catch(() => null) : null)
+            const options = { flatten: dress, draped: dress && Boolean(garment.cut?.details?.includes("draping")) }
+            const map = (await readDressPhoto(frontPhoto, options).catch(() => null)) ?? (frontPhoto !== garment.photo ? await readDressPhoto(garment.photo, options).catch(() => null) : null)
             if (this.outfit[kind] !== item) return
             garment.photoMap = map ? { image: map.image, soft: map.soft, layout: map.layout, color: map.color } : null
             if (map) garment.print = null

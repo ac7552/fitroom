@@ -131,6 +131,18 @@ class DressCutTest < ActiveSupport::TestCase
     assert_equal [ "neck" ], [ cut(:cyrielle)[:scarf] ]
     refute_includes cut(:mireli)[:details], "cut-outs"
     assert_equal [ "back" ], cut(:mireli)[:cutouts]
+    # A keyhole on the back is a keyhole there, not an open back; one cutout "on the front and side" wraps
+    # round from the front, and cutouts "on the front and back" are in both.
+    lalala = read.("Frankies Bikinis x Devon Lee Carlson Lalala Jersey Mini Dress - Sweet",
+                   "Rayon blend Mock neckline Asymmetrical cutout on the front and side Snap button closure on the back Keyhole cutout on the back Draped construction Relaxed fit")
+    assert_equal [ "front_side", "back_keyhole" ], lalala[:cutouts]
+    assert_equal [ "front", "back" ], read.("Cut-Out Dress", "Cutouts on the front and back Slim fit")[:cutouts]
+    assert_equal [ "front" ], read.("Keyhole Dress", "Keyhole neckline Slim fit")[:cutouts]
+    # Off one shoulder, though its name says off shoulder.
+    agni = read.("St. Agni Fine Jersey Off Shoulder Dress - Charcoal",
+                 "Tencel lyocell Semi sheer Asymmetrical off-shoulder neckline Asymmetrical flared hem Paneled construction Relaxed fit")
+    assert_equal [ "one_shoulder", "all", "semi" ], agni.values_at(:sleeves, :sheer, :sheer_kind)
+    assert_equal "strapless", read.("Off Shoulder Dress", "Off-shoulder neckline Slim fit")[:sleeves]
   end
 
   test "a flounce at the hem, a side slit and a belt are drawn, so they aren't listed as left out" do

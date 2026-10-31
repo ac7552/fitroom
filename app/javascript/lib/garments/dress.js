@@ -7,6 +7,7 @@ import { placeCloth } from "lib/garments/place"
 import { bottomsPhotoUV, dressPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
 import { Drape } from "lib/garments/drape"
 import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
+import { sheerShow } from "lib/garments/sheer"
 
 // Dressing the mannequin in a top cut from its pattern: the body as the cloth sees it, the drape run a few
 // frames at a time between redraws (so the page stays smooth and the cloth is seen settling), the garment's
@@ -271,6 +272,10 @@ export function dressDetails(item, pattern, cloth) {
       holes.push([["back"], 0, -(top + bottom) / 2, halfChest * 0.42, (bottom - top) / 2, false])
     }
     if (place === "front") holes.push([["front"], 0, -(m.frontNeck + 5), 2.5, 4, false])
+    // An asymmetrical cut-out in front: by the neck on the wearer's left (+x on the front).
+    if (place === "front_side") holes.push([["front"], 6, -(m.frontNeck + 3), 2, 3.5, false])
+    // A keyhole on the back: the same size, just below the back of the neck.
+    if (place === "back_keyhole") holes.push([["back"], 0, -(armhole * 0.3 + 3), 2.5, 4, false])
     if (place === "shoulders") holes.push([["sleeve_L", "sleeve_R"], 0, -7, m.bicep * 0.22, 5, false])
   }
   for (let i = 0; i < n; i++) {
@@ -573,9 +578,8 @@ export class DrapedTop {
     const details = {
       stitch: knit ? "hem" : "topstitch", closure: pattern.closure, pocket: item.style === "hoodie" ? "kangaroo" : null,
       neckDepth: pattern.measures.frontNeck, length: pattern.measures.length,
-      // How much of a sheer cloth's colour shows: most of it, semi-sheer (it reads as the cloth's colour in a
-      // photo, the skin only hinted); less, sheer; but a printed sheer one's print is what's seen.
-      sheer: item.cut?.sheer ? (item.cut.sheer_kind === "semi" ? 0.9 : item.cut.printed ? 0.82 : 0.65) : 1,
+      // How much of a sheer cloth's colour shows (see sheerShow).
+      sheer: item.cut?.sheer ? sheerShow(item.color, item.cut.sheer_kind, item.cut.printed) : 1,
       // A puffer's quilted baffles (see fabric.js's QUILT).
       quilt: Boolean(item.puffer)
     }
@@ -601,6 +605,8 @@ export class DrapedTop {
       this.materials[key].sheenColor.copy(sheenTint(color))
       this.materials[key].userData.uniforms.uThread.value.set(color).offsetHSL(0, 0, 0.07)
     }
+    const cut = this.item.cut
+    if (cut?.sheer && this.materials.main.userData.uniforms.uSheer) this.materials.main.userData.uniforms.uSheer.value = sheerShow(color, cut.sheer_kind, cut.printed)
   }
 
   // A print from the shop's photo (print.js's readPhoto; null for none), laid on the front; and back: the

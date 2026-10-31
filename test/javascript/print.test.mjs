@@ -275,6 +275,88 @@ test("reads a dress photo to lay on the cloth, and lays it: the front from the p
   assert.ok(onSquare.length && onSquare.every(i => cloth.points[i][0] > 0), "the square is on the wearer's left")
 })
 
+// A printed dress laid flat: cream cloth with dark dots in a lattice (every 24 px across, 30 down, each row
+// of dots half a step over from the last), and a band across the bust.
+function printedDressPhoto() {
+  const { data, w, h } = dressPhoto()
+  for (let y = 60; y < 300; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = 4 * (y * w + x)
+      if (data[i] > 200 && data[i + 1] > 200) continue
+      const row = Math.floor(y / 15), dx = (x + (row % 2 ? 12 : 0)) % 24, dy = y % 15
+      const dot = Math.hypot(dx - 12, dy - 7) < 4.5
+      data.set(y < 70 ? [60, 20, 40] : dot ? [70, 30, 60] : [235, 215, 190], i)
+    }
+  }
+  return { data, w, h }
+}
+
+test("a dress printed all over: what the photo doesn't show is its print repeated, not a blur", () => {
+  const { data, w, h } = printedDressPhoto()
+  const read = readDress(data, w, h)
+  assert.ok(read.allOver, "all over")
+  assert.ok(!read.plain)
+  assert.equal(read.repeat.across, 24)
+  assert.equal(read.repeat.down, 30)
+  // The softened copy still has its dots: dark and pale both, high on the back where the photo has the band.
+  let dark = 0, pale = 0
+  for (let y = 70; y < 120; y++) for (let x = 80; x < 120; x++) { const v = read.soft[4 * (y * w + x)]; if (v < 120) dark++; if (v > 200) pale++ }
+  assert.ok(dark > 100 && pale > 600, `dark ${dark} pale ${pale}`)
+})
+
+test("pants and a skirt printed all over carry their print round the back; plain ones stay softened", () => {
+  for (const skirt of [false, true]) {
+    const { data, w, h } = bottoms({ hem: 40, skirt })
+    for (let i = 0; i < w * h; i++) {
+      if (data[4 * i] > 200) continue
+      const x = i % w, y = Math.floor(i / w), row = Math.floor(y / 12)
+      const dot = Math.hypot(((x + (row % 2 ? 9 : 0)) % 18) - 9, (y % 12) - 6) < 3.5
+      data.set(dot ? [30, 60, 30] : [150, 160, 110], 4 * i)
+    }
+    const read = readBottom(data, w, h)
+    assert.ok(read.allOver, skirt ? "skirt" : "pants")
+    assert.equal(read.repeat.across, 18)
+    let dark = 0
+    for (let k = 0; k < w * h; k++) if (read.soft[4 * k + 1] < 100) dark++
+    assert.ok(dark > w * h * 0.05, `dots on the back: ${dark}`)
+    const plain = bottoms({ hem: 40, skirt })
+    assert.ok(!readBottom(plain.data, plain.w, plain.h).allOver)
+  }
+})
+
+test("a plain dress isn't all over print, and a patch on it isn't either", () => {
+  const plain = readDress(...Object.values(dressPhoto()), { flatten: true })
+  assert.ok(!plain.allOver)
+  // The pale square on the skirt is a graphic: not plain, not all over.
+  assert.ok(!plain.plain)
+  const { data, w, h } = dressPhoto()
+  for (let y = 200; y < 240; y++) for (let x = 112; x < 140; x++) data.set([92, 22, 40], 4 * (y * w + x))
+  const read = readDress(data, w, h, { flatten: true })
+  assert.ok(read.plain && !read.allOver)
+})
+
+test("a plain dress's photographed folds are evened out; seams and colour kept", () => {
+  const { data, w, h } = dressPhoto()
+  for (let y = 200; y < 240; y++) for (let x = 112; x < 140; x++) data.set([92, 22, 40], 4 * (y * w + x))
+  // A pale fold down the skirt (lighter by half) and a shadowed one.
+  for (let y = 150; y < 290; y++) for (let x = 0; x < w; x++) {
+    const i = 4 * (y * w + x)
+    if (data[i] > 200) continue
+    const k = Math.abs(x - 90) < 4 ? 1.5 : Math.abs(x - 112) < 4 ? 0.65 : 1
+    data[i] *= k; data[i + 1] *= k; data[i + 2] *= k
+  }
+  const flat = readDress(data, w, h, { flatten: true }), kept = readDress(data, w, h)
+  const at = (read, x) => read.filled[4 * (220 * w + x)]
+  assert.ok(Math.abs(at(flat, 90) - 92) < Math.abs(at(kept, 90) - 92) && Math.abs(at(flat, 90) - 92) < 20, `pale fold ${at(flat, 90)} (was ${at(kept, 90)})`)
+  assert.ok(Math.abs(at(flat, 112) - 92) < Math.abs(at(kept, 112) - 92), `shadow ${at(flat, 112)} (was ${at(kept, 112)})`)
+  // Draped (a cowl's folds are the cut's own): mostly the softened copy, the folds a hint.
+  const draped = readDress(data, w, h, { flatten: true, draped: true })
+  const spread = read => { let lo = 255, hi = 0; for (let x = 80; x < 125; x++) { lo = Math.min(lo, at(read, x)); hi = Math.max(hi, at(read, x)) } return hi - lo }
+  assert.ok(spread(draped) < spread(flat), `draped ${spread(draped)}, flattened ${spread(flat)}`)
+  // A jacket's photo (no flatten) is laid as photographed.
+  assert.deepEqual(readDress(data, w, h, { draped: true }).filled, kept.filled)
+})
+
 test("lays a jacket's photo on it the same way, its hem band along the photo's hem", () => {
   const { data, w, h } = dressPhoto()
   const { layout } = readDress(data, w, h)
