@@ -106,8 +106,11 @@ export function bottomMeasures(styleName, size, body, cut = null) {
   // wherever the body is as small as its relaxed size.
   if ((style.band.stretch < 0.9 || cut?.elastic) && styleName !== "leggings") sitAt = Math.min(sitAt, 0.75)
   // The waistband's middle sits on that line (the pattern's top, y = 0, is the band's seam, below it). A
-  // chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that.
-  const rise = Math.max(14, size.rise ? size.rise * 0.9 : naturalRise * sitAt - style.band.height / 2)
+  // chart's front rise runs along the curve of the seam; up the body it's about nine tenths of that. A rise
+  // longer than that line (a relaxed or high-rise jean on a body with a shorter one) doesn't lift the waist
+  // a hand above the navel, up the ribs: worn, the waist stays about there and the crotch hangs lower.
+  const sits = naturalRise * sitAt - style.band.height / 2
+  const rise = Math.max(14, size.rise ? Math.min(size.rise * 0.9, sits + 2) : sits)
   // Pants sold unhemmed (cut.hem, from the import) are drawn as a tailor would hem them: 3 cm above the floor.
   const inseam = cut?.hem === "unfinished" && body.inseam ? body.inseam - 3 : size.inseam ?? (styleName === "shorts" ? 18 : body.inseam ?? body.height * 0.45)
   return {

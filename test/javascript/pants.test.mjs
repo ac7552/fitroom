@@ -98,3 +98,13 @@ test("a skirt sits where the body is as round as its waist, so it's laid on at i
   const skirt = draftBottoms("skirt", { waist: 74, seat: 104 }, { waist: 68, hips: 100, height: 165, rise: 21, riseFor: round => riseFor(frame, 21, round) }, { fit: "slim" })
   assert.equal(skirt.measures.rise, rise, "the skirt is drafted from there")
 })
+
+test("a chart's long rise doesn't lift jeans' waist up the ribs", () => {
+  // Kith's Twisted Seam Jeans, size 32: a 31 cm (12.25 in) front rise, on a man whose rise to his natural
+  // waist is 24 cm. Their 87.6 cm waist sits a little below it (he's 86.4 round there).
+  const jeans = draftBottoms("jeans", { waist: 87.63, seat: 108.6, rise: 31.12, inseam: 76.2, leg_opening: 42.6 }, man)
+  const sitAt = 1 - 0.65 * (87.63 - 86.4) / (101 - 86.4)
+  assert.ok(Math.abs(jeans.measures.rise - (24 * sitAt - 2 + 2)) < 0.01, `rise ${jeans.measures.rise}`)
+  // A low rise still sits low.
+  assert.equal(draftBottoms("jeans", { waist: 87.63, seat: 108.6, rise: 22, inseam: 76.2 }, man).measures.rise, 22 * 0.9)
+})
