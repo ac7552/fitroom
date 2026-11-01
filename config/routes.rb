@@ -9,6 +9,7 @@ Rails.application.routes.draw do
         get :image, on: :collection
       end
       resources :fits, only: :create
+      resources :drape_bank, only: :create   # development only: saves a drape bank entry
       resources :studio_looks, only: :create
       resources :studio_photos, only: %i[create show] do
         get :image, on: :member

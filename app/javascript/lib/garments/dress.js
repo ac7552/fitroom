@@ -489,6 +489,8 @@ export class DrapedTop {
   // (this.remote, remote_drape.js's job), it takes the worker's newest points instead.
   advance(budget = 10) {
     if (this.done) return false
+    // (Waiting on the drape bank: a moment, then it starts from there or from scratch.)
+    if (this.banking) return true
     // (The worker failed: it's sewn here, from where it got to.)
     if (this.remote?.failed) this.remote = null
     const remote = this.remote

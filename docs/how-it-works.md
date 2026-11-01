@@ -134,6 +134,21 @@ To rebuild it you need Blender 5.2+, the MPFB extension and MakeHuman's CC0 syst
 /Applications/Blender.app/Contents/MacOS/Blender -b --python script/mannequin/build.py -- public/models
 ```
 
+## The drape bank
+
+A drape depends on the pattern's style, the garment's measurements and the body, not on the shop link. So
+garments draped once are kept (`public/drapes/`, `lib/garments/drape_bank.js`): a new garment whose style
+and panels match an entry, with measurements within 20% of it, starts from that entry's drape instead of
+being sewn and let fall from scratch. Each stored point knows its place on its pattern panel and where it
+ended up in the body's bind space (through the bones it follows, as reposing does), so the new garment's
+points take the positions of the nearest stored points on the same panel, settle a moment where they were
+put, and are posed in one step. A crewneck and jeans go on in about 8 seconds instead of 17; the look is
+the same (the look check passes either way). A style with no entry near it drapes as before.
+
+`script/bank/build.js` builds the bank from a list of links (`script/bank/sources.json`): run it in the
+browser's console on the page opened with `?bank=off`, then commit `public/drapes/`. One entry a style and
+body type covers most sizes; the builder also saves the smallest and largest size of each.
+
 ## Studio photos
 
 With a top or casual jacket on, **Take a photo** draws what's on screen at about 2000 pixels, with finer

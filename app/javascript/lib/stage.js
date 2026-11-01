@@ -14,6 +14,7 @@ import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGe
 import { shoeTexture, viewTexture } from "lib/garments/print"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
 import { meanRatio } from "lib/projection"
+import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
 import { easeInOut, framing } from "lib/framing"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
@@ -106,6 +107,7 @@ const LAYERS = ["bottom", "top", "outer"]
 const WAITING = "waiting"
 // Draping in a Web Worker (remote_drape.js), for now when the page's address asks for it: ?drape=worker.
 const DRAPE_IN_WORKER = typeof location !== "undefined" && new URLSearchParams(location.search).get("drape") === "worker"
+const BANK_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("bank") !== "off"
 const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
 const TUCKED_LAYERS = ["top", "bottom", "outer"]
 const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
@@ -134,6 +136,8 @@ export class FittingStage {
     // Or the drape in a worker, at full speed and off this thread (null when it isn't, or can't be, used).
     this.remote = DRAPE_IN_WORKER ? RemoteDrape.start() : null
     this.remoteIds = 0
+    // Garments draped before, to start the next of the same kind from (drape_bank.js); ?bank=off does without.
+    this.bank = BANK_ON ? new DrapeBank() : null
     // Shoes and socks (on the calves' bones, so they follow the pose) and a belt (round the pants' waistband).
     this.feet = { key: null, meshes: [], shoes: {} }
     this.belt = { stamp: null, mesh: null, buckle: null }
@@ -866,8 +870,52 @@ export class FittingStage {
     if (this.worn) for (const material of [top.materials.main, top.materials.rib]) this.projectOnto(material)
     top.mesh.visible = false
     this.scene.add(top.mesh)
-    this.slots[slot] = { slot, key, top, rest: { ...rest, over }, frame, posedAs: null, posing: null, shown: false, bodyType: this.bodyType }
+    const d = this.slots[slot] = { slot, key, top, rest: { ...rest, over }, frame, posedAs: null, posing: null, shown: false, bodyType: this.bodyType }
+    // A garment of a kind draped before starts from that drape (see drape_bank.js): the drape waits for the
+    // bank's answer (a moment), then carries on from the bank's positions, or from scratch.
+    if (this.bank && !top.remote) {
+      top.banking = true
+      this.bank.pick(top, this.bodyType).then(hit => {
+        if (this.slots[slot] !== d) return
+        if (hit) this.startFromBank(d, hit.entry)
+        top.banking = false
+        this.redraw()
+      }).catch(() => { top.banking = false })
+    }
     this.start()
+  }
+
+  // The garment's cloth put where the bank entry's was (for its own pattern points), sewn and settled: it goes
+  // straight to being posed (one step, a settle) instead of sewing and settling from scratch.
+  startFromBank(d, entry) {
+    const { top } = d
+    const drape = top.drape
+    if (drape.sewn || top.done) return
+    // The seams closed first, as the entry's were (its points are the joined cloth's); should the entry not fit
+    // after all, the garment settles from where it was placed with its seams joined (as a skirt is sewn).
+    drape.releaseBands()
+    drape.closeSeams()
+    const start = warmStart(entry, top)
+    if (!start) return
+    d.weights = start.weights
+    d.restBind = start.restBind
+    d.restX = skinWith(start.restBind, start.weights.skinIndex, start.weights.skinWeight, d.rest.skin)
+    drape.x.set(d.restX)
+    drape.v.fill(0)
+    // A short settle where it was put (the entry's garment was a little different: its own measurements, so
+    // every thread is a little long or short), then it's posed as a drape just sewn is, in one step.
+    top.steps = (function* () { yield* drape.settle(80, 30) })()
+    top.frames = 0
+    top.phase = "settling"
+    top.banked = true
+    d.warm = true
+    top.update()
+  }
+
+  // The garment in a slot, draped and posed, as a bank entry (drape_bank.js's exportEntry), or null.
+  exportBankEntry(slot = "top") {
+    const d = this.slots[slot]
+    return d?.restBind && d.top.done && !d.posing ? exportEntry(d, d.bodyType) : null
   }
 
   // keepShown: leave the garment on screen (as this.leaving[slot]) until the next one is ready to show.
@@ -970,8 +1018,9 @@ export class FittingStage {
   * posing(d) {
     const drape = d.top.drape
     const long = d.top.pattern.style === "dress" || d.top.pattern.measures.length > 85   // more to push aside, further to fall
-    // (Pants' legs move little between the sewing pose and standing: fewer steps than a dress's skirt.)
-    const steps = long ? (d.top.bottoms ? 4 : 6) : 3
+    // (Pants' legs move little between the sewing pose and standing: fewer steps than a dress's skirt. Started
+    // from the bank, the cloth was draped in this pose once already: one step.)
+    const steps = d.warm ? 1 : long ? (d.top.bottoms ? 4 : 6) : 3
     let before = null
     for (let s = 1; s <= steps; s++) {
       d.poseStep = (s - 1) / steps
