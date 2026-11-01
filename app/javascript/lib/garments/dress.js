@@ -728,17 +728,20 @@ export class DrapedTop {
   // Pants' or a skirt's shop photo (print.js's readBottomPhoto: { image, soft, layout }; null for none),
   // laid on the cloth: the photo on the front, its softened copy on the back. A dress's the same way
   // (print.js's readDressPhoto, its layout marked dress).
+  // A re-draped photo (redrape.js) comes with its own texture coordinates (map.uv) and the back photo as
+  // map.back.image; the front image serves for the softened copy too.
   setPhotoMap(map) {
-    if (!this.bottoms && !map?.layout?.dress) map = null
-    if (map?.image === this.photoImage) return
+    if (!this.bottoms && !map?.layout?.dress && !map?.uv) map = null
+    if (map?.image === this.photoImage && map?.uv === this.photoUV) return
     this.photoImage = map?.image ?? null
+    this.photoUV = map?.uv ?? null
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.photoTextures = []
     if (map) {
-      const uv = map.layout.dress ? dressPhotoUV(this.cloth, this.pattern, map.layout) : bottomsPhotoUV(this.cloth, this.pattern, map.layout, map.back?.layout ?? null)
+      const uv = map.uv ?? (map.layout.dress ? dressPhotoUV(this.cloth, this.pattern, map.layout) : bottomsPhotoUV(this.cloth, this.pattern, map.layout, map.back?.layout ?? null))
       this.geometry.attributes.aPhoto.array.set(uv)
       this.geometry.attributes.aPhoto.needsUpdate = true
-      this.photoTextures = [map.image, map.soft, map.back?.image ?? map.soft].map(canvas => {
+      this.photoTextures = [map.image, map.soft ?? map.image, map.back?.image ?? map.soft ?? map.image].map(canvas => {
         const texture = new THREE.CanvasTexture(canvas)
         texture.colorSpace = THREE.SRGBColorSpace
         texture.anisotropy = 8

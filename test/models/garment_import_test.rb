@@ -331,6 +331,8 @@ class GarmentImportTest < ActiveSupport::TestCase
     import = GarmentImport.new
     refute import.send(:puffer?, { name: "Mitchell & Ness Varsity Full-Snap Jacket - Blue / White", description: "Melton wool Quilted lining Stand collar" })
     assert import.send(:puffer?, { name: "Moncler Down Jacket", description: "Quilted nylon Down filling" })
+    refute import.send(:puffer?, { name: "Kith Quilted Flannel Boxy Collared Overshirt - Allure", description: "Brushed cotton flannel Combo padded nylon on the front and back" })
+    assert import.send(:puffer?, { name: "Kith Quilted Down Overshirt", description: "Nylon Down fill" })
   end
 
   test "a jacket or coat with a hood is drawn with one, unless the hood stows away" do

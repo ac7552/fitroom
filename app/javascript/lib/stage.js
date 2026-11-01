@@ -15,6 +15,7 @@ import { shoeTexture, viewTexture } from "lib/garments/print"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
 import { meanRatio } from "lib/projection"
 import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
+import { HangerDrape, collarColour, collarStrip, loadPhotoForRedrape, registerPhoto, showsCloth } from "lib/garments/redrape"
 import { easeInOut, framing } from "lib/framing"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
@@ -108,6 +109,8 @@ const WAITING = "waiting"
 // Draping in a Web Worker (remote_drape.js), for now when the page's address asks for it: ?drape=worker.
 const DRAPE_IN_WORKER = typeof location !== "undefined" && new URLSearchParams(location.search).get("drape") === "worker"
 const BANK_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("bank") !== "off"
+// The store's photographs laid on a top's cloth point for point (redrape.js); ?redrape=off does without.
+const REDRAPE_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("redrape") !== "off"
 const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
 const TUCKED_LAYERS = ["top", "bottom", "outer"]
 const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
@@ -683,7 +686,9 @@ export class FittingStage {
     // (A shirt dress has a shirt's collar too.)
     const slots = ["top", "outer"].filter(slot => ["shirt", "shortshirt", "polo", "rugby"].includes(this.slots[slot]?.top.item.style) || this.slots[slot]?.top.item.cut?.collar)
     const ready = slots.filter(slot => { const d = this.slots[slot]; return d.shown && d.final && !d.posing })
-    const stamp = ready.map(slot => `${slot}:${this.slots[slot].top.drape.frame}:${this.slots[slot].posedAs}:${this.slots[slot].top.item.color}`).join("|") + this.view
+    // With the photo re-draped onto the shirt, the collar takes the colour of the cloth at the photo's top.
+    const colourOf = d => d.redrape?.collar ?? d.top.item.color
+    const stamp = ready.map(slot => `${slot}:${this.slots[slot].top.drape.frame}:${this.slots[slot].posedAs}:${colourOf(this.slots[slot])}`).join("|") + this.view
     if (stamp === this.collars.stamp) return
     this.collars.stamp = stamp
     for (const mesh of this.collars.meshes) { this.scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose() }
@@ -693,7 +698,15 @@ export class FittingStage {
       const geometry = collarLeaf(this.slots[slot].top, this.fitted.scale ?? 1)
       if (!geometry) continue
       const item = this.slots[slot].top.item
-      const mesh = new THREE.Mesh(geometry, accessoryMaterial(item.style === "polo" ? "knit" : "canvas", item.color))
+      const material = accessoryMaterial(item.style === "polo" ? "knit" : "canvas", colourOf(this.slots[slot]))
+      // The collar as photographed (its plaid, its contrast), when the photo has been re-draped on.
+      const strip = this.slots[slot].redrape?.collarStrip
+      if (strip) {
+        material.map = new THREE.CanvasTexture(strip)
+        material.map.colorSpace = THREE.SRGBColorSpace
+        material.color.set("#ffffff")
+      }
+      const mesh = new THREE.Mesh(geometry, material)
       mesh.castShadow = mesh.receiveShadow = true
       this.scene.add(mesh)
       this.collars.meshes.push(mesh)
@@ -843,10 +856,13 @@ export class FittingStage {
     // scarf and a belt are drawn in this one, as the cloth is.)
     d.top.item.color = item.color
     d.top.setColor(item.color)
-    d.top.setPrint(item.print ?? null, item.backPrint ?? null)
-    d.top.setSleeves(item.sleevePrint ?? null)
-    d.top.setCuffTone(item.cuffTone ?? null)
-    d.top.setPhotoMap(item.photoMap ?? null)
+    // The store's photos, for re-draping (advanceRedrape); the drape's own record doesn't carry them.
+    d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null } : null
+    // With the photographs re-draped onto it (d.redrape), the cloth shows them and nothing else is laid on.
+    d.top.setPrint(d.redrape ? null : item.print ?? null, d.redrape ? null : item.backPrint ?? null)
+    d.top.setSleeves(d.redrape ? null : item.sleevePrint ?? null)
+    d.top.setCuffTone(d.redrape ? null : item.cuffTone ?? null)
+    d.top.setPhotoMap(d.redrape ?? item.photoMap ?? null)
     d.top.mesh.visible = d.shown
     if (this.view === "fit") d.top.paintFit(item.checks ?? [], STATUS_COLORS)
     d.top.setFitMap(this.view === "fit")
@@ -1829,6 +1845,70 @@ export class FittingStage {
     this.frameId = this.visible ? requestAnimationFrame(this.tick) : null
   }
 
+  // The store's photographs onto a top's cloth, once it's draped and posed (redrape.js): the garment is
+  // simulated hanging as the store photographed it, a few milliseconds a frame, then each point takes its
+  // place in the photos. Runs after the drape, so the garment shows first in its colour and print, then as
+  // photographed. Once per draped garment (a new size drapes anew, and is re-draped anew).
+  advanceRedrape() {
+    if (!REDRAPE_ON) return
+    for (const slot of ["bottom", "top", "outer"]) {
+      const d = this.slots[slot]
+      if (!d?.top?.done || d.posing || !d.restX || !d.shown) continue
+      const item = d.top.item, photos = d.top.photos
+      if (!photos || d.redrapeState === "done" || d.redrapeState === "off") continue
+      if (!d.redrapeState) {
+        d.redrapeState = "loading"
+        // The photos, read once per garment (its sizes share them; the cache holds the last few).
+        this.redrapeCache ??= new Map()
+        const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}`
+        if (!this.redrapeCache.has(key)) {
+          if (this.redrapeCache.size > 6) this.redrapeCache.delete(this.redrapeCache.keys().next().value)
+          const options = { labels: !d.top.bottoms }
+          this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, options), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
+            .then(([front, back]) => (front ? { front, back } : null)).catch(() => null))
+        }
+        this.redrapeCache.get(key).then(photos => {
+          if (this.slots[slot] !== d) return
+          if (!photos) { d.redrapeState = "off"; return }
+          d.redrapePhotos = photos
+          d.hanger = new HangerDrape(d.top, d.restX)
+          d.redrapeState = d.hanger.done ? "off" : "hanging"
+          this.start()
+        })
+        continue
+      }
+      if (d.redrapeState !== "hanging") continue
+      if (d.hanger.advance(this.drapeBudget)) { this.redraw(); continue }
+      try {
+        const { front, back } = d.redrapePhotos
+        const uv = registerPhoto(d.top, d.hanger.positions, front, back)
+        d.redrape = { image: front.canvas, back: back ? { image: back.canvas } : null, uv, collar: collarColour(front), collarStrip: collarStrip(front) }
+        d.redrapeState = "done"
+        // A cut-out the listing names that the photo shows covered (a drape over it) isn't cut.
+        const hole = d.top.geometry.attributes.aHole
+        if (hole) {
+          let kept = false
+          for (let i = 0; i < hole.count; i++) {
+            if (!(hole.array[i] > 0)) continue
+            const photo = uv[3 * i + 2] === 3 && back ? back : front
+            if (showsCloth(photo, uv[3 * i], uv[3 * i + 1])) { hole.array[i] = 0; kept = true }
+          }
+          if (kept) hole.needsUpdate = true
+        }
+        d.top.setPrint(null, null)
+        d.top.setSleeves(null)
+        d.top.setCuffTone(null)
+        d.top.setPhotoMap(d.redrape)
+        this.onRedrape?.(slot, item)
+      } catch (error) {
+        console.warn("[redrape] couldn't lay the photo on:", error)
+        d.redrapeState = "off"
+      }
+      d.hanger = null
+      this.redraw()
+    }
+  }
+
   // A few milliseconds of draping per frame, so the page stays smooth while the cloth settles: the pants
   // first, then the top over them.
   advanceDrape() {
@@ -1836,6 +1916,7 @@ export class FittingStage {
     if (this.settled) {
       if (this.busy) { this.busy = false; this.onDrape?.("done", true) }
       if (this.revealed) { this.revealed = false; this.reveal() }
+      this.advanceRedrape()
     } else this.announceBusy()
     // A tucked top waits to be shown until the pants it's tucked into are (it's cut short, to end inside them).
     for (const slot of this.order) if (this.slots[slot]?.final && !this.slots[slot].posing) this.show(this.slots[slot])
@@ -2006,11 +2087,14 @@ function collarLeaf(top, scale) {
   mesh.geometry.computeBoundingSphere()
   const caster = new THREE.Raycaster()
   const polo = ["polo", "rugby"].includes(top.item.style)
-  const rows = 9, positions = [], index = [], start = []
+  const rows = 9, positions = [], uvs = [], index = [], start = []
   for (const column of columns) {
     if (!column) { start.push(-1); continue }
     const { a, p } = column
     start.push(positions.length / 3)
+    // Where on a photo of the collar (collarTexture) this column is: the wearer's right point at the left
+    // edge, round the back of the neck in the middle, to the left point at the right edge.
+    const across = a < 0 ? (a + Math.PI) / (2 * Math.PI) : 0.5 + a / (2 * Math.PI)
     const u = new THREE.Vector3(Math.sin(a), 0, Math.cos(a))
     // Longer toward the front, where the collar's points are.
     const front = Math.max(0, Math.min(1, (1.1 - Math.abs(a)) / 0.9))
@@ -2028,6 +2112,7 @@ function collarLeaf(top, scale) {
       const below = caster.intersectObject(mesh, false).find(h => h.point.y < p.y - 0.004)
       if (below) y = Math.max(y, below.point.y + 0.004 * scale)
       positions.push(x, y, z)
+      uvs.push(across, 1 - t)
     }
   }
   for (let c = 0; c + 1 < columns.length; c++) {
@@ -2037,6 +2122,7 @@ function collarLeaf(top, scale) {
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setIndex(index)
   geometry.computeVertexNormals()
   return geometry

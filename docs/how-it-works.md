@@ -152,6 +152,32 @@ drapes as it did.
 browser's console on the page opened with `?bank=off`, then commit `public/drapes/`. One entry a style and
 body type covers most sizes; the builder also saves the smallest and largest size of each.
 
+## Photo re-draping
+
+Once a garment is draped and posed, the shop's photographs are laid onto its cloth point for point
+(`lib/garments/redrape.js`, `FittingStage#advanceRedrape`), so what the cloth shows is the photograph
+itself — its plaid, a print on a sleeve, an embroidered logo, a pocket's stitching, a pair of jeans' patches
+and back-pocket label — at the visitor's proportions, rather than a colour and a cut-out print. Shops
+photograph a garment hanging or laid flat, so the same garment (the same cloth, in the same size) is
+simulated hanging the same way: held at its shoulder seams and neck (trousers at the waist), no body under
+it, let fall until still (about a second). That gives, for every point of the cloth, where it lies in such a
+photo. The hanging silhouette is then registered to the photo's, group by group (each sleeve or leg, the
+body) and row by row: each point's share of the way across its group's run of cloth is carried to the same
+share across the photo's run on that row, the rows at one scale for the whole garment. Where a sleeve lies
+against the body in the photo with no gap, the body's edges seen on rows where it hangs apart are carried
+up into the merged rows to split them; where it never hangs apart (a sleeve laid along the body), the row is
+shared out by the hanging groups' widths. Row edges are smoothed down the photo and the silhouette so a
+weave's edge or a fold doesn't put a ripple in one row.
+
+The photo's cloth mask (`clothMask`) leaves out the backdrop's soft shadow at the garment's edges and a
+hanger (its hook, then the rows below that are mostly the hook's colour), and on a dark garment the neck
+opening is painted over with the cloth beside it (the backdrop seen through it and the label inside the back
+of the neck would otherwise land on the chest). The front panels and the sleeves take the photo of the
+front; the back panels the photo of the back, mirrored, when the listing has one, and the front photo
+otherwise. A shirt's folded collar (drawn over the drape) is textured with the photo's collar rows, and a
+cut-out the listing names that the photo shows covered (a drape over it) isn't cut. Until the photos are
+on, the garment shows as before (its colour, its cut-out print); `?redrape=off` keeps it that way.
+
 ## Studio photos
 
 With a top or casual jacket on, **Take a photo** draws what's on screen at about 2000 pixels, with finer

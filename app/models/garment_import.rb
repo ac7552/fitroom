@@ -938,7 +938,16 @@ class GarmentImport
   QUILTED_INSIDE = /quilted (?:lining|liner|interior)|quilt[- ]lined|lined with (?:a )?quilt\w*/i
   HALF_ZIP = /half[- ]?zip|quarter[- ]?zip|1\/4[- ]?zip|\bhalf[- ]zipper\b/i
 
-  def puffer?(product) = product.values_at(:name, :description).join(" ").gsub(QUILTED_INSIDE, " ").match?(PUFFER)
+  # Shirt-like outerwear (an overshirt, a shacket, a chore or work jacket, a flannel) that's quilted or padded is
+  # lightly so: not lofted into baffles unless it's actually filled with down.
+  LIGHT_QUILT = /overshirt|shacket|shirt[- ]jacket|flannel|chore|work(?:wear)?[- ]jacket|trucker|liner/i
+  FILLED = /puffer|nuptse|\bdown\b|fill[- ]power|baffle/i
+
+  def puffer?(product)
+    words = product.values_at(:name, :description).join(" ").gsub(QUILTED_INSIDE, " ")
+    return words.match?(FILLED) if product[:name].to_s.match?(LIGHT_QUILT)
+    words.match?(PUFFER)
+  end
 
   def vest?(product) = product.values_at(:name, :category).join(" ").match?(/\bvests?\b/i) && !product.values_at(:name, :description).join(" ").match?(INSULATED)
 

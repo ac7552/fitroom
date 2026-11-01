@@ -1794,6 +1794,9 @@ export default class extends Controller {
       cuffTone: garment.cuffTone ?? null,
       photoSize: photoSize(garment.chart),
       photoMap: garment.photoMap ?? null,
+      // The store's photos (the front cleaned of a hand or a prop where it was), for re-draping (redrape.js).
+      photo: kind === "shoes" ? null : garment.lookPhotos?.front ?? garment.photo ?? null,
+      back_photo: kind === "shoes" ? null : garment.lookPhotos?.back ?? garment.back_photo ?? null,
       fabric: garment.fabric,
       style: garment.style,
       cut: garment.cut ?? null,
