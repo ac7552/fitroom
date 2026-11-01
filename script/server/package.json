@@ -3,6 +3,12 @@
   "private": true,
   "type": "module",
   "description": "Fitroom's vision service: SlimSAM and DINOv2 on the server's CPU for store photos (see vision.mjs).",
-  "scripts": { "start": "node vision.mjs" },
-  "dependencies": { "@huggingface/transformers": "3.5.1" }
+  "scripts": {
+    "start": "node vision.mjs",
+    "eval": "node eval_details.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.5.1",
+    "sharp": "^0.34.3"
+  }
 }

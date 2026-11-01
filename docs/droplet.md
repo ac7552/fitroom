@@ -23,6 +23,14 @@ One small server runs the whole demo: Rails serves the page and the JSON API, th
 3. The AI try-on button appears once the three `FITROOM_TRYON_*` values are in `.env` (see the repo's
    `.env.example`); `docker compose up -d` again after changing `.env`.
 
+## Garment details from the photo (optional)
+
+The vision service can also say what a photo shows (a hood, sleeve length, a collar, the length, a zip or
+buttons) with a vision-language model, for the importer to check its reading of the listing against. It's
+off unless the service starts with `DETAILS_MODEL=Xenova/siglip-base-patch16-224` (about 400 MB more to
+fetch); `script/server/eval_details.mjs` scores its answers against a sample before trusting them. The
+importer doesn't use the answers yet: measure first.
+
 ## Updating
 
 ```sh
