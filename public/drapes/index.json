@@ -1,1 +1,1475 @@
-[]
+[
+  {
+    "file": "men-jeans-galen.json",
+    "style": "jeans",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 87.63,
+      "length": 98.1227054586162,
+      "inseam": 76.2,
+      "rise": 21.922705458616186,
+      "thigh": 65.154,
+      "opening": 42.55
+    },
+    "name": null
+  },
+  {
+    "file": "men-crewneck-nelson.json",
+    "style": "sweatshirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 132.08,
+      "length": 62.58,
+      "sleeve": 54.8,
+      "shoulders": 59.69,
+      "hem": 132.08,
+      "opening": 27.736800000000002
+    },
+    "name": null
+  },
+  {
+    "file": "men-tank-102-size-XS0.json",
+    "style": "tank",
+    "bodyType": "men",
+    "panels": "back,front",
+    "measures": {
+      "chest": 102.44,
+      "length": 66,
+      "sleeve": 19.305,
+      "shoulders": 37.72,
+      "hem": 101.4156
+    },
+    "name": null
+  },
+  {
+    "file": "men-zip-142-size-4XL.json",
+    "style": "zip",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 142,
+      "length": 72.5,
+      "sleeve": 64.5,
+      "shoulders": 57,
+      "hem": 142,
+      "opening": 29.82
+    },
+    "name": null
+  },
+  {
+    "file": "men-shirt-114-size-XXS.json",
+    "style": "shirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 114,
+      "length": 68,
+      "sleeve": 59.5,
+      "shoulders": 48,
+      "hem": 114,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-shirt-114-size-L.json",
+    "style": "shirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 114,
+      "length": 68,
+      "sleeve": 59.5,
+      "shoulders": 48,
+      "hem": 114,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-rugby-116-size-XXL.json",
+    "style": "rugby",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 115.57,
+      "length": 69.85,
+      "sleeve": 57.97,
+      "shoulders": 52.07,
+      "hem": 114.4143,
+      "opening": 24.269699999999997
+    },
+    "name": null
+  },
+  {
+    "file": "men-rugby-116-size-M.json",
+    "style": "rugby",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 115.57,
+      "length": 69.85,
+      "sleeve": 57.97,
+      "shoulders": 52.07,
+      "hem": 114.4143,
+      "opening": 24.269699999999997
+    },
+    "name": null
+  },
+  {
+    "file": "men-shortshirt-110-best.json",
+    "style": "shortshirt",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 109.6,
+      "length": 70.7,
+      "sleeve": 24.5,
+      "shoulders": 47.72,
+      "hem": 108.50399999999999
+    },
+    "name": null
+  },
+  {
+    "file": "men-shortshirt-110-size-XXL.json",
+    "style": "shortshirt",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 109.6,
+      "length": 70.7,
+      "sleeve": 24.5,
+      "shoulders": 47.72,
+      "hem": 108.50399999999999
+    },
+    "name": null
+  },
+  {
+    "file": "men-shortshirt-110-size-XS.json",
+    "style": "shortshirt",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 109.6,
+      "length": 70.7,
+      "sleeve": 24.5,
+      "shoulders": 47.72,
+      "hem": 108.50399999999999
+    },
+    "name": null
+  },
+  {
+    "file": "men-coat-116-best.json",
+    "style": "coat",
+    "bodyType": "men",
+    "panels": "back,front,hood_L,hood_R,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 116,
+      "length": 96,
+      "sleeve": 64,
+      "shoulders": 48,
+      "hem": 114.84,
+      "opening": 27.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-coat-146-size-4XL.json",
+    "style": "coat",
+    "bodyType": "men",
+    "panels": "back,front,hood_L,hood_R,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 146,
+      "length": 106,
+      "sleeve": 69,
+      "shoulders": 58,
+      "hem": 144.54,
+      "opening": 30.66
+    },
+    "name": null
+  },
+  {
+    "file": "men-bomber-136-size-XXXL6.json",
+    "style": "bomber",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 136,
+      "length": 69,
+      "sleeve": 61.5,
+      "shoulders": 55,
+      "hem": 136,
+      "opening": 28.56
+    },
+    "name": null
+  },
+  {
+    "file": "men-cardigan-112-best.json",
+    "style": "cardigan",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 112,
+      "length": 63,
+      "sleeve": 57.5,
+      "shoulders": 47,
+      "hem": 112,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-cardigan-142-size-4XL.json",
+    "style": "cardigan",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 142,
+      "length": 70.5,
+      "sleeve": 62.5,
+      "shoulders": 57,
+      "hem": 142,
+      "opening": 29.82
+    },
+    "name": null
+  },
+  {
+    "file": "men-shirt-117-best.json",
+    "style": "shirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 116.84,
+      "length": 67.12,
+      "sleeve": 59.959999999999994,
+      "shoulders": 46.99,
+      "hem": 116.84,
+      "opening": 24.5364
+    },
+    "name": null
+  },
+  {
+    "file": "men-shirt-137-size-XXL.json",
+    "style": "shirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 137.16,
+      "length": 72.2,
+      "sleeve": 60.91,
+      "shoulders": 52.07,
+      "hem": 137.16,
+      "opening": 28.8036
+    },
+    "name": null
+  },
+  {
+    "file": "men-bomber-112-best.json",
+    "style": "bomber",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 112,
+      "length": 63,
+      "sleeve": 57.5,
+      "shoulders": 47,
+      "hem": 112,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-bomber-112-size-XXXL6.json",
+    "style": "bomber",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 112,
+      "length": 63,
+      "sleeve": 57.5,
+      "shoulders": 47,
+      "hem": 112,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-bomber-112-size-M2.json",
+    "style": "bomber",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 112,
+      "length": 63,
+      "sleeve": 57.5,
+      "shoulders": 47,
+      "hem": 112,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-zip-112-best.json",
+    "style": "zip",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 112,
+      "length": 65,
+      "sleeve": 59.5,
+      "shoulders": 47,
+      "hem": 112,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-zip-112-size-4XL.json",
+    "style": "zip",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 112,
+      "length": 65,
+      "sleeve": 59.5,
+      "shoulders": 47,
+      "hem": 112,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-zip-112-size-M.json",
+    "style": "zip",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 112,
+      "length": 65,
+      "sleeve": 59.5,
+      "shoulders": 47,
+      "hem": 112,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-tank-118-best.json",
+    "style": "tank",
+    "bodyType": "men",
+    "panels": "back,front",
+    "measures": {
+      "chest": 117.68,
+      "length": 70.5,
+      "sleeve": 21.21,
+      "shoulders": 37.72,
+      "hem": 116.5032
+    },
+    "name": null
+  },
+  {
+    "file": "men-tank-118-size-XS0.json",
+    "style": "tank",
+    "bodyType": "men",
+    "panels": "back,front",
+    "measures": {
+      "chest": 117.68,
+      "length": 70.5,
+      "sleeve": 21.21,
+      "shoulders": 37.72,
+      "hem": 116.5032
+    },
+    "name": null
+  },
+  {
+    "file": "men-tank-118-size-L3.json",
+    "style": "tank",
+    "bodyType": "men",
+    "panels": "back,front",
+    "measures": {
+      "chest": 117.68,
+      "length": 70.5,
+      "sleeve": 21.21,
+      "shoulders": 37.72,
+      "hem": 116.5032
+    },
+    "name": null
+  },
+  {
+    "file": "men-hoodie-129-best.json",
+    "style": "hoodie",
+    "bodyType": "men",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 128.91,
+      "length": 62.58,
+      "sleeve": 50.98,
+      "shoulders": 66.04,
+      "hem": 128.91,
+      "opening": 27.071099999999998
+    },
+    "name": null
+  },
+  {
+    "file": "men-hoodie-149-size-XXL.json",
+    "style": "hoodie",
+    "bodyType": "men",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 149.23,
+      "length": 67.66,
+      "sleeve": 51.92,
+      "shoulders": 71.12,
+      "hem": 149.23,
+      "opening": 31.338299999999997
+    },
+    "name": null
+  },
+  {
+    "file": "men-shirt-114-best.json",
+    "style": "shirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 114,
+      "length": 68,
+      "sleeve": 59.5,
+      "shoulders": 48,
+      "hem": 114,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-shirt-90-size-XXS.json",
+    "style": "shirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 90,
+      "length": 60,
+      "sleeve": 55.5,
+      "shoulders": 40,
+      "hem": 90,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-polo-122-best.json",
+    "style": "polo",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 122,
+      "length": 59,
+      "sleeve": 21,
+      "shoulders": 55,
+      "hem": 120.78
+    },
+    "name": null
+  },
+  {
+    "file": "men-polo-146-size-4XL.json",
+    "style": "polo",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 146,
+      "length": 70,
+      "sleeve": 23,
+      "shoulders": 63,
+      "hem": 144.54
+    },
+    "name": null
+  },
+  {
+    "file": "men-rugby-116-best.json",
+    "style": "rugby",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 115.57,
+      "length": 69.85,
+      "sleeve": 57.97,
+      "shoulders": 52.07,
+      "hem": 114.4143,
+      "opening": 24.269699999999997
+    },
+    "name": null
+  },
+  {
+    "file": "men-rugby-136-size-XXL.json",
+    "style": "rugby",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 135.89,
+      "length": 74.93,
+      "sleeve": 58.91,
+      "shoulders": 57.15,
+      "hem": 134.53109999999998,
+      "opening": 28.536899999999996
+    },
+    "name": null
+  },
+  {
+    "file": "men-rugby-136-best.json",
+    "style": "rugby",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 135.89,
+      "length": 74.93,
+      "sleeve": 58.91,
+      "shoulders": 57.15,
+      "hem": 134.53109999999998,
+      "opening": 28.536899999999996
+    },
+    "name": null
+  },
+  {
+    "file": "men-sweater-122-best.json",
+    "style": "sweater",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 122,
+      "length": 66,
+      "sleeve": 56.5,
+      "shoulders": 51,
+      "hem": 122,
+      "opening": 25.619999999999997
+    },
+    "name": null
+  },
+  {
+    "file": "men-sweater-152-size-4XL.json",
+    "style": "sweater",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 152,
+      "length": 76,
+      "sleeve": 61.5,
+      "shoulders": 61,
+      "hem": 152,
+      "opening": 31.919999999999998
+    },
+    "name": null
+  },
+  {
+    "file": "men-sweatshirt-114-best.json",
+    "style": "sweatshirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 114,
+      "length": 66,
+      "sleeve": 57.5,
+      "shoulders": 51,
+      "hem": 114,
+      "opening": 24.15190541425025
+    },
+    "name": null
+  },
+  {
+    "file": "men-sweatshirt-138-size-4XL.json",
+    "style": "sweatshirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 138,
+      "length": 74,
+      "sleeve": 61.5,
+      "shoulders": 59,
+      "hem": 138,
+      "opening": 28.98
+    },
+    "name": null
+  },
+  {
+    "file": "men-tank-112-best.json",
+    "style": "tank",
+    "bodyType": "men",
+    "panels": "back,front",
+    "measures": {
+      "chest": 112,
+      "length": 74,
+      "sleeve": 20.5,
+      "shoulders": 37.72,
+      "hem": 110.88
+    },
+    "name": null
+  },
+  {
+    "file": "men-tank-88-size-XXS.json",
+    "style": "tank",
+    "bodyType": "men",
+    "panels": "back,front",
+    "measures": {
+      "chest": 88,
+      "length": 66,
+      "sleeve": 17.5,
+      "shoulders": 37.72,
+      "hem": 87.12
+    },
+    "name": null
+  },
+  {
+    "file": "men-tee-110-best.json",
+    "style": "tee",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 110,
+      "length": 72,
+      "sleeve": 20.5,
+      "shoulders": 47,
+      "hem": 108.9
+    },
+    "name": null
+  },
+  {
+    "file": "men-tee-140-size-4XL.json",
+    "style": "tee",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 140,
+      "length": 82,
+      "sleeve": 23,
+      "shoulders": 57,
+      "hem": 138.6
+    },
+    "name": null
+  },
+  {
+    "file": "men-jeans-91-best.json",
+    "style": "jeans",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 91.4,
+      "length": 97.02404514972696,
+      "inseam": 81,
+      "rise": 16.02404514972696,
+      "thigh": 66.9,
+      "opening": 40
+    },
+    "name": null
+  },
+  {
+    "file": "men-jeans-71-size-28.json",
+    "style": "jeans",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 71.1,
+      "length": 102.23604726028444,
+      "inseam": 81,
+      "rise": 21.23604726028443,
+      "thigh": 54.7,
+      "opening": 40
+    },
+    "name": null
+  },
+  {
+    "file": "men-joggers-86-best.json",
+    "style": "joggers",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 86,
+      "length": 96.17703544521332,
+      "inseam": 81,
+      "rise": 15.17703544521332,
+      "thigh": 67.2,
+      "opening": 53.8
+    },
+    "name": null
+  },
+  {
+    "file": "men-joggers-117-size-4XL.json",
+    "style": "joggers",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 117,
+      "length": 95,
+      "inseam": 81,
+      "rise": 14,
+      "thigh": 85.8,
+      "opening": 73.3
+    },
+    "name": null
+  },
+  {
+    "file": "men-shorts-94-best.json",
+    "style": "shorts",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 94,
+      "length": 32,
+      "inseam": 18,
+      "rise": 14,
+      "thigh": 68.4,
+      "opening": 65
+    },
+    "name": null
+  },
+  {
+    "file": "men-shorts-66-size-XXS.json",
+    "style": "shorts",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 66,
+      "length": 33.42703544521332,
+      "inseam": 18,
+      "rise": 15.42703544521332,
+      "thigh": 51.6,
+      "opening": 49
+    },
+    "name": null
+  },
+  {
+    "file": "men-trousers-86-best.json",
+    "style": "trousers",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 86,
+      "length": 96.42703544521332,
+      "inseam": 81,
+      "rise": 15.42703544521332,
+      "thigh": 63.6,
+      "opening": 49.6
+    },
+    "name": null
+  },
+  {
+    "file": "men-trousers-117-size-4XL.json",
+    "style": "trousers",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 117,
+      "length": 95,
+      "inseam": 81,
+      "rise": 14,
+      "thigh": 82.2,
+      "opening": 67.5
+    },
+    "name": null
+  },
+  {
+    "file": "women-coat-110-best.json",
+    "style": "coat",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 110,
+      "length": 99,
+      "sleeve": 57,
+      "shoulders": 40.5,
+      "hem": 108.9,
+      "opening": 23.2248630440299
+    },
+    "name": null
+  },
+  {
+    "file": "women-coat-135-size-4XL.json",
+    "style": "coat",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 135,
+      "length": 106.5,
+      "sleeve": 59.5,
+      "shoulders": 48,
+      "hem": 133.65,
+      "opening": 28.349999999999998
+    },
+    "name": null
+  },
+  {
+    "file": "women-bomber-101-best.json",
+    "style": "bomber",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 101,
+      "length": 54,
+      "sleeve": 50.5,
+      "shoulders": 40.5,
+      "hem": 101,
+      "opening": 21.21
+    },
+    "name": null
+  },
+  {
+    "file": "women-bomber-121-size-XXXL.json",
+    "style": "bomber",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 121,
+      "length": 60,
+      "sleeve": 52.5,
+      "shoulders": 46.5,
+      "hem": 121,
+      "opening": 25.41
+    },
+    "name": null
+  },
+  {
+    "file": "women-cardigan-101-best.json",
+    "style": "cardigan",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 101,
+      "length": 54,
+      "sleeve": 50.5,
+      "shoulders": 40.5,
+      "hem": 101,
+      "opening": 21.21
+    },
+    "name": null
+  },
+  {
+    "file": "women-cardigan-126-size-4XL.json",
+    "style": "cardigan",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 126,
+      "length": 61.5,
+      "sleeve": 53,
+      "shoulders": 48,
+      "hem": 126,
+      "opening": 26.459999999999997
+    },
+    "name": null
+  },
+  {
+    "file": "women-shirt-101-best.json",
+    "style": "shirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 101,
+      "length": 56,
+      "sleeve": 52.5,
+      "shoulders": 40.5,
+      "hem": 101,
+      "opening": 21.21
+    },
+    "name": null
+  },
+  {
+    "file": "women-shirt-126-size-4XL.json",
+    "style": "shirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 126,
+      "length": 63.5,
+      "sleeve": 55,
+      "shoulders": 48,
+      "hem": 126,
+      "opening": 26.459999999999997
+    },
+    "name": null
+  },
+  {
+    "file": "women-tank-101-best.json",
+    "style": "tank",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 101,
+      "length": 60,
+      "sleeve": 19.125,
+      "shoulders": 31.369999999999997,
+      "hem": 99.99
+    },
+    "name": null
+  },
+  {
+    "file": "women-tank-126-size-4XL.json",
+    "style": "tank",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 126,
+      "length": 67.5,
+      "sleeve": 22.25,
+      "shoulders": 31.369999999999997,
+      "hem": 124.74
+    },
+    "name": null
+  },
+  {
+    "file": "women-zip-138-best.json",
+    "style": "zip",
+    "bodyType": "women",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 138.43,
+      "length": 55.06,
+      "sleeve": 48.84,
+      "shoulders": 66.04,
+      "hem": 138.43,
+      "opening": 29.0703
+    },
+    "name": null
+  },
+  {
+    "file": "women-zip-154-size-XXL.json",
+    "style": "zip",
+    "bodyType": "women",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 153.67,
+      "length": 58.55,
+      "sleeve": 51.38,
+      "shoulders": 69.85,
+      "hem": 153.67,
+      "opening": 32.2707
+    },
+    "name": null
+  },
+  {
+    "file": "women-dress-87-best.json",
+    "style": "dress",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 87.4,
+      "length": 80,
+      "sleeve": 17.425,
+      "shoulders": 36.37,
+      "hem": 93.1
+    },
+    "name": null
+  },
+  {
+    "file": "women-dress-116-size-4XL.json",
+    "style": "dress",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 115.9,
+      "length": 85,
+      "sleeve": 20.9875,
+      "shoulders": 36.37,
+      "hem": 121.03
+    },
+    "name": null
+  },
+  {
+    "file": "women-hoodie-95-best.json",
+    "style": "hoodie",
+    "bodyType": "women",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 95,
+      "length": 55.5,
+      "sleeve": 52.5,
+      "shoulders": 39.5,
+      "hem": 95,
+      "opening": 20.2248630440299
+    },
+    "name": null
+  },
+  {
+    "file": "women-hoodie-125-size-4XL.json",
+    "style": "hoodie",
+    "bodyType": "women",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 125,
+      "length": 64.5,
+      "sleeve": 58.5,
+      "shoulders": 48.5,
+      "hem": 125,
+      "opening": 26.25
+    },
+    "name": null
+  },
+  {
+    "file": "women-longsleeve-96-best.json",
+    "style": "longsleeve",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 96,
+      "length": 63,
+      "sleeve": 53.5,
+      "shoulders": 40,
+      "hem": 95.03999999999999,
+      "opening": 18.240000000000002
+    },
+    "name": null
+  },
+  {
+    "file": "women-longsleeve-111-size-XXL.json",
+    "style": "longsleeve",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 111,
+      "length": 67.5,
+      "sleeve": 56.5,
+      "shoulders": 44.5,
+      "hem": 109.89,
+      "opening": 21.09
+    },
+    "name": null
+  },
+  {
+    "file": "women-polo-98-best.json",
+    "style": "polo",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 98,
+      "length": 62,
+      "sleeve": 16,
+      "shoulders": 41,
+      "hem": 97.02
+    },
+    "name": null
+  },
+  {
+    "file": "women-polo-123-size-4XL.json",
+    "style": "polo",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 123,
+      "length": 69.5,
+      "sleeve": 18.5,
+      "shoulders": 48.5,
+      "hem": 121.77
+    },
+    "name": null
+  },
+  {
+    "file": "women-shirt-96-best.json",
+    "style": "shirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 42,
+      "sleeve": 55.5,
+      "shoulders": 40,
+      "hem": 96,
+      "opening": 20.2248630440299
+    },
+    "name": null
+  },
+  {
+    "file": "women-shirt-116-size-XXXL.json",
+    "style": "shirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 116,
+      "length": 52,
+      "sleeve": 59.5,
+      "shoulders": 46,
+      "hem": 116,
+      "opening": 24.36
+    },
+    "name": null
+  },
+  {
+    "file": "women-sweater-96-best.json",
+    "style": "sweater",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 57,
+      "sleeve": 53.5,
+      "shoulders": 40,
+      "hem": 96,
+      "opening": 20.2248630440299
+    },
+    "name": null
+  },
+  {
+    "file": "women-sweater-121-size-4XL.json",
+    "style": "sweater",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 121,
+      "length": 64.5,
+      "sleeve": 58.5,
+      "shoulders": 47.5,
+      "hem": 121,
+      "opening": 25.41
+    },
+    "name": null
+  },
+  {
+    "file": "women-tank-94-best.json",
+    "style": "tank",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 93.98,
+      "length": 74.3,
+      "sleeve": 18.247500000000002,
+      "shoulders": 31.369999999999997,
+      "hem": 93.0402
+    },
+    "name": null
+  },
+  {
+    "file": "women-tank-71-size-XS.json",
+    "style": "tank",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 71.12,
+      "length": 68.58,
+      "sleeve": 15.39,
+      "shoulders": 31.369999999999997,
+      "hem": 70.4088
+    },
+    "name": null
+  },
+  {
+    "file": "women-tee-88-best.json",
+    "style": "tee",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 88,
+      "length": 59,
+      "sleeve": 12,
+      "shoulders": 38,
+      "hem": 87.12
+    },
+    "name": null
+  },
+  {
+    "file": "women-tee-113-size-4XL.json",
+    "style": "tee",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 113,
+      "length": 66.5,
+      "sleeve": 13.9,
+      "shoulders": 45.5,
+      "hem": 111.87
+    },
+    "name": null
+  },
+  {
+    "file": "women-jeans-76-best.json",
+    "style": "jeans",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 76.2,
+      "length": 96.42961977558136,
+      "inseam": 76,
+      "rise": 20.429619775581354,
+      "thigh": 56.1,
+      "opening": 38.9
+    },
+    "name": null
+  },
+  {
+    "file": "women-jeans-58-size-23.json",
+    "style": "jeans",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 58.4,
+      "length": 97.61012607955932,
+      "inseam": 76,
+      "rise": 21.610126079559322,
+      "thigh": 47.2,
+      "opening": 29.8
+    },
+    "name": null
+  },
+  {
+    "file": "women-joggers-81-best.json",
+    "style": "joggers",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 81.3,
+      "length": 91.45759455966949,
+      "inseam": 76,
+      "rise": 15.457594559669491,
+      "thigh": 56.7,
+      "opening": 44.8
+    },
+    "name": null
+  },
+  {
+    "file": "women-joggers-112-size-44.json",
+    "style": "joggers",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 111.8,
+      "length": 90,
+      "inseam": 76,
+      "rise": 14,
+      "thigh": 76,
+      "opening": 61.6
+    },
+    "name": null
+  },
+  {
+    "file": "women-leggings-76-best.json",
+    "style": "leggings",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 76,
+      "length": 95.55355744529032,
+      "inseam": 76,
+      "rise": 19.55355744529033,
+      "thigh": 48.8,
+      "opening": 25
+    },
+    "name": null
+  },
+  {
+    "file": "women-leggings-106-size-4XL.json",
+    "style": "leggings",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 106,
+      "length": 90,
+      "inseam": 76,
+      "rise": 14,
+      "thigh": 68,
+      "opening": 34.8
+    },
+    "name": null
+  },
+  {
+    "file": "women-shorts-76-best.json",
+    "style": "shorts",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 76.2,
+      "length": 30.429619775581354,
+      "inseam": 10,
+      "rise": 20.429619775581354,
+      "thigh": 63.9,
+      "opening": 60.7
+    },
+    "name": null
+  },
+  {
+    "file": "women-shorts-58-size-23.json",
+    "style": "shorts",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 58.4,
+      "length": 31.610126079559322,
+      "inseam": 10,
+      "rise": 21.610126079559322,
+      "thigh": 53.6,
+      "opening": 50.9
+    },
+    "name": null
+  },
+  {
+    "file": "women-skirt-78-best.json",
+    "style": "skirt",
+    "bodyType": "women",
+    "panels": "back,front,waistband",
+    "measures": {
+      "waist": 78,
+      "hips": 104,
+      "length": 41,
+      "inseam": 18,
+      "rise": 23,
+      "hem": 95.68
+    },
+    "name": null
+  },
+  {
+    "file": "women-skirt-62-size-XS.json",
+    "style": "skirt",
+    "bodyType": "women",
+    "panels": "back,front,waistband",
+    "measures": {
+      "waist": 62,
+      "hips": 88,
+      "length": 38,
+      "inseam": 11,
+      "rise": 27,
+      "hem": 80.96000000000001
+    },
+    "name": null
+  },
+  {
+    "file": "women-trousers-76-best.json",
+    "style": "trousers",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 76.2,
+      "length": 101.42961977558136,
+      "inseam": 81,
+      "rise": 20.429619775581354,
+      "thigh": 63.7,
+      "opening": 58
+    },
+    "name": null
+  },
+  {
+    "file": "women-trousers-102-size-40.json",
+    "style": "trousers",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 101.6,
+      "length": 95,
+      "inseam": 81,
+      "rise": 14,
+      "thigh": 79,
+      "opening": 58
+    },
+    "name": null
+  },
+  {
+    "file": "women-dress-97-best.json",
+    "style": "dress",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 97.4,
+      "length": 79,
+      "sleeve": 18.675,
+      "shoulders": 26.369999999999997,
+      "hem": 115.22420000000001
+    },
+    "name": null
+  },
+  {
+    "file": "women-dress-111-size-16.json",
+    "style": "dress",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 111.4,
+      "length": 86,
+      "sleeve": 20.425,
+      "shoulders": 26.369999999999997,
+      "hem": 131.7862
+    },
+    "name": null
+  },
+  {
+    "file": "women-dress-92-best.json",
+    "style": "dress",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 92,
+      "length": 77,
+      "sleeve": 18,
+      "shoulders": 36.37,
+      "hem": 98
+    },
+    "name": null
+  },
+  {
+    "file": "women-dress-136-size-4XL.json",
+    "style": "dress",
+    "bodyType": "women",
+    "panels": "back,front",
+    "measures": {
+      "chest": 136,
+      "length": 85,
+      "sleeve": 23.5,
+      "shoulders": 36.37,
+      "hem": 143.48
+    },
+    "name": null
+  },
+  {
+    "file": "men-sweatshirt-132-best.json",
+    "style": "sweatshirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 132.08,
+      "length": 62.58,
+      "sleeve": 54.8,
+      "shoulders": 59.69,
+      "hem": 132.08,
+      "opening": 27.736800000000002
+    },
+    "name": null
+  },
+  {
+    "file": "men-sweatshirt-117-size-XXS.json",
+    "style": "sweatshirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 116.84,
+      "length": 58.769999999999996,
+      "sleeve": 53.83,
+      "shoulders": 55.88,
+      "hem": 116.84,
+      "opening": 24.5364
+    },
+    "name": null
+  },
+  {
+    "file": "men-jeans-88-best.json",
+    "style": "jeans",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 87.63,
+      "length": 98.1227054586162,
+      "inseam": 76.2,
+      "rise": 21.922705458616186,
+      "thigh": 65.154,
+      "opening": 42.55
+    },
+    "name": null
+  },
+  {
+    "file": "men-jeans-103-size-38.json",
+    "style": "jeans",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 102.87,
+      "length": 90.2,
+      "inseam": 76.2,
+      "rise": 14,
+      "thigh": 74.298,
+      "opening": 46.36
+    },
+    "name": null
+  }
+]
