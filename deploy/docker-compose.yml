@@ -1,0 +1,38 @@
+# Fitroom on a droplet: the Rails app, and Caddy in front of it for HTTPS (it gets and renews the certificate
+# itself). Copy .env.example to .env beside this file and fill in SECRET_KEY_BASE and FITROOM_HOST. See
+# docs/droplet.md.
+services:
+  web:
+    build: ..
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RAILS_ENV: production
+    volumes:
+      - storage:/rails/storage
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  storage:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,6 @@
+# HTTPS in front of the Rails app. FITROOM_HOST is the droplet's domain name (its DNS A record pointing at the
+# droplet); with none set, Caddy serves plain HTTP on port 80 with a self-signed certificate on 443.
+{$FITROOM_HOST::80} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}

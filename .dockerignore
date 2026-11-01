@@ -1,0 +1,11 @@
+.git
+.github
+log/*
+tmp/*
+storage/*
+node_modules
+.env
+config/master.key
+script/validation
+docs/images
+test
