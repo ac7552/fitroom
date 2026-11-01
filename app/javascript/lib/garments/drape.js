@@ -38,6 +38,14 @@ const FRAME = 1 / 60
 const CUFF_PAST_WRIST = 0.03   // m: how far over the hand a cuff can sit, at the most
 const HAND_REACH = 0.12        // m: cloth further from the arm's line than this isn't on the arm
 const SUBSTEPS = 10
+// The cloth counts as still once its points move less than this in a frame on average (metres),
+// STILL_FRAMES frames running: a hem swinging is still settling; a few hundredths of a millimetre is noise.
+const STILL_SETTLE = 0.00025
+const STILL_CALM = 0.00015
+const STILL_FRAMES = 8
+// How much of a point's distance clear of the skin it may travel before the skin is looked up again (the
+// field is a grid, and curves between its points).
+const CLEAR_MARGIN = 0.6
 const GRAVITY = -9.81
 const MAX_SEW_STEP = 0.0025   // metres a seam closes in one small step, at most
 // Cloth hardly stretches, but it gives way when pushed together: it folds. As stiff squeezed as stretched,
@@ -309,9 +317,20 @@ export class Drape {
     const thick = this.params.thickness, keep = this.friction
     const n = p.length / 3
     const tucks = this.tuck?.press ? this.tuckedPoints() : null
+    // A point well clear of the skin isn't looked up again until it could have reached it: the skin's
+    // distance, less a margin, is how far it may move before the next look (most of the cloth, most of the
+    // time, hangs clear of the body, and the look-up is the costliest part of a step).
+    if (this.clearField !== field || this.clear?.length !== n) { this.clear = new Float32Array(n); this.clearField = field }
+    const clear = this.clear
     for (let i = 0; i < n; i++) {
       const px = p[3 * i], py = p[3 * i + 1], pz = p[3 * i + 2]
+      if (!tucks) {
+        const mx = px - x[3 * i], my = py - x[3 * i + 1], mz = pz - x[3 * i + 2]
+        const moved = Math.sqrt(mx * mx + my * my + mz * mz)
+        if (clear[i] > moved) { clear[i] -= moved; continue }
+      }
       const d = field.at(px, py, pz)
+      clear[i] = d > thick ? (d - thick) * CLEAR_MARGIN : 0
       if (d >= thick) {
         // Tucked in, cloth is pressed onto the body all the way round, into its hollows (the small of the back)
         // as well: the pants over it follow the body there too.
@@ -568,15 +587,45 @@ export class Drape {
     this.hands = hands
   }
 
-  // Settles it where it is, a frame at a time (see phases), calming it at the end.
+  // Settles it where it is, a frame at a time (see phases), calming it at the end. It stops early once the
+  // cloth is still (see stillness): most garments stop moving well before their frames run out.
   * settle(frames = 70, calmFrames = 25) {
     const drag = this.params.drag
-    for (let k = 0; k < frames; k++) {
-      this.params.drag = k >= frames - calmFrames ? Math.max(drag, 6) : drag * 2
+    const still = this.stillness()
+    for (let k = 0, calm = false; k < frames; k++) {
+      if (!calm && (k >= frames - calmFrames || still.quiet(STILL_SETTLE))) { calm = true; this.params.drag = Math.max(drag, 6); still.reset() }
+      else if (!calm) this.params.drag = drag * 2
       this.step({ gravity: true, sew: false })
       yield "posing"
+      if (calm && still.quiet(STILL_CALM)) break
     }
     this.params.drag = drag
+  }
+
+  // Whether the cloth has stopped moving: { quiet(threshold) } is true once the points have moved less than
+  // `threshold` metres in a frame on average, for STILL_FRAMES frames in a row. (The average, not the most:
+  // one point caught between the cloth and the body jitters for good.)
+  stillness() {
+    const n = this.x.length
+    const last = Float32Array.from(this.x)
+    let run = 0
+    const drape = this
+    return {
+      reset() { run = 0; last.set(drape.x) },
+      quiet(threshold) {
+        const x = drape.x
+        let sum = 0
+        for (let i = 0; i < n; i += 3) {
+          const dx = x[i] - last[i], dy = x[i + 1] - last[i + 1], dz = x[i + 2] - last[i + 2]
+          sum += Math.sqrt(dx * dx + dy * dy + dz * dz)
+        }
+        last.set(x)
+        const mean = sum / (n / 3)
+        if (drape.trace) drape.trace.push(mean)
+        run = mean < threshold ? run + 1 : 0
+        return run >= STILL_FRAMES
+      }
+    }
   }
 
   // Join each sewn pair into one point, so the garment is one piece of cloth; the constraints are rebuilt
@@ -717,11 +766,17 @@ Drape.prototype.phases = function* ({ sewFrames = 150, settleFrames = 150, calmF
     this.step({ gravity: 3, sew: false })
     yield "settling"
   }
-  for (let k = 0; k < settleFrames; k++) {
-    if (k === settleFrames - calmFrames) this.params.drag = Math.max(drag, 6)
+  // Settling stops early once the cloth is still: it calms (more drag) as soon as nothing moves much, and
+  // ends once nothing moves at all. A garment that keeps swinging runs its frames out.
+  const still = this.stillness()
+  let used = 0
+  for (let k = 0, calm = false; k < settleFrames; k++, used++) {
+    if (!calm && (k >= settleFrames - calmFrames || still.quiet(STILL_SETTLE))) { calm = true; this.params.drag = Math.max(drag, 6); still.reset() }
     this.step({ gravity: true, sew: false })
     yield "settling"
+    if (calm && still.quiet(STILL_CALM)) { used++; break }
   }
+  this.settleFramesUsed = used
   this.params.drag = drag
 }
 

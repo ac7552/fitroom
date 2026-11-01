@@ -449,6 +449,7 @@ export function sewingFor({ item, body, frame, field, measures }) {
   // crumpled); a skirt is laid on with its sides together, so it's closed as it's placed (see phases' weld),
   // eases a moment and hangs from its waistband.
   const skirt = bottoms && item.style === "skirt"
+  if (globalThis.__traceDrape) drape.trace = []
   const phases = skirt ? { settleFrames: 280, calmFrames: 60, relaxFrames: 12, weld: true }
     : bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: drape.snug ? 0 : 60 }
     : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 }
@@ -467,6 +468,7 @@ export class DrapedTop {
     this.pattern = sewing.pattern
     this.cloth = sewing.cloth
     this.drape = sewing.drape
+    this.phaseMs = {}
     this.steps = sewing.steps
     this.frames = 0
     this.expected = sewing.expected
@@ -517,8 +519,10 @@ export class DrapedTop {
       return !this.done
     }
     const end = performance.now() + budget
+    let now = performance.now()
     do {
       const next = this.steps.next()
+      const after = performance.now()
       if (next.done) {
         this.done = true
         this.shade()
@@ -526,7 +530,10 @@ export class DrapedTop {
       }
       this.phase = next.value
       this.frames++
-    } while (performance.now() < end)
+      // How long each phase takes (milliseconds), for timing the drape.
+      this.phaseMs[this.phase] = (this.phaseMs[this.phase] ?? 0) + (after - now)
+      now = after
+    } while (now < end)
     this.update()
     return !this.done
   }

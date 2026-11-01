@@ -65,7 +65,7 @@ async function pose({ id, posed, before, now, bottom, last, long }, post) {
     drape.arms = arms
     drape.hands = hands
   }
-  const settle = !last ? drape.settle(14, 6) : long ? drape.settle(180, 50) : drape.settle(70, 25)
+  const settle = !last ? drape.settle(10, 4) : long ? drape.settle(180, 50) : drape.settle(70, 25)
   const done = await run(job, settle, () => {}, () => post({ type: "progress", id, x: drape.x.slice(), frame: drape.frame }))
   if (!done) return
   const x = drape.x.slice()

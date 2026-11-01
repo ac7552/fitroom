@@ -970,7 +970,8 @@ export class FittingStage {
   * posing(d) {
     const drape = d.top.drape
     const long = d.top.pattern.style === "dress" || d.top.pattern.measures.length > 85   // more to push aside, further to fall
-    const steps = long ? 6 : 3
+    // (Pants' legs move little between the sewing pose and standing: fewer steps than a dress's skirt.)
+    const steps = long ? (d.top.bottoms ? 4 : 6) : 3
     let before = null
     for (let s = 1; s <= steps; s++) {
       d.poseStep = (s - 1) / steps
@@ -1001,7 +1002,7 @@ export class FittingStage {
         drape.hands = hands
       }
       before = posed
-      if (s < steps) { yield* drape.settle(14, 6); continue }
+      if (s < steps) { yield* drape.settle(10, 4); continue }
       d.final = true
       d.top.update()
       yield* (long ? drape.settle(180, 50) : drape.settle(70, 25))
@@ -1814,8 +1815,12 @@ export class FittingStage {
       if (d.posing) {
         this.onDrape?.("posing", false)
         const end = performance.now() + this.drapeBudget
-        while (performance.now() < end) {
+        let now = performance.now()
+        while (now < end) {
           const next = d.posing.next()
+          const after = performance.now()
+          if (d.top.phaseMs) d.top.phaseMs.posing = (d.top.phaseMs.posing ?? 0) + (after - now)
+          now = after
           if (next.done) { d.posing = null; d.top.shade(); break }
           if (next.value === WAITING) break
         }
