@@ -21,6 +21,10 @@ import { chartFromSizes, diagram, filled, nextSizeName, partsFor, sizesFromChart
 // and are kept nowhere: not on the server, not in cookies or browser storage. Inputs have no names, so
 // the browser never submits or remembers them, and a refresh clears them. Photos never leave the device.
 // Example numbers for each mannequin: an average man's and woman's.
+// Whether a print that can't be matched to its store photo holds the clothes behind a veil (strict), or the
+// fit is shown in plain colour and says so (the default).
+const LOOK_STRICT = typeof location !== "undefined" && new URLSearchParams(location.search).get("look") === "strict"
+
 const EXAMPLES_CM = {
   men: { chest: 101.6, waist: 86.4, shoulders: 45.5, arm: 65.5, height: 178, hips: 101, inseam: 81 },
   women: { chest: 91.5, waist: 74, shoulders: 39.5, arm: 58, height: 165, hips: 99, inseam: 76 }
@@ -456,7 +460,15 @@ export default class extends Controller {
   }
 
   // Three tries and none matched: the veil stays, saying so, with the two ways on.
+  // The print couldn't be matched to the store photo after three readings: the fit goes on in the cloth's
+  // plain colour, and says so (the sizes are right either way). With ?look=strict in the page's address,
+  // the veil stays up instead, with the choice of a plain look or the AI picture (for checking readings).
   lookStuck(garment) {
+    if (!LOOK_STRICT) {
+      this.lookStuckOn = garment
+      this.plainLook()
+      return
+    }
     this.lookStuckOn = garment
     this.setLookWords("We can't show this item's look accurately.")
     if (this.hasLoadingActionsTarget) this.loadingActionsTarget.hidden = false
