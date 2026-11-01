@@ -6,6 +6,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
+    <%# The vision service (script/server/vision.mjs), when the server has one: the page sends store photos' AI work there. %>
+    <% if ENV["FITROOM_VISION_URL"].present? %><meta name="fitroom-vision" content="<%= ENV["FITROOM_VISION_URL"] %>"><% end %>
     <%= csp_meta_tag %>
 
     <%= yield :head %>

@@ -8,6 +8,7 @@ services:
     env_file: .env
     environment:
       RAILS_ENV: production
+      FITROOM_VISION_URL: /vision
     volumes:
       - storage:/rails/storage
     expose:
@@ -17,6 +18,15 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
+
+  # The store photos' AI models on the server's CPU (script/server/vision.mjs); the page reaches it at /vision.
+  vision:
+    build: ../script/server
+    restart: unless-stopped
+    volumes:
+      - models:/models
+    expose:
+      - "8787"
 
   caddy:
     image: caddy:2-alpine
@@ -34,5 +44,6 @@ services:
 
 volumes:
   storage:
+  models:
   caddy_data:
   caddy_config:

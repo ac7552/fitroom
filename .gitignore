@@ -44,3 +44,6 @@ __pycache__/
 # Validation outfits pulled out of the page and their contact sheets.
 /script/validation/runs/
 /script/validation/sheets/
+
+# The vision service's packages (script/server).
+node_modules/

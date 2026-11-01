@@ -33,6 +33,8 @@ cd fitroom && git pull && cd deploy && docker compose up -d --build
 
 - `docker compose ps` shows `web` healthy (it answers `/up`).
 - `docker compose logs -f web` for the Rails log; measurements and body shapes are filtered out of it.
+- `docker compose logs -f vision` says when its models are loaded (the first start downloads about 40 MB
+  from the Hugging Face hub into the `models` volume; later starts read them from there).
 - The demo browser needs WebGL 2 (any current Chrome, Safari or Firefox). The store photos' AI models load
   from a public CDN into the visitor's browser the first time (about 40 MB, cached after).
 
@@ -42,5 +44,6 @@ cd fitroom && git pull && cd deploy && docker compose up -d --build
 | --- | --- | --- |
 | Page, fit maths, link import, size charts | the droplet (Rails) | `Dockerfile`, `deploy/docker-compose.yml` |
 | Cloth drape, store-photo reading, look check | the visitor's browser | nothing of theirs leaves it |
+| Store photos' AI models (SlimSAM, DINOv2) | the droplet (`vision` service) | `script/server/vision.mjs`; the page falls back to its own copies if it's down |
 | AI try-on | Modal (GPU), from the droplet | optional; `FITROOM_TRYON_*` |
 | Studio photos (Blender) | not on the droplet | the button says they aren't available |

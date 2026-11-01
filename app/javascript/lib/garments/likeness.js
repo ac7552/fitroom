@@ -7,6 +7,8 @@
 // that), in a worker. The pictures never leave the page. Anything that goes wrong (no network, an old browser,
 // too slow) gives null, and the 3D view's check goes on without it (look_check.js).
 
+import { remoteEmbedding, visionUrl } from "lib/garments/vision"
+
 const LIBRARY = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1"
 const MODEL = "onnx-community/dinov2-small"
 
@@ -25,6 +27,7 @@ function load() {
 
 // Starts loading the model now (while the clothes drape), so it's ready when the check runs.
 export function warmLikeness() {
+  if (visionUrl()) return   // the server's model is always warm
   load().catch(() => {})
 }
 
@@ -39,14 +42,19 @@ export async function likeness(a, b, { timeout = 20000 } = {}) {
 }
 
 async function score(a, b) {
-  const { t, model, processor } = await load()
-  const summary = async pixels => {
-    const image = new t.RawImage(new Uint8ClampedArray(pixels.data), pixels.width, pixels.height, 4).rgb()
-    const inputs = await processor(image)
-    const { last_hidden_state: hidden } = await model(inputs)
-    return Array.from(hidden.data.slice(0, hidden.dims[2]))
+  // The summaries from the vision service when the server has one (vision.js), else the model here.
+  let x = null, y = null
+  if (visionUrl()) [x, y] = await Promise.all([remoteEmbedding(a), remoteEmbedding(b)])
+  if (!x || !y) {
+    const { t, model, processor } = await load()
+    const summary = async pixels => {
+      const image = new t.RawImage(new Uint8ClampedArray(pixels.data), pixels.width, pixels.height, 4).rgb()
+      const inputs = await processor(image)
+      const { last_hidden_state: hidden } = await model(inputs)
+      return Array.from(hidden.data.slice(0, hidden.dims[2]))
+    }
+    ;[x, y] = [await summary(a), await summary(b)]
   }
-  const [x, y] = [await summary(a), await summary(b)]
   let dot = 0, nx = 0, ny = 0
   for (let i = 0; i < x.length; i++) { dot += x[i] * y[i]; nx += x[i] * x[i]; ny += y[i] * y[i] }
   return dot / Math.sqrt(nx * ny || 1)

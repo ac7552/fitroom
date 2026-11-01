@@ -2,5 +2,8 @@
 # droplet); with none set, Caddy serves plain HTTP on port 80 with a self-signed certificate on 443.
 {$FITROOM_HOST::80} {
 	encode zstd gzip
+	handle_path /vision/* {
+		reverse_proxy vision:8787
+	}
 	reverse_proxy web:3000
 }
