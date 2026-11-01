@@ -142,8 +142,11 @@ and panels match an entry, with measurements within 20% of it, starts from that 
 being sewn and let fall from scratch. Each stored point knows its place on its pattern panel and where it
 ended up in the body's bind space (through the bones it follows, as reposing does), so the new garment's
 points take the positions of the nearest stored points on the same panel, settle a moment where they were
-put, and are posed in one step. A crewneck and jeans go on in about 8 seconds instead of 17; the look is
-the same (the look check passes either way). A style with no entry near it drapes as before.
+put, and are posed in one step. Measured on a 2024 MacBook Pro with the bank built from `script/bank/sources.json` (100 entries, 48
+garments): a first-time crewneck and jeans are on in 8 seconds instead of 17 (28 before the drape stopped
+when still and flat photos skipped cleaning); a first-time slip dress in 3 seconds instead of 12; the look
+check passes as before. A style with no entry near it (a ruffled dress, a wide trouser 25% off every entry)
+drapes as it did.
 
 `script/bank/build.js` builds the bank from a list of links (`script/bank/sources.json`): run it in the
 browser's console on the page opened with `?bank=off`, then commit `public/drapes/`. One entry a style and
