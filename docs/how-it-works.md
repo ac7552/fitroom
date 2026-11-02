@@ -178,6 +178,30 @@ otherwise. A shirt's folded collar (drawn over the drape) is textured with the p
 cut-out the listing names that the photo shows covered (a drape over it) isn't cut. Until the photos are
 on, the garment shows as before (its colour, its cut-out print); `?redrape=off` keeps it that way.
 
+## Fitting the pattern to the photo
+
+A garment laid flat or hung for its shop photo is a scale drawing of the pattern we draft, so a top's
+pattern is fitted to it (`lib/garments/photo_fit.js`) rather than drafted from the listing's words alone.
+The photo's cloth mask is measured (`measureOutline`): the shoulder points (the garment's top corners), the
+underarm where the sleeves hang apart from the body, the hem, the waist and hem widths, the neck opening,
+each sleeve's length (down its own run, or to the garment's outer corner when it hangs along the body),
+bands plainly absent, and the collar's shape from the top edge between the shoulders (a shirt's points, a
+band, a stand, an open neckline, a hood; a hanger's cut hides it, and then the listing's word stands).
+`fitChart` moves the chart's length, shoulders, sleeve and hem round to the photo's, by the sample size's
+share so the grading is kept, within a quarter of the chart's own figure; the yardstick is the sample's chest
+where the sleeves hang apart (the body's width under the arms is half the chest), else the chart's length.
+The pattern's own proportions (neck width and depth, armhole depth, sleeve width and opening) ride along on
+each size as `size.photo`, and the make as `cut.photo`, which `pattern.js` follows: the folded shirt collar is
+drawn only when the photo shows one. Photos on a model or close-ups give no outline and change nothing;
+`?photofit=off` keeps the old reading, `?photofit=debug` logs what was read.
+
+The re-draped photo goes on the cloth as a material rather than a picture (`redrape.js`'s `flatField`): a
+wide blur of its brightness over the cloth is the shop's light and is divided out, gently, so the folds the
+garment hung in stay as photographed; what's brighter or darker than its near surroundings is the fabric's
+relief (weave, ribbing, stitching, quilting, small creases), kept in the alpha channel as a height the cloth
+shader tilts the surface by, so the page's light plays over the real surface. The modelled gloss comes down
+under a photo so the fabric isn't lit twice.
+
 ## Studio photos
 
 With a top or casual jacket on, **Take a photo** draws what's on screen at about 2000 pixels, with finer
