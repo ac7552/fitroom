@@ -11,7 +11,7 @@ import { knockoutPhoto } from "lib/garments/knockout"
 import { measureFromPhotos } from "lib/measure_photo"
 import { partRow, uncheckedLine, verdictWords } from "lib/fit_bar"
 import { sizeSlider } from "lib/size_slider"
-import { ROLES, guessRoles, photosByRole } from "lib/garments/photo_roles"
+import { ROLES, guessRoles, photoKind, photosByRole } from "lib/garments/photo_roles"
 import { chartFromSizes, diagram, filled, nextSizeName, partsFor, sizesFromChart, sliderRange, startingSizes } from "lib/size_editor"
 
 // The fitting room: an outfit (up to a top, a jacket, a coat and trousers, each from a link, a pasted chart
@@ -297,8 +297,9 @@ export default class extends Controller {
         // outline as photographed laid out or hanging, and its make as the outline shows it; the fit and
         // drape done again. A photo on a model (the hand, skin painted out) or a close-up gives no outline.
         let refit = false
-        if (kind === "top" && garment.style !== "dress" && PHOTO_FIT_ON && !garment.cleaned) {
-          const fitted = await fitToPhoto(garment, frontPhoto).catch(() => null)
+        if (PHOTO_FIT_DEBUG) console.info("[photofit] reading", kind, garment.style, garment.name)
+        if ((kind === "top" || kind === "jacket") && garment.style !== "dress" && PHOTO_FIT_ON) {
+          const fitted = await fitToPhoto(garment, frontPhoto).catch(error => { console.warn("[photofit]", error); return null })
           if (this.outfit[kind] !== item) return
           if (fitted) refit = true
         }
@@ -2135,11 +2136,17 @@ function colorGap(a, b) {
 
 // Fitting the pattern to the photo (photo_fit.js); ?photofit=off does without.
 const PHOTO_FIT_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("photofit") !== "off"
+const PHOTO_FIT_DEBUG = typeof location !== "undefined" && new URLSearchParams(location.search).get("photofit") === "debug"
 
 // A top's chart and cut moved to what its shop photo shows (photo_fit.js): the outline's measurements onto
 // the chart's sizes, the outline's make (collar, sleeves, bands) as cut.photo. True when something changed.
 async function fitToPhoto(garment, src) {
+  // Only a photo of the garment on its own (laid out or hanging) shows its outline.
+  const traits = await readPhotoTraits(garment.photo).catch(() => null)
+  if (PHOTO_FIT_DEBUG) console.info("[photofit] traits", garment.name, traits && photoKind(traits))
+  if (traits && photoKind(traits) !== "garment") return false
   const outline = await readOutline(src)
+  if (PHOTO_FIT_DEBUG) console.info("[photofit] outline", garment.name, outline && { shoulderW: outline.shoulderW, bodyLength: outline.bodyLength, H: outline.H, collar: outline.collar })
   if (!outline || !outline.shoulderW || outline.bodyLength < 0.3 * outline.H) return false
   const sample = photoSize(garment.chart)
   const fit = fitChart(garment.chart, outline, sample)

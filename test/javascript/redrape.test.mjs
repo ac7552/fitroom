@@ -86,3 +86,24 @@ test("a sleeve laid along the body with no gap stays part of one run, with no bo
   assert.equal(layout.extended[0], null)
   assert.equal(layout.extended[2], null)
 })
+
+test("the flat field takes the photographer's gradient out and keeps the weave as relief", async () => {
+  const { flatFieldImage } = await import("lib/garments/redrape")
+  // A 200 by 200 grey cloth filling the frame, lit from the top (brighter above), with a fine dark stripe
+  // every 10 pixels (its weave).
+  const w = 200, h = 200, data = new Uint8ClampedArray(4 * w * h), mask = new Uint8Array(w * h).fill(1)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const light = 1.3 - 0.6 * (y / h)
+    const weave = x % 10 === 0 ? 0.7 : 1
+    const v = Math.round(Math.min(255, 140 * light * weave))
+    data.set([v, v, v, 255], 4 * (y * w + x))
+  }
+  const image = flatFieldImage({ data, width: w, height: h }, mask, { left: 0, right: w - 1, top: 0, bottom: h - 1, w, h })
+  assert.ok(image)
+  const at = (x, y) => data[4 * (y * w + x)]
+  // The top and bottom of the cloth come out at about the same brightness, where they differed by a half.
+  assert.ok(Math.abs(at(5, 20) - at(5, 180)) < 12, `${at(5, 20)} vs ${at(5, 180)}`)
+  // The weave's stripe is still darker than the cloth beside it, in colour and in the relief.
+  assert.ok(at(10, 100) < at(5, 100) - 15)
+  assert.ok(data[4 * (100 * w + 10) + 3] < data[4 * (100 * w + 5) + 3] - 10)
+})

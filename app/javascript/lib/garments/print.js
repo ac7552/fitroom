@@ -2813,7 +2813,7 @@ function largestPiece(mask, w, h) {
 
 // A box blur of radius r (the mean over the 2r+1 square, cut off at the picture's edge), as a running sum
 // along each row, then each column.
-function boxBlur(values, w, h, r) {
+export function boxBlur(values, w, h, r) {
   const tmp = new Float32Array(w * h), out = new Float32Array(w * h)
   const run = (get, set, length, stride, start) => {
     let s = 0

@@ -15,7 +15,7 @@
 // and the hanger's hook, are left out, but anything inside the garment's outline (a pale print on dark
 // cloth) is kept. Nothing here reads the body or the person.
 import { Drape } from "lib/garments/drape"
-import { garmentMask } from "lib/garments/print"
+import { boxBlur, garmentMask } from "lib/garments/print"
 
 // Frames the hanger drape runs at most (it stops when still).
 const HANGER_FRAMES = 400
@@ -467,7 +467,69 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true } = 
   const b = found.box
   const box = { left: b.left * 2, right: Math.min(w - 1, b.right * 2 + 1), top: b.top * 2, bottom: Math.min(h - 1, b.bottom * 2 + 1), w, h }
   if (labels) patchLabels(ctx, mask, box)
-  return { canvas, mask, box, bg: found.bg }
+  const flat = flatField(ctx, mask, box)
+  return { canvas, mask, box, bg: found.bg, flat }
+}
+
+// The photo as a material rather than a picture: its light taken out, its relief kept. The photographer's
+// light (a soft gradient, the shading of the large folds the garment hung in) is a wide blur of the photo's
+// brightness over the cloth; dividing it out leaves the cloth's own colour and pattern, which the page's
+// light then shades, with the folds the page's own drape gives it. What was taken out below the scale of the
+// blur is the fabric's relief (its weave, ribbing, stitching, quilting, small creases) and goes in the alpha
+// channel as a height, for the shader to tilt the surface by (as it does a puffer's baffles). Returns
+// ImageData the size of the photo, or null when the photo is too small.
+export function flatField(ctx, mask, box) {
+  if (box.w < 64 || box.h < 64) return null
+  return flatFieldImage(ctx.getImageData(0, 0, box.w, box.h), mask, box)
+}
+
+// flatField on ImageData (or { data, width, height }) in place; returns it, or null when there's too little cloth.
+export function flatFieldImage(image, mask, box) {
+  const w = box.w, h = box.h
+  const d = image.data
+  // Brightness at a quarter size, over the cloth only; blurred over about 3% of the garment's width.
+  const sw = Math.max(1, w >> 2), sh = Math.max(1, h >> 2)
+  const lum = new Float32Array(sw * sh), on = new Float32Array(sw * sh)
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    let sum = 0, n = 0
+    for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 4; dx++) {
+      const X = Math.min(w - 1, 4 * x + dx), Y = Math.min(h - 1, 4 * y + dy)
+      if (!mask[Y * w + X]) continue
+      const i = 4 * (Y * w + X)
+      sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; n++
+    }
+    if (n) { lum[y * sw + x] = sum / n; on[y * sw + x] = 1 }
+  }
+  // Two blurs: a wide one (12% of the garment's width) is the photographer's light, a gradient over the
+  // garment; a narrow one (2%) is the reference the relief is read against.
+  const wide = Math.max(2, Math.round(0.12 * (box.right - box.left) / 4)), narrow = Math.max(1, Math.round(0.02 * (box.right - box.left) / 4))
+  const blurredWide = boxBlur(lum, sw, sh, wide), weightWide = boxBlur(on, sw, sh, wide)
+  const blurredNarrow = boxBlur(lum, sw, sh, narrow), weightNarrow = boxBlur(on, sw, sh, narrow)
+  const shade = new Float32Array(sw * sh), local = new Float32Array(sw * sh)
+  const levels = []
+  for (let k = 0; k < sw * sh; k++) {
+    shade[k] = weightWide[k] > 0.05 ? blurredWide[k] / weightWide[k] : 0
+    local[k] = weightNarrow[k] > 0.05 ? blurredNarrow[k] / weightNarrow[k] : 0
+    if (on[k] && shade[k] > 0) levels.push(shade[k])
+  }
+  if (levels.length < 50) return null
+  levels.sort((a, b) => a - b)
+  const median = levels[levels.length >> 1]
+  // Each pixel divided by the light there (never by more than a factor of 1.4 either way: the gradient goes,
+  // the folds the garment hung in stay, as photographed), and its relief: how much brighter or darker it is
+  // than its near surroundings, as a height about 0.5.
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = 4 * (y * w + x)
+    if (!mask[y * w + x]) { d[i + 3] = 128; continue }
+    const k = (y >> 2) * sw + (x >> 2)
+    const s = shade[k], ref = local[k]
+    const gain = s > 0 ? Math.min(1.4, Math.max(0.7, median / s)) : 1
+    const L = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]
+    d[i] = Math.min(255, d[i] * gain); d[i + 1] = Math.min(255, d[i + 1] * gain); d[i + 2] = Math.min(255, d[i + 2] * gain)
+    const relief = ref > 8 ? Math.max(-0.5, Math.min(0.5, L / ref - 1)) : 0
+    d[i + 3] = Math.round(128 + relief * 200)
+  }
+  return image
 }
 
 // Whether a photo shows cloth, not its backdrop, at a texture coordinate (u, v) of registerPhoto's: a cut-out

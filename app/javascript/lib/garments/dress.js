@@ -9,6 +9,10 @@ import { Drape } from "lib/garments/drape"
 import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
 import { sheerShow } from "lib/garments/sheer"
 
+// How far the fabric's relief in a re-draped photo (redrape.js's flatField, the alpha channel) stands out
+// of the cloth (m, at the relief's full value): the tilt the shader gives the surface from it.
+const PHOTO_BUMP = 0.0015
+
 // Dressing the mannequin in a top cut from its pattern: the body as the cloth sees it, the drape run a few
 // frames at a time between redraws (so the page stays smooth and the cloth is seen settling), the garment's
 // mesh and its materials, the shading in its folds, and its fit map.
@@ -741,19 +745,33 @@ export class DrapedTop {
       const uv = map.uv ?? (map.layout.dress ? dressPhotoUV(this.cloth, this.pattern, map.layout) : bottomsPhotoUV(this.cloth, this.pattern, map.layout, map.back?.layout ?? null))
       this.geometry.attributes.aPhoto.array.set(uv)
       this.geometry.attributes.aPhoto.needsUpdate = true
-      this.photoTextures = [map.image, map.soft ?? map.image, map.back?.image ?? map.soft ?? map.image].map(canvas => {
-        const texture = new THREE.CanvasTexture(canvas)
+      // A re-draped photo comes as ImageData with its light taken out and its relief in the alpha channel
+      // (redrape.js's flatField): a data texture, so the alpha isn't premultiplied away.
+      this.photoTextures = [map.image, map.soft ?? map.image, map.back?.image ?? map.soft ?? map.image].map(source => {
+        const texture = source instanceof ImageData ? new THREE.DataTexture(source.data, source.width, source.height, THREE.RGBAFormat) : new THREE.CanvasTexture(source)
+        if (source instanceof ImageData) { texture.flipY = true; texture.generateMipmaps = true; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter; texture.needsUpdate = true }
         texture.colorSpace = THREE.SRGBColorSpace
         texture.anisotropy = 8
         return texture
       })
     }
+    const relief = Boolean(map?.image instanceof ImageData)
     for (const key of ["main", "rib"]) {
-      const uniforms = this.materials[key].userData.uniforms
+      const material = this.materials[key]
+      const uniforms = material.userData.uniforms
       uniforms.uPhoto.value = this.photoTextures[0] ?? uniforms.uPhoto.value
       uniforms.uPhotoSoft.value = this.photoTextures[1] ?? uniforms.uPhotoSoft.value
       uniforms.uPhotoBack.value = this.photoTextures[2] ?? uniforms.uPhotoBack.value
       uniforms.uPhotoOn.value = map ? 1 : 0
+      uniforms.uPhotoBump.value = relief ? PHOTO_BUMP : 0
+      // The photo carries the fabric's own sheen and highlights; the cloth's modelled gloss comes down so it
+      // isn't lit twice (its finish is kept to put back).
+      material.userData.finish ??= { roughness: material.roughness, sheen: material.sheen, clearcoat: material.clearcoat, normalScale: material.normalScale.x }
+      const finish = material.userData.finish
+      material.roughness = relief ? Math.max(finish.roughness, 0.85) : finish.roughness
+      material.sheen = relief ? finish.sheen * 0.35 : finish.sheen
+      material.clearcoat = relief ? 0 : finish.clearcoat
+      material.normalScale.setScalar(relief ? finish.normalScale * 0.4 : finish.normalScale)
     }
   }
 

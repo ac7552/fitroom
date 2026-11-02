@@ -369,6 +369,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uSleeveHave: { value: new THREE.Vector4() },
     uSleeveSize: { value: new THREE.Vector3(16, 12, 60) },
     uPhotoOn: { value: 0 },
+    // A re-draped photo's relief (its alpha channel, redrape.js's flatField): how far it stands out (m).
+    uPhotoBump: { value: 0 },
     // How much of a sheer part's colour shows (1: none of it is sheer).
     uSheer: { value: details.sheer ?? 1 },
     // A puffer's baffles: x how far each puffs out (m; 0 for no quilting), y how far apart they are (cm).
@@ -422,7 +424,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     shader.fragmentShader = shader.fragmentShader
       // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
       .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );") + `
-        if ( uQuilt.x > 0.0 ) normal = quiltNormal( - vViewPosition, normal, faceDirection );`)
+        if ( uQuilt.x > 0.0 ) normal = heightNormal( quiltHeight(), - vViewPosition, normal, faceDirection );
+        // A re-draped photo's relief: the fabric's weave, ribbing, stitching and small creases, as photographed.
+        if ( uPhotoOn > 0.5 && uPhotoBump > 0.0 ) normal = heightNormal( gPhotoHeight * uPhotoBump, - vViewPosition, normal, faceDirection );`)
       .replace("#include <common>", `#include <common>
         #define CREASE_FOLD ${CREASE.fold.toFixed(2)}
         #define CREASE_DARK ${CREASE.dark.toFixed(2)}
@@ -460,6 +464,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform vec4 uSleeveHave;
         uniform vec3 uSleeveSize;
         uniform float uPhotoOn;
+        uniform float uPhotoBump;
+        float gPhotoHeight = 0.0;
         uniform float uSheer;
         uniform vec2 uQuilt;
         varying float vCover;
@@ -481,9 +487,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         float dashes( vec2 p ) { return step( fract( ( p.x + p.y ) / 0.42 ), 0.62 ); }
         // A puffer baffle's height (m) at this point, by how far down the garment it is (see uQuilt).
         float quiltHeight() { return uQuilt.x * sqrt( max( sin( 3.14159265 * fract( vDown / uQuilt.y ) ), 1e-3 ) ) * smoothstep( 0.0, 2.5, vEdge ); }
-        // The surface's normal tilted by the baffles' slope (three.js's bump mapping, by screen derivatives).
-        vec3 quiltNormal( vec3 position, vec3 normal, float faceDirection ) {
-          float h = quiltHeight();
+        // The surface's normal tilted by a height's slope (three.js's bump mapping, by screen derivatives).
+        vec3 heightNormal( float h, vec3 position, vec3 normal, float faceDirection ) {
           vec3 dx = dFdx( position ), dy = dFdy( position );
           vec2 slope = vec2( dFdx( h ) / max( length( dx ), 1e-6 ), dFdy( h ) / max( length( dy ), 1e-6 ) );
           vec3 sx = normalize( dx ), sy = normalize( dy );
@@ -509,7 +514,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         if ( vHide > 0.0 || vHole > 0.0 || vCover > 0.5 ) discard;
         diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
-        if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) diffuseColor.rgb = ( vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy ) ).rgb;
+        if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) {
+          vec4 photo = vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy );
+          diffuseColor.rgb = photo.rgb;
+          gPhotoHeight = photo.a - 0.5;
+        }
         // Cuffs in the sleeves' own colour (the sleeves themselves take their strips, see uSleeves).
         if ( uCuffTone.w > 0.5 && vPiece > 4.5 ) diffuseColor.rgb = uCuffTone.rgb;
         vec3 thread = uThread;

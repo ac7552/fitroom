@@ -1884,7 +1884,7 @@ export class FittingStage {
       try {
         const { front, back } = d.redrapePhotos
         const uv = registerPhoto(d.top, d.hanger.positions, front, back)
-        d.redrape = { image: front.canvas, back: back ? { image: back.canvas } : null, uv, collar: collarColour(front), collarStrip: collarStrip(front) }
+        d.redrape = { image: front.flat ?? front.canvas, back: back ? { image: back.flat ?? back.canvas } : null, uv, collar: collarColour(front), collarStrip: collarStrip(front) }
         d.redrapeState = "done"
         // A cut-out the listing names that the photo shows covered (a drape over it) isn't cut.
         const hole = d.top.geometry.attributes.aHole
