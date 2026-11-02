@@ -71,6 +71,9 @@ export function draftTop(styleName, size, body, cut = null) {
   if (cut?.hood && !style.shaped && style.collar !== "hood") style = { ...style, collar: "hood" }
   // A half-zip or quarter-zip pullover: a stand collar, and a zip from it a little way down the front.
   if (cut?.half_zip && !style.shaped && style.collar !== "hood") style = { ...style, collar: "stand", closure: "halfzip" }
+  // What the shop's photo showed of the make (photo_fit.js, as cut.photo): the collar, the sleeves' length,
+  // bands at the cuffs and hem. The photo outranks the listing's words on a top that isn't shaped.
+  if (cut?.photo && !style.shaped) style = photographed(style, cut.photo)
   const m = measures(style, size, body, cut)
   if (style.neck) m.frontNeck = style.neck
   let flounce = 0
@@ -141,6 +144,23 @@ export function draftTop(styleName, size, body, cut = null) {
   return { panels, seams, style: styleName, closure: cut?.closure ?? style.closure ?? null, fabric, measures: m }
 }
 
+// A style as the photo showed it (photo_fit.js's constructionFrom): collar "shirt" (a shirt's collar on its
+// stand), "band" (a crew's rib or a band), "stand", "open" (none), "hood"; sleeves "short", "three-quarter"
+// (long, cut to its measured length), "long", "sleeveless" (left to the style: a sleeveless top is drafted
+// as a tank); hemBand and cuffBand true or false (null: as the style has them).
+const PHOTO_COLLARS = { shirt: "shirtstand", band: "band", stand: "stand", open: null, hood: "hood" }
+function photographed(style, photo) {
+  const out = { ...style }
+  if (photo.collar && photo.collar in PHOTO_COLLARS) out.collar = PHOTO_COLLARS[photo.collar]
+  if (photo.sleeves === "short") { out.sleeve = "short"; out.cuffs = null }
+  else if (photo.sleeves === "long" || photo.sleeves === "three-quarter") out.sleeve = "long"
+  if (photo.cuffBand === false) out.cuffs = null
+  else if (photo.cuffBand === true && out.sleeve === "long" && !out.cuffs) out.cuffs = "rib"
+  if (photo.hemBand === false) out.hem = null
+  else if (photo.hemBand === true && !out.hem) out.hem = "rib"
+  return out
+}
+
 // The finished measurements to cut to: the chart's, and what it doesn't give from the body and the style.
 // cut: { fit: "fitted" } cuts the armholes, sleeves and hem close (a fitted knit), with the chart's chest.
 export function measures(style, size, body, cut = null) {
@@ -178,14 +198,15 @@ export function measures(style, size, body, cut = null) {
     hips: Math.max(size.hips ?? (body.hips ?? body.chest) + 8, (body.hips ?? body.waist) + 5),
     hipAt: body.height * 0.335
   } : null
-  return {
+  const neckWidth = (body.neck ?? 40) / (2 * Math.PI) + (style.collar === "hood" ? 2.2 : 1.5)
+  const m = {
     chest,
     shaped,
     shoulders,
     length,
     sleeve,
     hem: shaped ? Math.max(chest, shaped.hips) * 1.22 : Math.min(size.waist ?? chest, chest) * (hemBand ? 1 : 0.99),
-    neckWidth: (body.neck ?? 40) / (2 * Math.PI) + (style.collar === "hood" ? 2.2 : 1.5),
+    neckWidth,
     frontNeck: { stand: 6, shirtstand: 7, rib: 6, hood: 8 }[style.collar] ?? 9,
     backNeck: 2,
     shoulderDrop: 4.4,
@@ -194,6 +215,18 @@ export function measures(style, size, body, cut = null) {
     opening,
     head: body.head ?? 58
   }
+  // The pattern's own proportions as the photo showed them (photo_fit.js, on the chart's size as size.photo):
+  // the neck's width and depth (never narrower than the neck they go round), the armhole's depth (never
+  // shallower than the arm needs), the sleeve's width and opening (never narrower than the arm).
+  const photo = size.photo
+  if (photo && !shaped) {
+    if (photo.neckWidth > neckWidth) m.neckWidth = Math.min(photo.neckWidth, chest / 8)
+    if (photo.neckDepth > m.frontNeck) m.frontNeck = Math.min(photo.neckDepth, 22)
+    if (photo.armhole > m.armhole) m.armhole = Math.min(photo.armhole, m.length * 0.6)
+    if (photo.bicep > bicep) m.bicep = Math.min(photo.bicep, chest * 0.5)
+    if (photo.opening > 0 && opening !== null) m.opening = Math.max(opening, Math.min(photo.opening, m.bicep))
+  }
+  return m
 }
 
 // One body panel, front or back, its edges anticlockwise seen from outside.

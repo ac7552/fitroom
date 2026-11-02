@@ -3,6 +3,7 @@ import { toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
 import { findPrint, garmentMask, measureDressMask, readPhoto, readBottomPhoto, readDressPhoto, readDressShape, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
 import { compareLooks, compareShapes, croppedLengths, nextReading, PLAIN, reshaped } from "lib/garments/look_check"
+import { constructionFrom, fitChart, readOutline } from "lib/garments/photo_fit"
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto } from "lib/garments/segment"
@@ -292,12 +293,22 @@ export default class extends Controller {
             if (map && dress) garment.backPrint = garment.sleevePrint = null
           }
         }
+        // The pattern fitted to the photo (photo_fit.js): a top's chart measurements moved to the garment's
+        // outline as photographed laid out or hanging, and its make as the outline shows it; the fit and
+        // drape done again. A photo on a model (the hand, skin painted out) or a close-up gives no outline.
+        let refit = false
+        if (kind === "top" && garment.style !== "dress" && PHOTO_FIT_ON && !garment.cleaned) {
+          const fitted = await fitToPhoto(garment, frontPhoto).catch(() => null)
+          if (this.outfit[kind] !== item) return
+          if (fitted) refit = true
+        }
         // A cropped top on a guessed chart: its lengths from the photo, and the fit and drape done again.
-        const cropped = kind === "top" ? croppedLengths(garment.chart, read?.look) : null
+        const cropped = kind === "top" && !refit ? croppedLengths(garment.chart, read?.look) : null
         if (cropped) {
           garment.chart = { ...garment.chart, sizes: cropped }
-          this.update()
+          refit = true
         }
+        if (refit) this.update()
         garment.lookPending = false
         this.renderOutfit()
         if (item.fit) this.render()
@@ -2120,6 +2131,27 @@ function colorGap(a, b) {
   const rgb = hex => [1, 3, 5].map(i => parseInt(String(hex).slice(i, i + 2), 16) || 0)
   const [p, q] = [rgb(a), rgb(b)]
   return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2])
+}
+
+// Fitting the pattern to the photo (photo_fit.js); ?photofit=off does without.
+const PHOTO_FIT_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("photofit") !== "off"
+
+// A top's chart and cut moved to what its shop photo shows (photo_fit.js): the outline's measurements onto
+// the chart's sizes, the outline's make (collar, sleeves, bands) as cut.photo. True when something changed.
+async function fitToPhoto(garment, src) {
+  const outline = await readOutline(src)
+  if (!outline || !outline.shoulderW || outline.bodyLength < 0.3 * outline.H) return false
+  const sample = photoSize(garment.chart)
+  const fit = fitChart(garment.chart, outline, sample)
+  const make = constructionFrom(outline, fit?.scale ?? null)
+  garment.photoOutline = { apart: outline.apart, sleeveless: outline.sleeveless, collar: outline.collar, moved: fit?.moved ?? [], by: fit?.by ?? null }
+  let changed = false
+  if (fit && fit.moved.length) { garment.chart = { ...garment.chart, sizes: fit.sizes }; changed = true }
+  else if (fit) garment.chart = { ...garment.chart, sizes: fit.sizes }   // the pattern's proportions (size.photo), at least
+  const photo = {}
+  for (const key of ["collar", "sleeves", "hemBand", "cuffBand"]) if (make[key] != null) photo[key] = make[key]
+  if (Object.keys(photo).length) { garment.cut = { ...(garment.cut ?? {}), photo }; changed = true }
+  return changed || Boolean(fit)
 }
 
 // What the fit engine needs to know about a garment besides its sizes: a dress's or a skirt's cut, a top's

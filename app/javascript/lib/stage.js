@@ -684,7 +684,9 @@ export class FittingStage {
   // toward the chest and apart at the front. Laid on the shirt where it hangs, as the scarf is.
   wearCollars() {
     // (A shirt dress has a shirt's collar too.)
-    const slots = ["top", "outer"].filter(slot => ["shirt", "shortshirt", "polo", "rugby"].includes(this.slots[slot]?.top.item.style) || this.slots[slot]?.top.item.cut?.collar)
+    // A shirt's or polo's collar; the photo's word on it outranks the style's (cut.photo.collar, photo_fit.js).
+    const collared = item => { const seen = item.cut?.photo?.collar; return seen ? seen === "shirt" : ["shirt", "shortshirt", "polo", "rugby"].includes(item.style) || Boolean(item.cut?.collar) }
+    const slots = ["top", "outer"].filter(slot => this.slots[slot] && collared(this.slots[slot].top.item))
     const ready = slots.filter(slot => { const d = this.slots[slot]; return d.shown && d.final && !d.posing })
     // With the photo re-draped onto the shirt, the collar takes the colour of the cloth at the photo's top.
     const colourOf = d => d.redrape?.collar ?? d.top.item.color
