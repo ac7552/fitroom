@@ -32,6 +32,42 @@ function load() {
   return loading
 }
 
+// The model's masks for points on a picture (raw: a Transformers.js RawImage; points [[x, y]] in its pixels;
+// labels 1 for "this", 0 for "not this"): { bits, count, scores, dims } as the processor gives them back.
+// The model looks at a picture once (its image encoder, nearly all of its five seconds) and answers any
+// points on it after that in a few milliseconds: what it saw is kept for the last few pictures, by `key`
+// (the photo's address), so cleaning a photo and finding the garment on it again later look once.
+const seen = new Map()
+async function masksFor(raw, points, labels, key) {
+  const { t, model, processor } = await load()
+  let entry = key ? seen.get(key) : null
+  // (Only for the picture at the same size: the masks come back at the size it was first seen at.)
+  if (entry && (entry.width !== raw.width || entry.height !== raw.height)) entry = null
+  if (!entry) {
+    const inputs = await processor(raw)
+    entry = { inputs, embeddings: await model.get_image_embeddings(inputs), width: raw.width, height: raw.height }
+    if (key) {
+      if (seen.size >= 4) seen.delete(seen.keys().next().value)
+      seen.set(key, entry)
+    }
+  }
+  const [rh, rw] = entry.inputs.reshaped_input_sizes[0]
+  // Points in the picture's pixels, as fractions of it, onto the size the encoder saw it at.
+  const at = points.map(([x, y]) => [(x / raw.width) * rw, (y / raw.height) * rh])
+  const inputPoints = new t.Tensor("float32", at.flat(), [1, 1, at.length, 2])
+  const inputLabels = new t.Tensor("int64", labels.map(v => BigInt(v)), [1, 1, labels.length])
+  const outputs = await model({ ...entry.embeddings, input_points: inputPoints, input_labels: inputLabels })
+  const masks = await processor.post_process_masks(outputs.pred_masks, entry.inputs.original_sizes, entry.inputs.reshaped_input_sizes)
+  const all = masks[0]
+  return { bits: all.data, count: all.dims[1], scores: outputs.iou_scores.data }
+}
+
+// A key for a photo by its address (a data: URL's length and some of its middle and end, not all of it).
+export function photoKey(src) {
+  if (typeof src !== "string") return null
+  return `${src.length}:${src.slice(Math.floor(src.length / 2), Math.floor(src.length / 2) + 48)}:${src.slice(-48)}`
+}
+
 // src: the photo (a data: URL). kind: "top" or "trousers" (where to point). Returns a data: URL of the
 // cleaned photo, or src when there's nothing to clean or it can't be done in `timeout` ms.
 export async function cleanPhoto(src, kind = "top", { timeout = 25000 } = {}) {
@@ -64,14 +100,9 @@ async function clean(src, kind) {
   const remote = visionUrl() ? await remoteMasks(pixels.data, w, h, prompt.points) : null
   if (remote) ({ bits, count, scores } = remote)
   else {
-    const { t, model, processor } = await load()
+    const { t } = await load()
     const raw = new t.RawImage(new Uint8ClampedArray(pixels.data), w, h, 4).rgb()
-    const inputs = await processor(raw, { input_points: [[prompt.points]], input_labels: [[prompt.points.map(() => 1)]] })
-    const outputs = await model(inputs)
-    const masks = await processor.post_process_masks(outputs.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes)
-    scores = outputs.iou_scores.data
-    const all = masks[0]   // [1, 3, h, w]
-    count = all.dims[1]; bits = all.data
+    ;({ bits, count, scores } = await masksFor(raw, prompt.points, prompt.points.map(() => 1), photoKey(src)))
   }
 
   const best = pickMask(bits, count, plane, prompt.mask, scores)
@@ -121,7 +152,7 @@ async function clean(src, kind) {
 // trousers) and told the face and the hair aren't it; what it gives back is kept where it isn't skin.
 // Without the model (no network, an old browser), the person less their skin and anything above the
 // shoulders stands in.
-export async function wornGarmentMask(data, w, h, kind = "top") {
+export async function wornGarmentMask(data, w, h, kind = "top", src = null) {
   const person = garmentMask(data, w, h)?.mask
   if (!person) return null
   const n = w * h
@@ -165,7 +196,7 @@ export async function wornGarmentMask(data, w, h, kind = "top") {
   }
   let mask = null
   try {
-    const { t, model, processor } = await load()
+    const { t } = await load()
     const scale = Math.min(1, SIZE / Math.max(w, h))
     const sw = Math.round(w * scale), sh = Math.round(h * scale)
     const canvas = document.createElement("canvas")
@@ -179,11 +210,8 @@ export async function wornGarmentMask(data, w, h, kind = "top") {
     const raw = new t.RawImage(new Uint8ClampedArray(small.data), sw, sh, 4).rgb()
     const points = [...positives, ...negatives].map(([x, y]) => [x * scale, y * scale])
     const labels = [...positives.map(() => 1), ...negatives.map(() => 0)]
-    const inputs = await processor(raw, { input_points: [[points]], input_labels: [[labels]] })
-    const outputs = await model(inputs)
-    const masks = await processor.post_process_masks(outputs.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes)
-    const all = masks[0], count = all.dims[1], bits = all.data, plane = sw * sh
-    const scores = outputs.iou_scores.data
+    const { bits, count, scores } = await masksFor(raw, points, labels, photoKey(src))
+    const plane = sw * sh
     // The mask that holds the points on the cloth and not the face, the largest of those the model is sure of.
     let best = -1, bestArea = 0
     for (let k = 0; k < count; k++) {

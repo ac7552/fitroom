@@ -10,6 +10,7 @@ import { drawnSize, fitBody, fitJacket, fitTrousers } from "lib/body_fit"
 import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepareBody, skinPoints, vertexNormals } from "lib/garments/dress"
 import { bodyFrame } from "lib/garments/body"
 import { RemoteDrape } from "lib/garments/remote_drape"
+import { hangerSpec } from "lib/garments/hanger"
 import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
@@ -111,6 +112,8 @@ const DRAPE_IN_WORKER = typeof location !== "undefined" && new URLSearchParams(l
 const BANK_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("bank") !== "off"
 // The store's photographs laid on a top's cloth point for point (redrape.js); ?redrape=off does without.
 const REDRAPE_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("redrape") !== "off"
+// The hanger drape in a worker unless the address says ?hang=page.
+const HANG_IN_WORKER = typeof location === "undefined" || new URLSearchParams(location.search).get("hang") !== "page"
 const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
 const TUCKED_LAYERS = ["top", "bottom", "outer"]
 const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
@@ -136,6 +139,7 @@ export class FittingStage {
     this.order = LAYERS
     this.tucked = false     // whether a top is worn tucked into the pants (when it can be)
     this.drapeBudget = 20   // milliseconds of draping per frame
+    this.hangs = 0   // hanger drapes sent to the worker, for their ids
     // Or the drape in a worker, at full speed and off this thread (null when it isn't, or can't be, used).
     this.remote = DRAPE_IN_WORKER ? RemoteDrape.start() : null
     this.remoteIds = 0
@@ -1848,6 +1852,27 @@ export class FittingStage {
     this.frameId = this.visible ? requestAnimationFrame(this.tick) : null
   }
 
+  // The garment hung up as a shop photographs it, for laying its photos on: in a worker (hanger.js, run by
+  // drape_worker.js) where there is one, so the page doesn't spend tens of seconds of its frames on it;
+  // here, a few milliseconds a frame, where there isn't or it fails. Either way, an object with the
+  // HangerDrape's advance(budget), done and positions.
+  hangOff(d) {
+    if (HANG_IN_WORKER && this.hangWorker === undefined) this.hangWorker = RemoteDrape.start(1)
+    const remote = this.hangWorker
+    if (!remote || remote.failed) return new HangerDrape(d.top, d.restX)
+    const id = `hang:${++this.hangs}`
+    const job = remote.hang(id, { top: hangerSpec(d.top), restX: d.restX })
+    let local = null
+    return {
+      get done() { return local ? local.done : job.done },
+      get positions() { return local ? local.positions : job.x },
+      advance: budget => {
+        if (!local && job.failed) local = new HangerDrape(d.top, d.restX)
+        return local ? local.advance(budget) : !job.done
+      }
+    }
+  }
+
   // The store's photographs onto a top's cloth, once it's draped and posed (redrape.js): the garment is
   // simulated hanging as the store photographed it, a few milliseconds a frame, then each point takes its
   // place in the photos. Runs after the drape, so the garment shows first in its colour and print, then as
@@ -1877,7 +1902,7 @@ export class FittingStage {
           if (!photos) { d.redrapeState = "off"; return }
           d.redrapePhotos = photos
           if (d.redrapeTimes) d.redrapeTimes.photos = performance.now() - d.redrapeTimes.asked
-          d.hanger = new HangerDrape(d.top, d.restX)
+          d.hanger = this.hangOff(d)
           d.redrapeState = d.hanger.done ? "off" : "hanging"
           this.start()
         })

@@ -10,9 +10,12 @@
 //   { type: "pose", id, posed, before, now: { body, over, egg }, bottom, last, long }
 //     → { type: "progress", id, x, frame } now and then, then { type: "posed", id, x, frame, field }
 //       (field, on the last step: the posed body's collision field, as plain data; see fieldData)
+//   { type: "hang", id, top: hanger.js's hangerSpec, restX }
+//     → { type: "hung", id, x }: the garment hung up as a shop photographs it (hanger.js's HangerDrape)
 //   { type: "drop", id }: the garment's gone; stop.
 import { prepareBody, sewingFor } from "lib/garments/dress"
 import { fieldData } from "lib/garments/remote_drape"
+import { HangerDrape } from "lib/garments/hanger"
 
 const jobs = new Map()
 // How often the cloth is sent back while it settles (ms), so the page shows it moving.
@@ -25,6 +28,7 @@ export function handle(message, post) {
   const report = error => post({ type: "error", id: message.id, error: String(error?.stack ?? error) })
   if (message.type === "sew") return sew(message, post).catch(report)
   if (message.type === "pose") return pose(message, post).catch(report)
+  if (message.type === "hang") return hang(message, post).catch(report)
   if (message.type === "drop") {
     const job = jobs.get(message.id)
     if (job) job.dropped = true
@@ -96,4 +100,18 @@ function yieldToMessages() {
     channel.port1.onmessage = () => resolve()
     channel.port2.postMessage(null)
   })
+}
+
+// The hanger drape at full speed, a slice at a time so a "drop" is heard.
+async function hang({ id, top, restX }, post) {
+  const hanger = new HangerDrape(top, restX)
+  const job = { dropped: false }
+  jobs.set(id, job)
+  while (hanger.advance(SLICE)) {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    if (job.dropped) return
+  }
+  jobs.delete(id)
+  const x = hanger.positions
+  post({ type: "hung", id, x }, [x.buffer])
 }

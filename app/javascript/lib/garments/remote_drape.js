@@ -7,6 +7,7 @@
 //   const job = remote.sew(id, { item, body, over, egg, measures, arms })
 //   job.x (the newest points, or null once taken), job.sewn, job.frames, job.phase
 //   const step = remote.pose(id, { posed, before, now, bottom, last, long })   // step.done, step.x, step.field
+//   const hung = remote.hang(id, { top: hangerSpec(top), restX })    // hung.done, hung.x (hanger.js)
 //   remote.drop(id)
 import { SkinField } from "lib/garments/body"
 
@@ -106,6 +107,9 @@ export class RemoteDrape {
       else if (job) Object.assign(job, { x: message.x, frames: message.frames, phase: message.phase, frame: message.frame })
     } else if (message.type === "sewn" && job) {
       Object.assign(job, { x: message.x, frames: message.frames, frame: message.frame, sewn: true })
+    } else if (message.type === "hung" && job) {
+      Object.assign(job, { x: message.x, done: true })
+      this.jobs.delete(message.id)
     } else if (message.type === "posed" && step) {
       Object.assign(step, { x: message.x, frame: message.frame, field: fieldFrom(message.field), done: true })
       this.steps.delete(message.id)
@@ -127,6 +131,18 @@ export class RemoteDrape {
     const job = { id, worker, x: null, frames: 0, phase: "sewing", frame: 0, sewn: false, started: performance.now() }
     this.jobs.set(id, job)
     this.workers[worker].postMessage({ type: "sew", id, ...spec })
+    return job
+  }
+
+  // A garment hung up as a shop photographs it (hanger.js), worked out on the least busy worker:
+  // job.done and job.x (its hanging positions) once it's there, job.failed if it can't be.
+  hang(id, spec) {
+    const load = this.workers.map(() => 0)
+    for (const job of this.jobs.values()) load[job.worker]++
+    const worker = load.indexOf(Math.min(...load))
+    const job = { id, worker, x: null, done: false, failed: false }
+    this.jobs.set(id, job)
+    this.workers[worker].postMessage({ type: "hang", id, ...spec })
     return job
   }
 
