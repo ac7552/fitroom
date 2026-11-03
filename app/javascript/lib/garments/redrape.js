@@ -74,7 +74,8 @@ export class HangerDrape {
 // found row by row as the stretch from the first pixel of the cloth's colour to the last in each run of the
 // outline, so a print inside the garment stays in. A hanger is cut off: its hook (rows narrower than a third
 // of the widest, above the garment), then the rows below that are mostly the hook's colour (its shoulders).
-// Returns { mask, box: { left, right, top, bottom }, bg: the backdrop's colour } or null.
+// Returns { mask, box: { left, right, top, bottom }, bg: the backdrop's colour, hung: whether there was a hook }
+// or null.
 export function clothMask(data, w, h) {
   const found = garmentMask(data, w, h)
   if (!found) return null
@@ -148,7 +149,7 @@ export function clothMask(data, w, h) {
     if (!seen) { top = y; seen = true }
     bottom = y
   }
-  return seen ? { mask: out, box: { left, right, top, bottom, w, h }, bg } : null
+  return seen ? { mask: out, box: { left, right, top, bottom, w, h }, bg, hung: hookEnd - first >= h * 0.02 } : null
 }
 
 // Which group of the hanging silhouette a panel belongs to: 0 the wearer's right sleeve (or a pair of
@@ -230,6 +231,7 @@ export function layoutPhoto(photo, mirror) {
   centres.sort((a, b) => a - b)
   const cx = centres.length ? centres[centres.length >> 1] : (box.left + box.right) / 2
   const body = [series(), series()], left = [series(), series()], right = [series(), series()], all = [series(), series()]
+  const gap = [series(), series()]   // a neck opening's two edges, on rows the body is split by one
   const sepL = series(), sepR = series()
   const W = box.right - box.left
   let seps = [0, 0]
@@ -241,8 +243,18 @@ export function layoutPhoto(photo, mirror) {
     // The runs on the photo's left of the body (or of the middle, on a row with no body: the cuffs below a
     // hem) are the one side's, those on its right the other's; a side's run counts when it's a sleeve's or
     // leg's width at least, not a fold's.
-    const before = k < 0 ? runs.filter(([, b]) => b < cx) : runs.slice(0, k), after = k < 0 ? runs.filter(([a]) => a > cx) : runs.slice(k + 1)
+    let before = k < 0 ? runs.filter(([, b]) => b < cx) : runs.slice(0, k), after = k < 0 ? runs.filter(([a]) => a > cx) : runs.slice(k + 1)
     if (k >= 0) { body[0][y] = runs[k][0]; body[1][y] = runs[k][1] }
+    else {
+      // No run through the middle, but a wide run close on each side of it: the body with its neck opening
+      // (or a V) between the two halves, not two sleeves.
+      const l = before[before.length - 1], r = after[0]
+      if (l && r && l[1] - l[0] >= 0.12 * W && r[1] - r[0] >= 0.12 * W && r[0] - l[1] < 0.3 * W) {
+        body[0][y] = l[0]; body[1][y] = r[1]
+        gap[0][y] = l[1]; gap[1][y] = r[0]
+        before = before.slice(0, -1); after = after.slice(1)
+      }
+    }
     if (before.length && before[before.length - 1][1] - before[0][0] >= 0.06 * W) { left[0][y] = before[0][0]; left[1][y] = before[before.length - 1][1] }
     if (after.length && after[after.length - 1][1] - after[0][0] >= 0.06 * W) { right[0][y] = after[0][0]; right[1][y] = after[after.length - 1][1] }
     // The body's own edge is known where a side hangs apart from a body of a body's width.
@@ -259,7 +271,7 @@ export function layoutPhoto(photo, mirror) {
   // of the back.
   const [groupR, groupL] = mirror ? [sides[1], sides[0]] : sides
   const [extR, extL] = mirror ? [extended[1], extended[0]] : extended
-  return { top: box.top, left: box.left, right: box.right, H, body: smooth(body), all: smooth(all), sides: [groupR, null, groupL], extended: [extR, null, extL], mirror, width: box.right - box.left }
+  return { top: box.top, left: box.left, right: box.right, H, body: smooth(body), all: smooth(all), gap, sides: [groupR, null, groupL], extended: [extR, null, extL], mirror, width: box.right - box.left }
 }
 
 // The photo laid on the garment: texture coordinates ([u, v, which] per cloth point; which 1 the front photo,

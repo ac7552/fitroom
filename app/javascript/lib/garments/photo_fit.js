@@ -29,7 +29,7 @@ export async function readOutline(src) {
   ctx.drawImage(image, 0, 0, w, h)
   const found = clothMask(ctx.getImageData(0, 0, w, h).data, w, h)
   if (!found) return null
-  return measureOutline({ mask: found.mask, box: { ...found.box, w, h } })
+  return measureOutline({ mask: found.mask, box: { ...found.box, w, h }, hung: found.hung })
 }
 
 // The photo's garment measured, in pixels of the photo: rows and widths of its body and sleeves, its neck,
@@ -48,17 +48,6 @@ export function measureOutline(photo) {
     for (let y = box.top; y <= box.bottom; y++) if (mask[y * w + x]) { topY[x] = y - box.top; break }
     for (let y = box.bottom; y >= box.top; y--) if (mask[y * w + x]) { bottomY[x] = y - box.top; break }
   }
-  // A sleeve hangs apart from the body when its run begins in the top half of the garment and goes on for
-  // a sixth of its length at least (runs only at the bottom are cuffs peeping below a hem, not a sleeve).
-  const sideRows = [0, 2].map(g => { const rows = []; for (let y = 0; y < H; y++) if (!Number.isNaN(layout.sides[g][0][y])) rows.push(y); return rows })
-  const sideApart = sideRows.map((rows, g) => {
-    if (rows.length < 0.15 * H || rows[0] >= 0.5 * H) return false
-    // A strap (a slip dress's) is a run too narrow to be a sleeve: under 7% of the garment's width at its top.
-    const side = layout.sides[g * 2]
-    const top = median(rows.slice(0, Math.max(1, Math.round(rows.length * 0.15))).map(y => side[1][y] - side[0][y]))
-    return top != null && top >= 0.07 * W
-  })
-  const apart = sideApart[0] || sideApart[1]
   // The centre column, where the neck is.
   const centre = Math.round((box.left + box.right) / 2)
   // The shoulder points: the garment's top corners. Outside the collar (the middle 35% of the width), the
@@ -77,6 +66,18 @@ export function measureOutline(photo) {
   }
   const shoulderW = shoulder.left && shoulder.right ? shoulder.right.x - shoulder.left.x : null
   const shoulderRow = shoulder.left && shoulder.right ? Math.round((shoulder.left.y + shoulder.right.y) / 2) : Math.round(0.06 * H)
+  // A sleeve hangs apart from the body when its run begins in the top half of the garment and goes on for
+  // a sixth of its length at least (runs only at the bottom are cuffs peeping below a hem, not a sleeve).
+  // (Nothing above the shoulders is a sleeve: a collar's or a band's halves either side of the neck opening.)
+  const sideRows = [0, 2].map(g => { const rows = []; for (let y = shoulderRow; y < H; y++) if (!Number.isNaN(layout.sides[g][0][y])) rows.push(y); return rows })
+  const sideApart = sideRows.map((rows, g) => {
+    if (rows.length < 0.15 * H || rows[0] >= 0.5 * H) return false
+    // A strap (a slip dress's) is a run too narrow to be a sleeve: under 7% of the garment's width at its top.
+    const side = layout.sides[g * 2]
+    const top = median(rows.slice(0, Math.max(1, Math.round(rows.length * 0.15))).map(y => side[1][y] - side[0][y]))
+    return top != null && top >= 0.07 * W
+  })
+  const apart = sideApart[0] || sideApart[1]
   // Sleeveless: nothing hangs or lies outside the shoulders (straps or armholes), so the garment is no wider
   // below the shoulders than at them. (Sleeves hanging along the body make it wider there.)
   let widestTop = 0
@@ -121,7 +122,7 @@ export function measureOutline(photo) {
   // Each sleeve hanging apart: its length from the shoulder point down the middle of its run, its width at
   // the top and at the end, and a cuff band (the end narrower than the sleeve above it by a fifth).
   const sleeves = {}
-  for (const [key, g, point, ok] of [["right", 0, shoulder.left, sideApart[0]], ["left", 2, shoulder.right, sideApart[1]]]) sleeves[key] = ok ? sleeveOf(layout, g, point, H) : null
+  for (const [key, g, point, ok] of [["right", 0, shoulder.left, sideApart[0]], ["left", 2, shoulder.right, sideApart[1]]]) sleeves[key] = ok ? sleeveOf(layout, g, point, H, shoulderRow) : null
   let sleeveLength = median(Object.values(sleeves).map(s => s?.length).filter(v => v != null))
   // Sleeves lying along the body (a hanging shirt) or touching it (laid out at an angle): their ends are
   // the garment's outermost bottom corners, from the shoulder point to the corner.
@@ -134,7 +135,7 @@ export function measureOutline(photo) {
   }
   const collar = collarOf({ topY, centre, H, shoulder, neck, box })
   return {
-    H, W, apart, sleeveless, shoulderRow, underarmRow, hemRow, bodyLength,
+    H, W, apart, sleeveless, hung: Boolean(photo.hung), shoulderRow, underarmRow, hemRow, bodyLength,
     shoulderW, underarmW, waistW, hemW, chestW: at(0.25), hipW: at(0.75),
     hemShape, hemBand, neck, sleeves, sleeveLength, sleeveEnds, collar,
     hood: collar === "hood",
@@ -143,25 +144,21 @@ export function measureOutline(photo) {
 }
 
 function neckOf(layout, H, W) {
-  // Rows at the top where the row has two runs either side of the middle with a gap between.
+  // Rows at the top where the body is split by an opening (layoutPhoto's gap): its width at the top and how
+  // many rows it runs.
   let depth = 0, width = null, top = null
   for (let y = 0; y < Math.min(H, Math.round(0.3 * H)); y++) {
-    const a = layout.body[0][y]
-    const l = layout.sides[0], r = layout.sides[2]
-    // With no body run through the middle, the middle is open: the gap between the runs either side.
-    if (Number.isNaN(a) && !Number.isNaN(l[1][y]) && !Number.isNaN(r[0][y])) {
-      const gap = r[0][y] - l[1][y]
-      if (gap > 0.03 * W) { if (top == null) { top = y; width = gap }; depth = y - top + 1; continue }
-    }
+    const a = layout.gap[0][y], b = layout.gap[1][y]
+    if (!Number.isNaN(a) && b - a > 0.03 * W) { if (top == null) { top = y; width = b - a }; depth = y - top + 1; continue }
     if (top != null) break
   }
   return top == null ? null : { top, depth, width }
 }
 
-function sleeveOf(layout, g, point, H) {
+function sleeveOf(layout, g, point, H, from = 0) {
   const side = layout.sides[g]
   const rows = []
-  for (let y = 0; y < H; y++) if (!Number.isNaN(side[0][y])) rows.push(y)
+  for (let y = from; y < H; y++) if (!Number.isNaN(side[0][y])) rows.push(y)
   if (rows.length < 0.04 * H) return null
   const first = rows[0], last = rows[rows.length - 1]
   // Down the middle of the run, from the shoulder point (or the run's top) to its end.
@@ -195,17 +192,19 @@ function collarOf({ topY, centre, H, shoulder, neck, box }) {
   for (const [, v] of h) if (v > rise) rise = v
   const middle = h.filter(([u]) => Math.abs(u) < 0.08).map(([, v]) => v)
   const hc = middle.length ? median(middle) : rise
-  // How much of the edge lies at the top (a plateau: the collar's top cut level by a hanger's cut, or a band
-  // laid flat), and how wide the low middle is.
-  const plateau = h.filter(([, v]) => v >= rise - 1).length / h.length
+  // How wide the low middle is.
   const lowZone = h.filter(([, v]) => v < 0.5 * rise).length / h.length
   const dip = rise > 0 ? hc / rise : 1
-  if (typeof globalThis.__collarDebug === "function") globalThis.__collarDebug({ rise: rise / H, dip, plateau, lowZone }, h)
+  if (typeof globalThis.__collarDebug === "function") globalThis.__collarDebug({ rise: rise / H, dip, lowZone }, h)
   if (rise >= 0.18 * H) return "hood"
-  if (plateau >= 0.5) return rise < 0.045 * H ? "band" : null
-  if (dip < 0.5) return lowZone < 0.35 ? "shirt" : "open"
-  if (rise < 0.045 * H) return neck && neck.depth > 0.03 * H ? "open" : "band"
-  return "stand"
+  // A middle clearly lower than the highest point: collar points either side of a narrow opening (a shirt),
+  // or a wide opening in a low rim (a band) or with no rim to speak of (an open neckline). A top edge as
+  // high in the middle as anywhere says nothing: a hanger's cut, or a collar laid flat, looks like a band.
+  if (dip < 0.5) {
+    if (lowZone < 0.35) return "shirt"
+    return rise < 0.045 * H ? "band" : "open"
+  }
+  return null
 }
 
 function median(values) {
@@ -224,9 +223,12 @@ export function fitChart(chart, outline, sample) {
   if (outline.underarmW > 0 && (outline.apart || outline.sleeveless)) { scale = (sample.chest / 2) / outline.underarmW; by = "chest" }
   else if (sample.length > 0 && outline.bodyLength > 0) { scale = sample.length / outline.bodyLength; by = "length" }
   if (!scale) return null
+  // The shoulders are read where the sleeves hang apart (the chest sets the scale) or the garment lies
+  // flat; hung on a hanger, the shoulders droop and read narrow.
+  const shoulders = outline.shoulderW > 0 && (by === "chest" || !outline.hung)
   const seen = {
     length: by !== "length" && outline.bodyLength > 0 ? outline.bodyLength * scale : null,
-    shoulders: outline.shoulderW > 0 ? outline.shoulderW * scale : null,
+    shoulders: shoulders ? outline.shoulderW * scale : null,
     sleeve: outline.sleeveLength > 0 ? outline.sleeveLength * scale : null,
     // The hem round: the pattern's hem takes the chart's waist, never wider than the chest.
     waist: outline.hemW > 0 ? Math.min(outline.hemW * 2 * scale, sample.chest) : null

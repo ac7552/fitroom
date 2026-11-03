@@ -8,7 +8,7 @@ const { measureOutline, fitChart, constructionFrom } = await import("lib/garment
 const { draftTop, measures, STYLES } = await import("lib/garments/pattern")
 
 // A dark tee laid flat on a light backdrop, 300 by 360: a body 100 wide from the shoulders (row 60) to the
-// hem (row 300), a crew band 6 rows high over a 40-wide neck, and sleeves laid out to the sides, apart from
+// hem (row 300), a crew band 6 rows high round a 40-wide neck, and sleeves laid out to the sides, apart from
 // the body, ending at row 160 (short) or 300 (long, with a narrower cuff when asked).
 function tee({ sleeves = "short", cuff = false, hemBand = false } = {}) {
   const w = 300, h = 360, data = new Uint8ClampedArray(4 * w * h)
@@ -21,13 +21,13 @@ function tee({ sleeves = "short", cuff = false, hemBand = false } = {}) {
     if (hemBand && y > 288 && y <= 300 && (x < 108 || x > 192)) { put(x, y, c); continue }
     if (body) c = cloth
     // The band round the neck, with the opening between its sides at the front.
-    if (y >= 54 && y < 60 && x >= 100 && x <= 200 && !(x > 130 && x < 170 && y >= 56)) c = cloth
+    if (y >= 54 && y < 60 && x >= 118 && x <= 182 && !(x > 130 && x < 170)) c = cloth
     if (y >= 60 && y < 72 && x > 130 && x < 170) c = bg   // the neck opening, seen through to the backdrop
-    // Sleeves: 24 wide, joined to the body at the shoulder for 14 rows (the cap), then out at a slight angle
-    // apart from the body by a 10-pixel gap.
+    // Sleeves: 24 wide, joined to the body from a little below the shoulder for 10 rows (the cap), then out at
+    // a slight angle apart from the body by a 10-pixel gap.
     for (const [x0, dir] of [[100, -1], [200, 1]]) {
       const s = (y - 60) / Math.max(1, end - 60)
-      if (y >= 60 && y <= end) {
+      if (y >= 68 && y <= end) {
         const joined = y < 74
         const inner = x0 + dir * (joined ? 0 : 10 + Math.round(10 * s)), outer = inner + dir * (cuff && y > end - 14 ? 16 : 24)
         if ((dir < 0 && x <= inner && x >= outer) || (dir > 0 && x >= inner && x <= outer)) c = cloth
