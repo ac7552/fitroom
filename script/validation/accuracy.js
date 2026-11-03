@@ -118,9 +118,12 @@ export function appearance(d) {
   const pieces = Object.fromEntries(cloth.panels.map((name, p) => [name, acc[p].n ? { far: Math.round((acc[p].far / acc[p].n) * 100) / 100, rgb: acc[p].sum.map(v => Math.round(v / acc[p].n)) } : null]))
   const photo = { front: clothShare(photos.front), back: photos.back ? clothShare(photos.back) : null }
   const wrong = []
+  // (A print all over is on the sleeves too: they're held to the front's share, not to plain.)
+  const allOver = d.trust?.allOver ?? false
   for (const [name, piece] of Object.entries(pieces)) {
     if (!piece) continue
-    if (/^(sleeve|hood)/.test(name) && piece.far > 0.25) wrong.push({ piece: name, why: `${Math.round(piece.far * 100)}% off the garment's colour` })
+    const limit = allOver ? (photo.front ?? 0) + 0.2 : 0.25
+    if (/^(sleeve|hood)/.test(name) && piece.far > limit) wrong.push({ piece: name, why: `${Math.round(piece.far * 100)}% off the garment's colour` })
   }
   const back = pieces.back
   if (back) {
@@ -153,10 +156,13 @@ export function accuracyOf(stage, kind, label) {
   out.foreign = d.redrape ? Math.round(((d.foreign ?? 0) / d.top.cloth.points.length) * 1000) / 1000 : null
   out.bare = bare(d)
   out.plain = d.trust?.plain ?? []
+  out.trust = d.trust ? { far: d.trust.far, front: d.trust.front, back: d.trust.back, allOver: d.trust.allOver } : null
   out.appearance = d.redrape ? appearance(d) : null
   // The listing's own notes (accuracy.json "expect"), checked by what the appearance read.
   if (out.appearance && label?.expect) for (const [what, value] of Object.entries(label.expect)) {
-    if (what === "backPlain" && value && (out.appearance.pieces.back?.far ?? 0) > 0.08) out.appearance.wrong.push({ piece: "back", why: "the back should be plain" })
+    // Plain: no busier than the back photo's own cloth (a heather's flecks count), or near nothing without one.
+    const plainAs = (out.appearance.photo.back ?? 0) + 0.08
+    if (what === "backPlain" && value && (out.appearance.pieces.back?.far ?? 0) > plainAs) out.appearance.wrong.push({ piece: "back", why: "the back should be plain" })
   }
   out.pass = {
     construction: out.construction ? out.construction.ok : null,

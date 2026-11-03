@@ -138,17 +138,34 @@ test("the plainest patch of cloth is found where the cloth is one colour", async
 test("a hood and a sleeve that took the body's lettering are laid on plain cloth; the front keeps its photo", async () => {
   const { trustPieces } = await import("lib/garments/redrape")
   const shot = photo()
-  for (let y = 100; y < 200; y++) for (let x = 40; x <= 200; x++) if (shot.data[4 * (y * shot.w + x)] === 60) shot.data.set([20, 30, 90, 255], 4 * (y * shot.w + x))
+  // Lettering across the chest, running onto the sleeves where they lie along the body.
+  for (let y = 110; y < 140; y++) for (let x = 40; x <= 200; x++) if (shot.data[4 * (y * shot.w + x)] === 60) shot.data.set([20, 30, 90, 255], 4 * (y * shot.w + x))
   const front = photoOf(shot)
   // Four pieces of a few points each: the front on the lettering and the cloth, a sleeve all on the lettering,
   // a hood on the cloth, a back (no photo of its own).
   const cloth = { panels: ["front", "sleeve_L", "hood_L", "back"], points: [], panel: [] }
   const uv = []
   const at = (p, x, y, px, py) => { cloth.points.push([px, py]); cloth.panel.push(p); uv.push(x / shot.w, 1 - y / shot.h, 1) }
-  for (let k = 0; k < 10; k++) { at(0, 100 + k, k < 2 ? 150 : 80, k, 0); at(1, 50, 120 + k, 0, k); at(2, 120, 70 + k, k, k); at(3, 100 + k, 80, k, 0) }
+  for (let k = 0; k < 10; k++) { at(0, 100 + k, k < 2 ? 120 : 80, k, 0); at(1, 50, 120 + k, 0, k); at(2, 120, 70 + k, k, k); at(3, 100 + k, 80, k, 0) }
   const out = trustPieces({ cloth }, Float32Array.from(uv), { front, back: null })
   assert.deepEqual(out.plain.sort(), ["back", "hood_L", "sleeve_L"])
   assert.equal(out.far.front, 0.2)
+  assert.equal(out.allOver, false)
+})
+
+test("a print all over keeps the photo on the sleeves and the back", async () => {
+  const { trustPieces } = await import("lib/garments/redrape")
+  const shot = photo()
+  // A stripe all over: two of every three 10-pixel bands of the cloth light.
+  for (let y = 60; y <= 260; y++) for (let x = 40; x <= 200; x++) if (shot.data[4 * (y * shot.w + x)] === 60 && Math.floor(x / 10) % 3) shot.data.set([200, 200, 210, 255], 4 * (y * shot.w + x))
+  const front = photoOf(shot, { cloth: [60, 40, 30] })
+  const cloth = { panels: ["front", "sleeve_L", "back"], points: [], panel: [] }
+  const uv = []
+  const at = (p, x, y) => { cloth.points.push([x, y]); cloth.panel.push(p); uv.push(x / shot.w, 1 - y / shot.h, 1) }
+  for (let k = 0; k < 20; k++) { at(0, 90 + 3 * k, 150); at(1, 41 + k, 150); at(2, 90 + 3 * k, 160) }
+  const out = trustPieces({ cloth }, Float32Array.from(uv), { front, back: null })
+  assert.equal(out.allOver, true)
+  assert.deepEqual(out.plain, [])
 })
 
 test("a hood standing up above the shoulders is kept, not cut off as a hanger's hook", () => {

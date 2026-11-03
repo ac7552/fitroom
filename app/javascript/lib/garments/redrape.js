@@ -979,7 +979,12 @@ export function trustPieces(top, uv, photos) {
     for (let c = 0; c < 3; c++) s.rgb[c].push(d[k + c])
   }
   const far = Object.fromEntries(names.map((name, p) => [name, stats[p].n ? Math.round((stats[p].far / stats[p].n) * 100) / 100 : null]))
-  const graphic = far.front != null && far.front > 0.04 && far.front < 0.7
+  // A print all over (a check, a jacquard, a camo) is on the sleeves and back too, and stays; a placed graphic
+  // (a chest print, lettering) is what a sleeve or a back mustn't borrow. All over: most of the front off the
+  // cloth's colour, or the back photo about as busy as the front.
+  const front = photoShare(photos.front), back = photos.back ? photoShare(photos.back) : null
+  const allOver = front != null && (front > 0.5 || (back != null && front > 0.08 && back > 0.6 * front))
+  const graphic = !allOver && front != null && front > 0.04
   const worn = Boolean(photos.front.worn)
   const plain = []
   // A pair (the two sleeves, cuffs, halves of a hood) goes together: one plain sleeve beside one printed one
@@ -992,6 +997,7 @@ export function trustPieces(top, uv, photos) {
     const share = worst[pairOf(name)]
     let reason = null
     if (/^hood/.test(name)) reason = "hood"
+    else if (allOver) reason = null
     else if (/^sleeve/.test(name) && share > (worn ? 0.16 : 0.2)) reason = "sleeve"
     else if (/^(cuff|waistband|collar|placket)/.test(name) && share > 0.5) reason = "band"
     else if (/^back/.test(name) && !photos.back && graphic) reason = "back"
@@ -1005,7 +1011,22 @@ export function trustPieces(top, uv, photos) {
     layPatch(cloth, uv, p, source, patch, source === photos.back ? 3 : 1)
     plain.push(name)
   }
-  return { plain, far }
+  return { plain, far, front, back, allOver }
+}
+
+// The share of a photo's cloth off the cloth's colour (FAR away), sampled every 4 pixels.
+function photoShare(photo) {
+  if (!photo?.cloth || !photo.mask) return null
+  const W = photo.canvas.width
+  const d = photo.canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, W, photo.canvas.height).data
+  let n = 0, far = 0
+  for (let y = photo.box.top; y <= photo.box.bottom; y += 4) for (let x = photo.box.left; x <= photo.box.right; x += 4) {
+    const k = y * W + x
+    if (!photo.mask[k]) continue
+    n++
+    if (Math.hypot(d[4 * k] - photo.cloth[0], d[4 * k + 1] - photo.cloth[1], d[4 * k + 2] - photo.cloth[2]) > FAR) far++
+  }
+  return n ? far / n : null
 }
 
 // The share of a piece off the cloth's colour counts pixels this far from it (RGB distance): a heather's
