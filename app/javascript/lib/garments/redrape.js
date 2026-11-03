@@ -330,7 +330,10 @@ export function registerPhoto(top, hanging, front, back = null) {
     for (let d = 0; d < 8; d++) for (const rr of [r - d, r + d]) if (rr >= 0 && rr < HH && !Number.isNaN(ext[g][0][rr])) return [ext[g][0][rr], ext[g][1][rr]]
     return null
   }
-  const vext = [0, 1, 2].map(g => { let lo = Infinity, hi = -Infinity; for (let i = 0; i < n; i++) if (groupOf(names[cloth.panel[i]]) === g) { const Y = hanging[3 * map[i] + 1]; lo = Math.min(lo, Y); hi = Math.max(hi, Y) } return [lo, hi] })
+  // A hood isn't laid from the photo (trustPieces gives it plain cloth), and hangs down the back on the hanger
+  // where a photo often shows it standing up: it's left out of the body's height on both.
+  const hooded = names.some(name => /^hood/.test(name))
+  const vext = [0, 1, 2].map(g => { let lo = Infinity, hi = -Infinity; for (let i = 0; i < n; i++) if (groupOf(names[cloth.panel[i]]) === g && !/^hood/.test(names[cloth.panel[i]])) { const Y = hanging[3 * map[i] + 1]; lo = Math.min(lo, Y); hi = Math.max(hi, Y) } return [lo, hi] })
   const layouts = { front: layoutPhoto(front, false), back: back ? layoutPhoto(back, true) : null }
   // Where a photo's body ends (its hem: the last row with a run wider than 40% of the garment), and where
   // each side's own run ends.
@@ -343,17 +346,30 @@ export function registerPhoto(top, hanging, front, back = null) {
     }
     return { body, sides }
   }
+  // Where the garment's shoulders are on a photo of a hooded top: the first row as wide as most of its
+  // chest (a hood standing up above them is narrower); 0 for anything else.
+  const shouldersOf = layout => {
+    if (!hooded || bottoms) return 0
+    const widths = []
+    for (let y = 0; y < layout.H; y++) widths.push(Number.isNaN(layout.all[0][y]) ? 0 : layout.all[1][y] - layout.all[0][y])
+    const chest = widths.slice(Math.round(0.25 * layout.H), Math.round(0.45 * layout.H)).sort((a, b) => a - b)
+    const typical = chest[chest.length >> 1] ?? 0
+    const y = widths.findIndex(v => v >= 0.6 * typical)
+    return y > 0 && y < 0.4 * layout.H ? y : 0
+  }
   const ends = { front: endsOf(layouts.front), back: layouts.back ? endsOf(layouts.back) : null }
+  const tops = { front: shouldersOf(layouts.front), back: layouts.back ? shouldersOf(layouts.back) : 0 }
   // The photo's rows per unit of hanging height, and each group's hanging top and bottom as photo rows.
   const scaleOf = layout => {
     const end = layout === layouts.back ? ends.back : ends.front
+    const start = layout === layouts.back ? tops.back : tops.front
     const [blo, bhi] = bottoms ? [miny, maxy] : vext[1]
-    const scale = (bottoms ? layout.H - 1 : end.body) / Math.max(1e-6, bhi - blo)
+    const scale = (bottoms ? layout.H - 1 : end.body - start) / Math.max(1e-6, bhi - blo)
     const rowsOf = [0, 1, 2].map(g => {
       const [glo, ghi] = vext[g]
       if (!Number.isFinite(glo)) return null
-      const from = (bhi - ghi) * scale
-      let to = (bhi - glo) * scale
+      const from = start + (bhi - ghi) * scale
+      let to = start + (bhi - glo) * scale
       // A sleeve to where the photo's sleeve ends, when it hangs apart from the body there (and the end is
       // not just the body's hem, where a sleeve laid along the body stops being told apart).
       if (!bottoms && g !== 1 && end.sides[g] > from && end.sides[g] < end.body - 0.02 * layout.H) to = end.sides[g]
@@ -862,9 +878,12 @@ export function rigidPrints(top, uv, photo, which = 1) {
     if (points.length < 12) continue
     const dst = points.map(i => [uv[3 * i] * W, (1 - uv[3 * i + 1]) * H])
     // A pattern piece is drawn y up and the photo y down, and a piece may lie either way round on it: the
-    // pattern's points are tried each way, the best fit kept.
+    // pattern's points are tried each way, the best fit kept. Never mirrored against how the registration
+    // lays the whole piece (a mirrored K is the one thing a graphic can't be).
+    const hand = handOf(cloth, uv, cloth.panel[points[0]], W, H)
     let best = null
     for (const [fx, fy] of [[1, -1], [-1, -1], [1, 1], [-1, 1]]) {
+      if (hand && Math.sign(fx * fy) !== hand) continue
       const src = points.map(i => [fx * cloth.points[i][0], fy * cloth.points[i][1]])
       const t = similarity(src, dst)
       if (!t) continue
@@ -1038,4 +1057,35 @@ function layPatch(cloth, uv, panel, photo, patch, which) {
     const qx = x0 + ((x - minx) / span) * inner, qy = y0 + ((maxy - y) / span) * inner
     uv[3 * i] = qx / W; uv[3 * i + 1] = 1 - qy / H; uv[3 * i + 2] = which
   }
+}
+
+// Which way round the registration lays a pattern piece on its photo: the sign of the determinant of the
+// least-squares linear map from the piece's pattern (cm) to its photo points (pixels), 1 or -1, or 0 when
+// it can't tell (too few points, or the piece folded flat).
+const hands = new WeakMap()
+function handOf(cloth, uv, panel, W, H) {
+  let cache = hands.get(uv)
+  if (!cache) { cache = new Map(); hands.set(uv, cache) }
+  if (cache.has(panel)) return cache.get(panel)
+  let n = 0, mx = 0, my = 0, mu = 0, mv = 0
+  for (let i = 0; i < cloth.points.length; i++) if (cloth.panel[i] === panel && uv[3 * i + 2] > 0) { n++; mx += cloth.points[i][0]; my += cloth.points[i][1]; mu += uv[3 * i] * W; mv += (1 - uv[3 * i + 1]) * H }
+  let hand = 0
+  if (n >= 6) {
+    mx /= n; my /= n; mu /= n; mv /= n
+    let sxx = 0, sxy = 0, syy = 0, sux = 0, suy = 0, svx = 0, svy = 0
+    for (let i = 0; i < cloth.points.length; i++) if (cloth.panel[i] === panel && uv[3 * i + 2] > 0) {
+      const x = cloth.points[i][0] - mx, y = cloth.points[i][1] - my, u = uv[3 * i] * W - mu, v = (1 - uv[3 * i + 1]) * H - mv
+      sxx += x * x; sxy += x * y; syy += y * y; sux += u * x; suy += u * y; svx += v * x; svy += v * y
+    }
+    const det = sxx * syy - sxy * sxy
+    if (Math.abs(det) > 1e-9) {
+      // [a b; c d] = [sux suy; svx svy] * inverse([sxx sxy; sxy syy])
+      const a = (sux * syy - suy * sxy) / det, b = (suy * sxx - sux * sxy) / det
+      const c = (svx * syy - svy * sxy) / det, d = (svy * sxx - svx * sxy) / det
+      const m = a * d - b * c
+      hand = Math.abs(m) > 1e-9 ? Math.sign(m) : 0
+    }
+  }
+  cache.set(panel, hand)
+  return hand
 }
