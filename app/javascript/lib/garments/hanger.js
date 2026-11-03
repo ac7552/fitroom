@@ -2,9 +2,9 @@
 // this shape), in a module of its own so the drape worker can run it too (drape_worker.js's "hang").
 import { Drape } from "lib/garments/drape"
 
-// Frames the hanger drape runs at most (it stops when still). A garment has fallen into its hanging shape
-// by about 240 (the rest is small sway); each frame of a 6,000-point top is about 50 ms.
-const HANGER_FRAMES = 240
+// Frames the hanger drape runs at most (it stops when still). In the worker, 400 frames of a 6,000-point
+// top take about five seconds; fewer (240) shifted a flannel's sleeve on its photo enough to fail a check.
+const HANGER_FRAMES = 400
 
 // The garment hanging as a store photographs it: from the body drape's rest shape (restX: the sewn garment
 // in the sewing pose, by simulated point), held at its shoulder seams and neck, let fall with no body under
