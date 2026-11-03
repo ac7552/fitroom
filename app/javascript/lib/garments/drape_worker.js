@@ -102,13 +102,17 @@ function yieldToMessages() {
   })
 }
 
+// A turn of the worker's event loop, so a "drop" can be heard: by a message to itself, which a page in the
+// background doesn't slow down (a timer there waits a second or more).
+const turn = () => new Promise(resolve => { const channel = new MessageChannel(); channel.port1.onmessage = () => resolve(); channel.port2.postMessage(0) })
+
 // The hanger drape at full speed, a slice at a time so a "drop" is heard.
 async function hang({ id, top, restX }, post) {
   const hanger = new HangerDrape(top, restX)
   const job = { dropped: false }
   jobs.set(id, job)
-  while (hanger.advance(SLICE)) {
-    await new Promise(resolve => setTimeout(resolve, 0))
+  while (hanger.advance(250)) {
+    await turn()
     if (job.dropped) return
   }
   jobs.delete(id)

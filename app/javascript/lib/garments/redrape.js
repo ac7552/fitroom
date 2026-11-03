@@ -453,11 +453,14 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kin
   sctx.drawImage(canvas, 0, 0, sw, sh)
   const smallData = sctx.getImageData(0, 0, sw, sh).data
   // On someone: the garment alone (segment.js's wornGarmentMask), not the person; only the cloth is laid on.
-  const worn = photoTraits(smallData, sw, sh).skin > WORN_SKIN && faceAtTop(smallData, sw, sh)
+  let worn = photoTraits(smallData, sw, sh).skin > WORN_SKIN && faceAtTop(smallData, sw, sh)
   let found = clothMask(smallData, sw, sh)
   if (worn) {
     const garment = await wornGarmentMask(smallData, sw, sh, kind, src).catch(() => null)
-    found = garment ? maskFound(garment, sw, sh, found?.bg ?? backdropOf(smallData, sw, sh)) : null
+    const person = garment ? maskFound(garment, sw, sh, found?.bg ?? backdropOf(smallData, sw, sh)) : null
+    // No one found in it after all (a beige hood read as a face): the photo as a garment on its own.
+    if (person) found = person
+    else worn = false
   }
   if (!found) return null
   // A one-piece's half: the photo's garment cut at its waist (the narrowest row between a third and two

@@ -1881,7 +1881,11 @@ export class FittingStage {
     if (!REDRAPE_ON) return
     for (const slot of ["bottom", "top", "outer"]) {
       const d = this.slots[slot]
-      if (!d?.top?.done || d.posing || !d.restX || !d.shown) continue
+      // The photos are read and the garment hung up as soon as its rest shape is known (in a worker, beside
+      // the drape into the pose); the photos are laid on once it's draped, posed and shown.
+      if (!d?.top || !d.restX) continue
+      const ready = d.top.done && !d.posing && d.shown
+      if (!ready && !(HANG_IN_WORKER && this.hangWorker !== null && typeof Worker !== "undefined")) continue
       const item = d.top.item, photos = d.top.photos
       if (!photos || d.redrapeState === "done" || d.redrapeState === "off") continue
       if (!d.redrapeState) {
@@ -1910,6 +1914,7 @@ export class FittingStage {
       }
       if (d.redrapeState !== "hanging") continue
       if (d.hanger.advance(this.drapeBudget)) { this.redraw(); continue }
+      if (!ready) continue
       try {
         const { front, back } = d.redrapePhotos
         if (d.redrapeTimes) d.redrapeTimes.hung = performance.now() - d.redrapeTimes.asked
