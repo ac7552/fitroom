@@ -1,0 +1,111 @@
+{
+ "about": "The last accepted accuracy run (VAL.score().share and VAL.passes()), 2026-11-03, 15 listings; VAL.gate() holds a new run to it.",
+ "score": 0.634,
+ "passes": {
+  "khma030340-620": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": false
+  },
+  "rhufw26tt13012-6502": {
+   "construction": false,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "neesx480": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "khm034891-232": {
+   "construction": false,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": false
+  },
+  "casm-ss26-sh-003-05": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "khma030338-198": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "amfw2610-for": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "jpdr191-m031p-000201": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": false
+  },
+  "sir326-1018": {
+   "construction": true,
+   "silhouette": null,
+   "foreign": null,
+   "pieces": null,
+   "appearance": null
+  },
+  "ampf2608-blk": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "khwa080074-001": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "khwro0001-2023": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "es130ho258382f": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "essrw00347-0031": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "acnfn-ux-trou000058": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  }
+ }
+}
