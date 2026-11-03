@@ -149,6 +149,11 @@ async function check(item, kind, slot) {
   }
   if (kind === "top" && g.photo) out.checks.look = Boolean(g.lookChecks?.ok)
   if (A) out.accuracy = A.accuracyOf(s, kind, VAL.labels?.[item.handle] ?? null)
+  // Where the time went: the photo's reading (cleanup, reading, the rest), the re-drape (photos loaded, hung,
+  // laid on), ms from each one's start.
+  const slotOf = { top: "top", jacket: "outer", coat: "outer", trousers: "bottom" }[kind]
+  const t = s.slots[slotOf]?.redrapeTimes
+  out.times = { read: g.readTimes ?? null, redrape: t ? Object.fromEntries(Object.entries(t).filter(([k]) => k !== "asked").map(([k, v]) => [k, Math.round(v)])) : null }
   if (kind === "trousers" && g.photo) out.checks.photoRead = Boolean(g.photoMap)
   out.photoThumb = g.photo ? await thumb(g.photo, 200) : null
   return out
@@ -168,7 +173,11 @@ async function runOne(run) {
     for (const item of run.items) {
       const before = new Set(Object.values(c.outfit).map(x => x.garment))
       const t0 = performance.now()
-      await c.importGarment({ url: `https://kith.com/products/${item.handle}` })
+      // A Kith item by its handle; another shop's by its link, with its page as a browser showed it (page: a
+      // copy under public/validation/pages/, made as public/try_on.js makes one) for a shop that turns apps away.
+      const url = item.url ?? `https://kith.com/products/${item.handle}`
+      const html = item.page ? await fetch(`/validation/pages/${item.page}`).then(r => (r.ok ? r.text() : null)).catch(() => null) : null
+      await c.importGarment(html ? { url, page_html: html } : { url })
       const entry = Object.entries(c.outfit).find(([, x]) => !before.has(x.garment))
       if (!entry) { rec.items.push({ ...item, error: c.importErrorTarget.hidden ? "not added" : c.importErrorTarget.textContent.trim() }); continue }
       for (let k = 0; k < 150 && !c.outfit[entry[0]]?.fit; k++) await sleep(200)

@@ -126,8 +126,11 @@ class GarmentImport
       raise Error, "That doesn't look like a web link."
     end
 
+    # The system's resolver (getaddrinfo, as a browser uses), IPv4 first: Ruby's own Resolv reads
+    # /etc/resolv.conf, which on a Mac (and behind a VPN) may name no server that answers, and then every
+    # fetch waits out its deadline.
     def resolve(host)
-      addresses = Resolv.getaddresses(host)
+      addresses = Addrinfo.getaddrinfo(host, nil, nil, :STREAM).map(&:ip_address).uniq.sort_by { it.include?(":") ? 1 : 0 } rescue []
       raise Error, "Couldn't find that website." if addresses.empty?
 
       allowed = addresses.select { allowed?(it) }

@@ -185,5 +185,13 @@ export function score(results) {
     by[name] ??= { passed: 0, made: 0 }
     by[name].made++; if (ok) by[name].passed++
   }
-  return { share: made ? Math.round((passed / made) * 1000) / 1000 : null, passed, made, by }
+  // And by shop (a run's item names its shop; Kith's don't): a fix for one can't hide a loss on another.
+  const shops = {}
+  for (const run of Object.values(results)) for (const item of run.items ?? []) for (const ok of Object.values(item.accuracy?.pass ?? {})) {
+    if (ok == null) continue
+    const shop = shops[item.shop ?? "kith"] ??= { passed: 0, made: 0 }
+    shop.made++; if (ok) shop.passed++
+  }
+  for (const shop of Object.values(shops)) shop.share = Math.round((shop.passed / shop.made) * 1000) / 1000
+  return { share: made ? Math.round((passed / made) * 1000) / 1000 : null, passed, made, by, shops }
 }

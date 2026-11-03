@@ -64,7 +64,8 @@ class GarmentImport
   NOT_COATS = /sport ?coat|(?<!body|cat|track|jump|swim|play|boiler|flight|sweat)suit|blazer|tuxedo/i
   # A "hoodie" that's insulated is outerwear (Canada Goose calls jackets hoodies), and so is one that zips up
   # with a hood, unless it's knitwear (a sweater hoodie with a zip is a knit top, worn as a hoodie is).
-  INSULATED = /\bdown\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell/i
+  # Down as a filling, not as a word ("dress it up or down", "button-down", "down the front").
+  INSULATED = /\bdown[- ](?:filled|fill|insulated|jacket|parka|coat|vest|puffer)\b|(?:goose|duck) down\b|\bdown (?:and|&) feathers?\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell/i
   HOODED_OUTERWEAR = Regexp.union(INSULATED, /zip(?:per)? closure|two-way zip/i)
   # A puffer (a down or padded jacket, coat or vest, quilted into baffles): drawn lofted, standing off the
   # body, its baffles puffed. Not "button-down", nor a shell that's only "padded at the shoulders".
@@ -132,8 +133,16 @@ class GarmentImport
 
   # shop_data: a Shopify product's details as the person's own browser read them ({ "product", "shop",
   # "sizing" }), for shops that answer browsers quickly but stall or turn away apps (see from_shopify).
-  def self.from_url(url, shop_data: nil)
+  # page_html: the product page as the person's own browser shows it (the shop's HTML once its scripts have
+  # run: the sizes, the size chart's pop-up, the photos), for shops that turn apps away or fill their pages
+  # in by script. Read as a fetched page would be.
+  PAGE_HTML_BYTES = 4_000_000
+  def self.from_url(url, shop_data: nil, page_html: nil)
     url = url.to_s.strip
+    if page_html.is_a?(String) && page_html.present?
+      raise Error.new("page_too_big", "That page is too big to read.") if page_html.bytesize > PAGE_HTML_BYTES
+      return new.from_page(page_html, source_url: url).then { with_photo(it) }
+    end
     if shop_data.is_a?(Hash) && (garment = new.from_shopify(url, given: shop_data))
       photo = shop_data["photo"].to_s
       garment = browser_photo?(photo) ? garment.except(:image_url).merge(photo:) : with_photo(garment)
@@ -243,7 +252,7 @@ class GarmentImport
     !data.empty? && data.count("^A-Za-z0-9+/=").zero?
   end
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 34
+  FORMAT = 36
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment

@@ -1,0 +1,24 @@
+{
+  "about": "Listings from shops other than Kith, for the accuracy set. url: the product page; page: a copy of it as a browser showed it, under public/validation/pages/ (made as public/try_on.js makes one; not kept in git), for a shop that turns apps away or fills its page in by script.",
+  "items": [
+    { "key": "dsm-hoodie",    "shop": "dsm",     "cat": "top",       "url": "https://shop-us.doverstreetmarket.com/products/maison-margiela-hoodie-bluepurp-s50hg0053-m25037-452-aw26" },
+    { "key": "dsm-tee",       "shop": "dsm",     "cat": "top",       "url": "https://shop-us.doverstreetmarket.com/products/brain-dead-house-mouse-t-shirt-blue-bdf26t00005375bl01-aw26" },
+    { "key": "dsm-shirt",     "shop": "dsm",     "cat": "top",       "url": "https://shop-us.doverstreetmarket.com/products/bode-equestrian-patch-ls-shirt-pinkmlt-mrf26sh010-aw26" },
+    { "key": "dsm-trousers",  "shop": "dsm",     "cat": "bottom",    "url": "https://shop-us.doverstreetmarket.com/products/our-legacy-rover-cut-dsrtmwsh-w4265rd-aw26" },
+    { "key": "dsm-dress",     "shop": "dsm",     "cat": "dress",     "url": "https://shop-us.doverstreetmarket.com/products/bode-equestrian-patch-dress-pnkmlti-wrf26dr008-aw26" },
+    { "key": "dsm-bomber",    "shop": "dsm",     "cat": "outerwear", "url": "https://shop-us.doverstreetmarket.com/products/our-legacy-bomber-rbrnwdip-m4261mrb-aw26" },
+    { "key": "uq-crew-tee",   "shop": "uniqlo",  "cat": "top",       "url": "https://www.uniqlo.com/us/en/products/E422992-000/00" },
+    { "key": "uq-rugger",     "shop": "uniqlo",  "cat": "top",       "url": "https://www.uniqlo.com/us/en/products/E488751-000/00" },
+    { "key": "uq-stripe-tee", "shop": "uniqlo",  "cat": "top",       "url": "https://www.uniqlo.com/us/en/products/E486103-000/00" },
+    { "key": "uq-henley",     "shop": "uniqlo",  "cat": "top",       "url": "https://www.uniqlo.com/us/en/products/E482766-000/00" },
+    { "key": "uq-barrel",     "shop": "uniqlo",  "cat": "bottom",    "url": "https://www.uniqlo.com/us/en/products/E479000-000/00" },
+    { "key": "af-popover",    "shop": "af",      "cat": "top",       "url": "https://www.abercrombie.com/shop/us/p/essential-popover-20-hoodie-63459319", "page": "af-essential-popover-20-hoodie-63459319.html" },
+    { "key": "af-full-zip",   "shop": "af",      "cat": "top",       "url": "https://www.abercrombie.com/shop/us/p/essential-full-zip-hoodie-63577819", "page": "af-essential-full-zip-hoodie-63577819.html" },
+    { "key": "af-taxi-crew",  "shop": "af",      "cat": "top",       "url": "https://www.abercrombie.com/shop/us/p/nyc-taxi-crew-sweatshirt-63899391", "page": "af-nyc-taxi-crew-sweatshirt-63899391.html" },
+    { "key": "af-half-zip",   "shop": "af",      "cat": "top",       "url": "https://www.abercrombie.com/shop/us/p/heritage-heavyweight-half-zip-sweatshirt-63687319", "page": "af-heritage-heavyweight-half-zip-sweatshirt-63687319.html" },
+    { "key": "gr-supreme",    "shop": "grailed", "cat": "top",       "url": "https://www.grailed.com/listings/8299914-supreme-ja-one-xtc-graffiti-hoodie-grey", "page": "grailed-8299914.html" },
+    { "key": "gr-strokes",    "shop": "grailed", "cat": "top",       "url": "https://www.grailed.com/listings/88022950-band-tees-the-strokes-faded-vintage-00s-zip-hoodie", "page": "grailed-88022950.html" },
+    { "key": "gr-g59",        "shop": "grailed", "cat": "top",       "url": "https://www.grailed.com/listings/69210426-g59-records-suicideboys-skull-logo-zip-up-hoodie", "page": "grailed-69210426.html" },
+    { "key": "gr-fullsend",   "shop": "grailed", "cat": "top",       "url": "https://www.grailed.com/listings/33959501-full-send-nelk-boys-full-send-red-hoodie-block-lettering", "page": "grailed-33959501.html" }
+  ]
+}

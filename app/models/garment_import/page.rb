@@ -93,6 +93,13 @@ class GarmentImport
 
     # The size a single-item listing says it is ("Size: M" on resale listings), or nil.
     def stated_size
+      # A resale listing's schema.org Product says its one size ("US M / EU 48-50 / 2" on Grailed): its
+      # letter size when it gives one.
+      given = product_json_ld&.dig("size").to_s.squish
+      letter = given[/(?<![A-Za-z])(XXS|XS|S|M|L|XL|XXL|XXXL|[2-4]XL)(?![A-Za-z])/, 1]
+      return letter if letter
+      return given.truncate(20, omission: "") if given.present?
+
       label = @doc.css("body *").lazy.map { it.element_children.empty? ? it.text.squish : nil }
                   .find { it&.match?(/\ASize:\s*\S/) }
       label&.delete_prefix("Size:")&.strip&.tr("|", "/")&.squish&.truncate(20, omission: "")
@@ -162,6 +169,8 @@ class GarmentImport
       when Array then node.lazy.filter_map { find_product(it) }.first
       when Hash
         return node if Array(node["@type"]).include?("Product") || Array(node["@type"]).include?("ProductGroup")
+        # A product with its type left off (Uniqlo's): a name with offers, or with a SKU and images.
+        return node if node["@type"].blank? && node["name"].present? && (node["offers"].present? || (node["sku"].present? && node["image"].present?))
 
         find_product(node["@graph"]) if node["@graph"]
       end

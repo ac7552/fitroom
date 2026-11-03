@@ -12,7 +12,7 @@ module Api
 
       def create
         garment =
-          if params[:url].present? then GarmentImport.from_url(params[:url], shop_data: request.request_parameters["shop_data"])
+          if params[:url].present? then GarmentImport.from_url(params[:url], shop_data: request.request_parameters["shop_data"], page_html: request.request_parameters["page_html"])
           elsif params[:text].present? then GarmentImport.from_text(params[:text].to_s.first(20_000), garment: params[:garment])
           elsif params[:photo_kind].present? then GarmentImport.from_photo(kind: params[:photo_kind], style: params[:photo_style])
           else return render(json: { error: "invalid", message: "Send a url or the text of a size chart." }, status: :unprocessable_entity)

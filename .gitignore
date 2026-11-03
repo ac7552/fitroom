@@ -47,3 +47,4 @@ __pycache__/
 
 # The vision service's packages (script/server).
 node_modules/
+/script/validation/pages/

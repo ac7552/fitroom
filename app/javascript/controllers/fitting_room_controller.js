@@ -81,6 +81,23 @@ export default class extends Controller {
     this.showScene(this.sceneTargets.find(radio => radio.checked)?.value ?? "studio")
     // On the page, a garment just put on gets its slow turn round (not in a still picture).
     this.stage.revealTurns = true
+    // Opened from a shop's product page ("Try on in Fitroom", public/try_on.js): say so to the page that
+    // opened this one, and take the page it sends back, as that person's browser shows it, for the import.
+    // Only a page from the site its link is on is taken.
+    if (new URLSearchParams(location.search).get("receive") === "1" && window.opener) {
+      history.replaceState(null, "", location.pathname)
+      const take = event => {
+        const page = event.data
+        if (page?.type !== "fitroom-page" || typeof page.url !== "string" || typeof page.html !== "string") return
+        let from = null
+        try { from = new URL(page.url).origin } catch { return }
+        if (from !== event.origin) return
+        window.removeEventListener("message", take)
+        this.importGarment({ url: page.url, page_html: page.html })
+      }
+      window.addEventListener("message", take)
+      window.opener.postMessage({ type: "fitroom-ready" }, "*")
+    }
     this.watchInsets()
     // One garment done isn't the outfit done: the loader goes when the stage says everything is on.
     this.stage.onDrape = phase => {
@@ -253,8 +270,14 @@ export default class extends Controller {
       const part = bottoms ? "trousers" : "top"
       let frontPhoto = garment.photo
       const readFront = src => bottoms ? readBottomPhoto(src) : readPhoto(src, { shape: frontShape(garment.chart) })
+      // When each step of reading the photo finished, ms after it started (the validation runner reports them).
+      const t0 = performance.now()
+      garment.readTimes = {}
+      const mark = step => { garment.readTimes[step] = Math.round(performance.now() - t0) }
       const reading = cleanPhoto(garment.photo, part).then(async front => {
+        mark("cleaned")
         const read = await readFront(front)
+        mark("read")
         // Painting out took too much (the garment no longer reads as itself): the photo as the shop gave it.
         if (read || front === garment.photo) { garment.cleaned = front !== garment.photo; frontPhoto = front; return read }
         garment.cleaned = false
@@ -336,6 +359,7 @@ export default class extends Controller {
           refit = true
         }
         if (refit) this.update()
+        mark("done")
         garment.lookPending = false
         this.renderOutfit()
         if (item.fit) this.render()

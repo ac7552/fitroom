@@ -1861,6 +1861,8 @@ export class FittingStage {
       if (!photos || d.redrapeState === "done" || d.redrapeState === "off") continue
       if (!d.redrapeState) {
         d.redrapeState = "loading"
+        // When each step finished, ms after the photos were asked for (the validation runner reports them).
+        d.redrapeTimes = { asked: performance.now() }
         // The photos, read once per garment (its sizes share them; the cache holds the last few).
         this.redrapeCache ??= new Map()
         const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}|${photos.part ?? ""}`
@@ -1874,6 +1876,7 @@ export class FittingStage {
           if (this.slots[slot] !== d) return
           if (!photos) { d.redrapeState = "off"; return }
           d.redrapePhotos = photos
+          if (d.redrapeTimes) d.redrapeTimes.photos = performance.now() - d.redrapeTimes.asked
           d.hanger = new HangerDrape(d.top, d.restX)
           d.redrapeState = d.hanger.done ? "off" : "hanging"
           this.start()
@@ -1884,6 +1887,7 @@ export class FittingStage {
       if (d.hanger.advance(this.drapeBudget)) { this.redraw(); continue }
       try {
         const { front, back } = d.redrapePhotos
+        if (d.redrapeTimes) d.redrapeTimes.hung = performance.now() - d.redrapeTimes.asked
         const uv = registerPhoto(d.top, d.hanger.positions, front, back)
         // Lettering and logos laid as one piece each, so the registration can't shear them.
         d.rigid = rigidPrints(d.top, uv, front, 1) + (back ? rigidPrints(d.top, uv, back, 3) : 0)
@@ -1892,6 +1896,7 @@ export class FittingStage {
         // Plain cloth on the pieces the photos don't really show (a hood, a sleeve that took the body's
         // lettering, a back with no photo of its own), never something that isn't the garment.
         d.trust = trustPieces(d.top, uv, { front, back })
+        if (d.redrapeTimes) d.redrapeTimes.laid = performance.now() - d.redrapeTimes.asked
         d.redrape = { image: front.flat ?? front.canvas, back: back ? { image: back.flat ?? back.canvas } : null, uv, collar: collarColour(front), collarStrip: collarStrip(front) }
         d.redrapeState = "done"
         // A cut-out the listing names that the photo shows covered (a drape over it) isn't cut.
