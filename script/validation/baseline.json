@@ -1,7 +1,28 @@
 {
- "about": "The last accepted accuracy run (VAL.score().share and VAL.passes()), 2026-11-03, 15 listings; VAL.gate() holds a new run to it.",
- "score": 0.634,
+ "about": "The last accepted accuracy run (VAL.score().share and VAL.passes()), 2026-11-03, 34 listings from Kith, Dover Street Market, Uniqlo, Abercrombie and Grailed; VAL.gate() holds a new run to it.",
+ "score": 0.647,
+ "shops": {
+  "kith": 0.613,
+  "dsm": 0.667,
+  "uniqlo": 0.68,
+  "af": 0.75,
+  "grailed": 0.6
+ },
  "passes": {
+  "neesx480": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "dsm-hoodie": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
   "khma030340-620": {
    "construction": true,
    "silhouette": false,
@@ -13,13 +34,6 @@
    "construction": false,
    "silhouette": false,
    "foreign": false,
-   "pieces": true,
-   "appearance": true
-  },
-  "neesx480": {
-   "construction": true,
-   "silhouette": false,
-   "foreign": true,
    "pieces": true,
    "appearance": true
   },
@@ -60,10 +74,10 @@
   },
   "sir326-1018": {
    "construction": true,
-   "silhouette": null,
-   "foreign": null,
-   "pieces": null,
-   "appearance": null
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": false
   },
   "ampf2608-blk": {
    "construction": true,
@@ -106,6 +120,132 @@
    "foreign": false,
    "pieces": true,
    "appearance": true
+  },
+  "dsm-tee": {
+   "construction": false,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "dsm-shirt": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "dsm-trousers": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "dsm-dress": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "dsm-bomber": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "uq-crew-tee": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "uq-rugger": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "uq-stripe-tee": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "uq-henley": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "uq-barrel": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "af-popover": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "af-full-zip": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "af-taxi-crew": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "af-half-zip": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": true
+  },
+  "gr-supreme": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "gr-strokes": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": true,
+   "pieces": true,
+   "appearance": true
+  },
+  "gr-g59": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": false
+  },
+  "gr-fullsend": {
+   "construction": true,
+   "silhouette": false,
+   "foreign": false,
+   "pieces": true,
+   "appearance": false
   }
  }
 }

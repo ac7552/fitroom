@@ -79,7 +79,7 @@ async function settle(limit, look) {
     // 3D view shows the colour the listing's words guessed.
     const late = performance.now() - t0 > (VAL.readMs ?? 150000)
     const read = Object.entries(c.outfit).every(([kind, item]) => !item.garment.lookPending &&
-      (!item.garment.photo || late || ("photoColor" in item.garment && (kind !== "trousers" || "photoMap" in item.garment))))
+      (!item.garment.photo || late || ("photoColor" in item.garment && (kind !== "trousers" || "photoMap" in item.garment || item.garment.photoPart))))
     const at = Math.round(performance.now() - t0), w = VAL.current?.waits
     if (w) { if (s.settled) w.drape ??= at; if (lookDone) w.look ??= at; if (read) w.read ??= at }
     // The shop photos laid on point for point (stage.js's advanceRedrape), which follows the drape.
