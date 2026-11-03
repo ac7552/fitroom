@@ -243,7 +243,7 @@ class GarmentImport
     !data.empty? && data.count("^A-Za-z0-9+/=").zero?
   end
   # Bump when what an import returns changes, so cached imports from before aren't served.
-  FORMAT = 32
+  FORMAT = 34
 
   # The shop's main product photo, fetched here and sent to the page inline, so the person's browser never
   # contacts the shop's image server and the page can read the photo's colours. Optional: a garment
@@ -1139,6 +1139,8 @@ class GarmentImport
       name: product[:name].presence || "Dress", brand: product[:brand], color_name: product[:color],
       color: color_hex(product.values_at(:color, :description, :name)), fabric: cut[:fabric], style: "dress",
       cut:, **(product[:image] ? { image_url: product[:image] } : {}),
+      # The listing's words, for what the page reads of the make itself (a hood, a zip down the front).
+      **(product[:description].present? ? { description: product[:description].to_s.truncate(400) } : {}),
       source_url:, garment: "top", women: true, chart: chart.as_json
     }
   end

@@ -26,7 +26,8 @@ export function drafted(d) {
     hood: panels.some(p => /^hood_/.test(p)),
     collar: (collarSeen ? collarSeen === "shirt" : shirtish) ? "shirt" : panels.includes("collar") ? "band" : "none",
     closure: pattern.closure ?? "pullover",
-    onePiece: false
+    // A romper or jumpsuit comes as a top and shorts or pants, each with its half of the photo.
+    onePiece: Boolean(d.top.photos?.part || d.top.item.photoPart || d.top.item.one_piece)
   }
 }
 

@@ -264,7 +264,7 @@ export default class extends Controller {
         // A close-up of plain cloth gives its truest colour (no shadows, no folds).
         const close = garment.closeup && !read?.print ? await clothColor(garment.closeup).catch(() => null) : null
         const color = close ?? read?.color ?? await clothColor(garment.photo)
-        if (!color || this.outfit[kind] !== item) { garment.lookPending = false; this.queueLookCheck(); return }
+        if (!color || this.outfit[kind] !== item) { if (bottoms) garment.photoMap ??= null; garment.lookPending = false; this.queueLookCheck(); return }
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
         // The shop's photo of the back, read the same way, goes on the back.
         const backPhoto = garment.back_photo && read ? await cleanPhoto(garment.back_photo, part) : null
@@ -340,7 +340,11 @@ export default class extends Controller {
         this.renderOutfit()
         if (item.fit) this.render()
         this.queueLookCheck()
-      }).catch(() => { garment.lookPending = false; this.queueLookCheck() })
+      }).catch(() => {
+        // Nothing read (a one-piece's lower half on a photo of the whole): no photo laid on, but read.
+        if (bottoms) garment.photoMap ??= null
+        garment.lookPending = false; this.queueLookCheck()
+      })
     }
   }
 

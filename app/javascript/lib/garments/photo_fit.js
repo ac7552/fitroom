@@ -292,15 +292,12 @@ export function constructionFrom(outline, scale = null) {
   return out
 }
 
-// A dress's sleeves from its photo's outline alone, with no chart to scale by: by the sleeve's length over
-// the dress's ("none" when nothing hangs outside the shoulders). A long sleeve is most of a mini dress's
-// length and half a maxi's; a short one a fifth to a third of a mini's. Null when it can't tell.
+// A dress's sleeves from its photo's outline alone, with no chart to scale by. A dress without sleeves is
+// widest at its hem or hips (straps, a cap or a cowl at the top read as a short "sleeve" to the outline, so the
+// outline never says short); long sleeves hanging beside it make it wider at the chest than at the hem, and
+// run most of its length. "long", or null when the outline can't tell.
 export function dressSleeves(outline) {
-  if (!outline) return null
-  if (outline.sleeveless) return "none"
-  if (!(outline.sleeveLength > 0) || !(outline.bodyLength > 0)) return null
-  const share = outline.sleeveLength / outline.bodyLength
-  if (share > 0.45) return "long"
-  if (share > 0.12 && share < 0.35) return "short"
-  return null
+  if (!outline || outline.sleeveless) return null
+  if (!(outline.sleeveLength > 0) || !(outline.bodyLength > 0) || !(outline.chestW > 0) || !(outline.hemW > 0)) return null
+  return outline.sleeveLength / outline.bodyLength > 0.45 && outline.chestW > 1.1 * outline.hemW ? "long" : null
 }
