@@ -1020,6 +1020,8 @@ class GarmentImport
     fit_cut = (fit_cut || {}).merge(half_zip: true) if kind == "top" && !%w[hoodie dress tank].include?(style) && product.values_at(:name, :description).join(" ").match?(HALF_ZIP)
     {
       name: product[:name].presence || "Jacket",
+      # The listing's words, for what the page reads of the make itself (a dress's hood and zip).
+      **(product[:description].present? ? { description: product[:description].to_s.truncate(400) } : {}),
       brand: product[:brand],
       color_name: product[:color],
       color: color_hex(product.values_at(:color, :description, :name)),

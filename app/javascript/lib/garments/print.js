@@ -1183,7 +1183,7 @@ function clothColour(mask, keep, data, w, h) {
 
 // Whether a colour could be skin, light to deep (in YCbCr's usual skin box, and neither near grey nor
 // nearly black).
-function isSkin(r, g, b) {
+export function isSkin(r, g, b) {
   const y = 0.299 * r + 0.587 * g + 0.114 * b
   const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b
   const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b

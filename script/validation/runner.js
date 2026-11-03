@@ -14,6 +14,9 @@ const c = window.Stimulus.getControllerForElementAndIdentifier(el, "fitting-room
 const s = c.stage
 VAL.c = c; VAL.s = s
 const P = await import("lib/garments/print")
+// The accuracy checks (accuracy.js) and the hand labels they're held to (accuracy.json), when served.
+const A = await import("/validation/accuracy.js").catch(() => null)
+VAL.labels ??= await fetch("/validation/accuracy.json").then(r => (r.ok ? r.json() : null)).then(j => j?.labels ?? {}).catch(() => ({}))
 
 // The photo check runs once, its first reading kept (VAL.firstLook, on by default): a check that fails is tried
 // again up to three times, each a new reading and a new drape, which in a hidden pane takes minutes. What the
@@ -79,7 +82,9 @@ async function settle(limit, look) {
       (!item.garment.photo || late || ("photoColor" in item.garment && (kind !== "trousers" || "photoMap" in item.garment))))
     const at = Math.round(performance.now() - t0), w = VAL.current?.waits
     if (w) { if (s.settled) w.drape ??= at; if (lookDone) w.look ??= at; if (read) w.read ??= at }
-    stable = s.settled && lookDone && read ? stable + 1 : 0
+    // The shop photos laid on point for point (stage.js's advanceRedrape), which follows the drape.
+    const redraped = Object.values(s.slots).every(d => !d || !d.top?.photos || ["done", "off"].includes(d.redrapeState) || late)
+    stable = s.settled && lookDone && read && redraped ? stable + 1 : 0
     if (stable >= 2) return true
     await sleep(100)
   }
@@ -143,6 +148,7 @@ async function check(item, kind, slot) {
     out.checks.sleeves = !(longInPhoto && !longDrawn) && !(shortInPhoto && longDrawn && !["tank"].includes(g.style))
   }
   if (kind === "top" && g.photo) out.checks.look = Boolean(g.lookChecks?.ok)
+  if (A) out.accuracy = A.accuracyOf(s, kind, VAL.labels?.[item.handle] ?? null)
   if (kind === "trousers" && g.photo) out.checks.photoRead = Boolean(g.photoMap)
   out.photoThumb = g.photo ? await thumb(g.photo, 200) : null
   return out
@@ -205,5 +211,7 @@ VAL.start = async () => {
 }
 VAL.wait = async (ms = 30000) => { const end = Date.now() + ms; while (VAL.running && Date.now() < end) await sleep(1000); return { left: VAL.runs.length, done: Object.keys(VAL.results).length, log: VAL.log.slice(-3) } }
 // The results of runs `from` to `to` (in the order they finished), with or without their pictures.
+// The accuracy score over the results so far (accuracy.js's score): the share of the automatic checks passed.
+VAL.score = () => (A ? A.score(VAL.results) : null)
 VAL.export = (from = 0, to = Infinity, { pics = true } = {}) => JSON.stringify(Object.values(VAL.results).slice(from, to).map(r => pics ? r : { ...r, pics: undefined, items: r.items.map(i => ({ ...i, photoThumb: undefined })) }))
 export default VAL

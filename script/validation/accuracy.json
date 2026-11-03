@@ -1,0 +1,37 @@
+{
+  "about": "The accuracy set's hand labels: what each listing is, from its shop photos (not its words). sleeves none|short|long; collar none|band|shirt (a collar drawn folded down: shirt, camp, polo); closure pullover|zip|halfzip|buttons; onePiece: a romper, jumpsuit or overall. Add a listing with its run in runs (accuracy_runs) and its label here.",
+  "labels": {
+    "khma030340-620": { "sleeves": "long", "hood": false, "collar": "shirt", "closure": "buttons", "onePiece": false },
+    "rhufw26tt13012-6502": { "sleeves": "long", "hood": false, "collar": "band", "closure": "pullover", "onePiece": false },
+    "neesx480": { "sleeves": "long", "hood": false, "collar": "shirt", "closure": "buttons", "onePiece": false },
+    "khm034891-232": { "sleeves": "long", "hood": false, "collar": "band", "closure": "buttons", "onePiece": false },
+    "casm-ss26-sh-003-05": { "sleeves": "short", "hood": false, "collar": "shirt", "closure": "buttons", "onePiece": false },
+    "khma030338-198": { "sleeves": "long", "hood": true, "closure": "zip", "onePiece": false },
+    "amfw2610-for": { "sleeves": "none", "hood": false, "onePiece": false },
+    "jpdr191-m031p-000201": { "sleeves": "long", "hood": false, "onePiece": false },
+    "sir326-1018": { "sleeves": "none", "hood": false, "onePiece": false },
+    "ampf2608-blk": { "sleeves": "short", "hood": false, "onePiece": false },
+    "khwa080074-001": { "sleeves": "long", "hood": true, "closure": "halfzip", "onePiece": false },
+    "khwro0001-2023": { "sleeves": "none", "hood": false, "onePiece": true },
+    "es130ho258382f": { "onePiece": false },
+    "essrw00347-0031": { "onePiece": false },
+    "acnfn-ux-trou000058": { "onePiece": false }
+  },
+  "runs": [
+    { "key": "acc-01", "body": "men", "items": [{ "handle": "khma030340-620", "cat": "outerwear" }] },
+    { "key": "acc-02", "body": "men", "items": [{ "handle": "rhufw26tt13012-6502", "cat": "top" }] },
+    { "key": "acc-03", "body": "men", "items": [{ "handle": "neesx480", "cat": "top" }] },
+    { "key": "acc-04", "body": "men", "items": [{ "handle": "khm034891-232", "cat": "top" }] },
+    { "key": "acc-05", "body": "men", "items": [{ "handle": "casm-ss26-sh-003-05", "cat": "top" }] },
+    { "key": "acc-06", "body": "men", "items": [{ "handle": "khma030338-198", "cat": "top" }] },
+    { "key": "acc-07", "body": "women", "items": [{ "handle": "amfw2610-for", "cat": "dress" }] },
+    { "key": "acc-08", "body": "women", "items": [{ "handle": "jpdr191-m031p-000201", "cat": "dress" }] },
+    { "key": "acc-09", "body": "women", "items": [{ "handle": "sir326-1018", "cat": "dress" }] },
+    { "key": "acc-10", "body": "women", "items": [{ "handle": "ampf2608-blk", "cat": "dress" }] },
+    { "key": "acc-11", "body": "women", "items": [{ "handle": "khwa080074-001", "cat": "dress" }] },
+    { "key": "acc-12", "body": "women", "items": [{ "handle": "khwro0001-2023", "cat": "dress" }] },
+    { "key": "acc-13", "body": "men", "items": [{ "handle": "es130ho258382f", "cat": "bottom" }] },
+    { "key": "acc-14", "body": "men", "items": [{ "handle": "essrw00347-0031", "cat": "bottom" }] },
+    { "key": "acc-15", "body": "men", "items": [{ "handle": "acnfn-ux-trou000058", "cat": "bottom" }] }
+  ]
+}

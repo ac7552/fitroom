@@ -3,10 +3,10 @@ import { toCm } from "lib/format"
 import { FittingStage } from "lib/stage"
 import { findPrint, garmentMask, measureDressMask, readPhoto, readBottomPhoto, readDressPhoto, readDressShape, readGarment, readPhotoTraits, readShoe, readShoeView, readTopShape, readBottomShape, loaded, loadImage } from "lib/garments/print"
 import { compareLooks, compareShapes, croppedLengths, nextReading, PLAIN, reshaped } from "lib/garments/look_check"
-import { constructionFrom, fitChart, readOutline } from "lib/garments/photo_fit"
+import { constructionFrom, dressSleeves, fitChart, readOutline } from "lib/garments/photo_fit"
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
-import { cleanPhoto } from "lib/garments/segment"
+import { cleanPhoto, wornSleeves } from "lib/garments/segment"
 import { knockoutPhoto } from "lib/garments/knockout"
 import { measureFromPhotos } from "lib/measure_photo"
 import { partRow, uncheckedLine, verdictWords } from "lib/fit_bar"
@@ -203,7 +203,9 @@ export default class extends Controller {
     // one colour, read once from its photo.
     if (garment.garment === "onepiece") {
       const halves = Object.entries(garment.parts).map(([kind, part]) => {
-        const item = { garment: { ...part, women: garment.women }, selected: null, fit: null }
+        // Each half wears the one-piece's photos, its own part of them (re-draped above or below the waist).
+        const photos = garment.photo ? { photo: garment.photo, back_photo: garment.back_photo ?? null, photoPart: kind === "top" ? "upper" : "lower" } : {}
+        const item = { garment: { ...part, women: garment.women, ...photos }, selected: null, fit: null }
         this.outfit[kind] = item
         return item
       })
@@ -302,6 +304,30 @@ export default class extends Controller {
           const fitted = await fitToPhoto(garment, frontPhoto).catch(error => { console.warn("[photofit]", error); return null })
           if (this.outfit[kind] !== item) return
           if (fitted) refit = true
+        }
+        // A dress photographed only on someone: its sleeves as they're worn there (segment.js's wornSleeves),
+        // when the listing's words didn't say or said otherwise.
+        if (kind === "top" && garment.style === "dress" && PHOTO_FIT_ON) {
+          // On someone, by their arms; laid out or on a form, by the outline.
+          const sleeves = (await wornSleevesOf(garment.photo).catch(() => null)) ?? (await dressSleevesOf(garment.photo).catch(() => null))
+          if (this.outfit[kind] !== item) return
+          // Bare arms only say there are no sleeves; how the dress is held up (straps, a halter) stays the words'.
+          const had = garment.cut?.sleeves ?? null
+          const differs = sleeves === "none" ? ["short", "long"].includes(had) : sleeves && sleeves !== had
+          if (differs) {
+            if (PHOTO_FIT_DEBUG) console.info("[photofit] worn sleeves", garment.name, garment.cut?.sleeves, "->", sleeves)
+            garment.cut = { ...(garment.cut ?? {}), sleeves }
+            refit = true
+          }
+        }
+        // A dress's hood and front zip, from its words (the dress cut reads neither): a hooded dress is drafted
+        // with its hood, a zip down the front from the neck as a half zip.
+        if (kind === "top" && garment.style === "dress") {
+          const words = `${garment.name ?? ""} ${garment.description ?? ""}`
+          const extra = {}
+          if (/\bhood(ed)?\b/i.test(words) && !garment.cut?.hood) extra.hood = true
+          if (/\bzip(per)?\b[^.]*\bfront\b|\bfront\b[^.]*\bzip/i.test(words) && !/full[- ]zip/i.test(words) && !garment.cut?.half_zip) extra.half_zip = true
+          if (Object.keys(extra).length && ["short", "long"].includes(garment.cut?.sleeves)) { garment.cut = { ...(garment.cut ?? {}), ...extra }; refit = true }
         }
         // A cropped top on a guessed chart: its lengths from the photo, and the fit and drape done again.
         const cropped = kind === "top" && !refit ? croppedLengths(garment.chart, read?.look) : null
@@ -1808,6 +1834,7 @@ export default class extends Controller {
       photoMap: garment.photoMap ?? null,
       // The store's photos (the front cleaned of a hand or a prop where it was), for re-draping (redrape.js).
       photo: kind === "shoes" ? null : garment.lookPhotos?.front ?? garment.photo ?? null,
+      photoPart: garment.photoPart ?? null,
       back_photo: kind === "shoes" ? null : garment.lookPhotos?.back ?? garment.back_photo ?? null,
       fabric: garment.fabric,
       style: garment.style,
@@ -2161,6 +2188,29 @@ async function fitToPhoto(garment, src) {
   return changed || Boolean(fit)
 }
 
+// A dress photo's sleeves from its outline (photo_fit.js's dressSleeves), when it shows the dress on its own.
+async function dressSleevesOf(src) {
+  const traits = await readPhotoTraits(src).catch(() => null)
+  if (!traits || photoKind(traits) !== "garment") return undefined
+  return dressSleeves(await readOutline(src)) ?? undefined
+}
+
+// A worn photo's sleeves (segment.js's wornSleeves: "none", "short" or "long", the dress cut's terms), or
+// undefined when the photo isn't worn or can't tell.
+async function wornSleevesOf(src) {
+  const traits = await readPhotoTraits(src).catch(() => null)
+  if (!traits || photoKind(traits) !== "worn") return undefined
+  const image = await loadImage(src)
+  const k = Math.min(1, 640 / Math.max(image.naturalWidth, image.naturalHeight))
+  const w = Math.round(image.naturalWidth * k), h = Math.round(image.naturalHeight * k)
+  const canvas = document.createElement("canvas")
+  canvas.width = w; canvas.height = h
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })
+  ctx.drawImage(image, 0, 0, w, h)
+  const read = wornSleeves(ctx.getImageData(0, 0, w, h).data, w, h)
+  return read ?? undefined
+}
+
 // What the fit engine needs to know about a garment besides its sizes: a dress's or a skirt's cut, a top's
 // ({ fit, stretch }), and how a top is made (a women's, cropped, a baby tee, dropped shoulders). Undefined
 // when there's nothing to say.
@@ -2202,7 +2252,10 @@ async function readShop(link) {
   const sizing = await json(`https://app.kiwisizing.com/api/getSizingChart?${query}`)
   const { id, handle: name, title, vendor, product_type, tags, body_html, images, options } = product
   const variants = (product.variants ?? []).slice(0, 40).map(v => ({ title: v.title }))
-  let photo = await readShopPhoto(images?.[0]?.src)
+  // The front: the first photo of the garment on its own (laid out or hung, clear of the frame's edges, no
+  // one wearing it), else the first photo. Shops often lead with a photo on a model.
+  const front = SHOE_WORDS.test(`${product_type} ${title}`) ? 0 : await garmentPhotoIndex(images)
+  let photo = await readShopPhoto(images?.[front]?.src)
   // A shoe's photos: one from the side (the first, or else the first that is), and any square on from
   // above, behind or in front, for the 3D shoe (see print.js's shoeView).
   let shoeViews = null
@@ -2214,8 +2267,8 @@ async function readShop(link) {
   // A dress's shape (its waist, where it widens, its hem, neckline and straps), which the import cuts it to.
   const words = `${product_type} ${title} ${tags}`
   const dressShape = photo && DRESS_WORDS.test(words) && !/\bskirts?\b|\bskort/i.test(`${product_type} ${title}`) ? await readDressShape(photo).catch(() => null) : null
-  const backPhoto = photo ? await readBackPhoto(images, { shape, bottomShape }) : null
-  return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(0, 1), options, variants }, shop, sizing,
+  const backPhoto = photo ? await readBackPhoto(images, { shape, bottomShape, front }) : null
+  return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(front, front + 1), options, variants }, shop, sizing,
     photo, back_photo: backPhoto, shape, bottom_shape: bottomShape, dress_shape: dressShape, shoeViews }
 }
 
@@ -2245,11 +2298,23 @@ async function readShoePhotos(images, first) {
   return { photo, views }
 }
 
+// Which of a listing's first photos shows the garment on its own: the first that stands clear of the frame's
+// edges with no one in it (photoTraits); 0 when none does.
+async function garmentPhotoIndex(images) {
+  const first = (images ?? []).slice(0, 6)
+  const traits = await Promise.all(first.map(async image => {
+    const small = await readShopPhoto(image.src, 400).catch(() => null)
+    return small ? readPhotoTraits(small).catch(() => null) : null
+  }))
+  const k = traits.findIndex(t => t?.garment && t.touches === 0 && t.skin < 0.01)
+  return k < 0 ? 0 : k
+}
+
 // The shop's photo of the back, when it has one: the photo named for the back, or else the second photo
 // when it shows a garment the same shape as the first (shops often show the back next; a close-up of a
 // pocket or a photo on a model isn't that shape).
-async function readBackPhoto(images, { shape, bottomShape }) {
-  const rest = (images ?? []).slice(1, 6)
+async function readBackPhoto(images, { shape, bottomShape, front = 0 }) {
+  const rest = (images ?? []).filter((_, i) => i !== front).slice(0, 5)
   const named = rest.find(image => /back/i.test(String(image.src).split("/").pop().split("?")[0]))
   if (named) return readShopPhoto(named.src)
   const near = (a, b) => a && b && Math.abs(a / b - 1) < 0.15

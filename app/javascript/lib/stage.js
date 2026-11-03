@@ -15,7 +15,7 @@ import { shoeTexture, viewTexture } from "lib/garments/print"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
 import { meanRatio } from "lib/projection"
 import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
-import { HangerDrape, collarColour, collarStrip, loadPhotoForRedrape, registerPhoto, showsCloth } from "lib/garments/redrape"
+import { HangerDrape, collarColour, collarStrip, guardForeign, loadPhotoForRedrape, registerPhoto, rigidPrints, showsCloth } from "lib/garments/redrape"
 import { easeInOut, framing } from "lib/framing"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
@@ -859,7 +859,8 @@ export class FittingStage {
     d.top.item.color = item.color
     d.top.setColor(item.color)
     // The store's photos, for re-draping (advanceRedrape); the drape's own record doesn't carry them.
-    d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null } : null
+    // (A romper's or jumpsuit's halves share its photos, each its part: above the waist or below it.)
+    d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null, part: item.photoPart ?? null } : null
     // With the photographs re-draped onto it (d.redrape), the cloth shows them and nothing else is laid on.
     d.top.setPrint(d.redrape ? null : item.print ?? null, d.redrape ? null : item.backPrint ?? null)
     d.top.setSleeves(d.redrape ? null : item.sleevePrint ?? null)
@@ -1862,10 +1863,10 @@ export class FittingStage {
         d.redrapeState = "loading"
         // The photos, read once per garment (its sizes share them; the cache holds the last few).
         this.redrapeCache ??= new Map()
-        const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}`
+        const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}|${photos.part ?? ""}`
         if (!this.redrapeCache.has(key)) {
           if (this.redrapeCache.size > 6) this.redrapeCache.delete(this.redrapeCache.keys().next().value)
-          const options = { labels: !d.top.bottoms }
+          const options = { labels: !d.top.bottoms, kind: d.top.bottoms ? "trousers" : "top", part: photos.part }
           this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, options), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
             .then(([front, back]) => (front ? { front, back } : null)).catch(() => null))
         }
@@ -1884,6 +1885,10 @@ export class FittingStage {
       try {
         const { front, back } = d.redrapePhotos
         const uv = registerPhoto(d.top, d.hanger.positions, front, back)
+        // Lettering and logos laid as one piece each, so the registration can't shear them.
+        d.rigid = rigidPrints(d.top, uv, front, 1) + (back ? rigidPrints(d.top, uv, back, 3) : 0)
+        // No skin, hair or backdrop on the cloth: a point that lands on any takes its neighbour's place.
+        d.foreign = guardForeign(d.top, uv, { front, back })
         d.redrape = { image: front.flat ?? front.canvas, back: back ? { image: back.flat ?? back.canvas } : null, uv, collar: collarColour(front), collarStrip: collarStrip(front) }
         d.redrapeState = "done"
         // A cut-out the listing names that the photo shows covered (a drape over it) isn't cut.
@@ -1906,6 +1911,8 @@ export class FittingStage {
         console.warn("[redrape] couldn't lay the photo on:", error)
         d.redrapeState = "off"
       }
+      // The hanging shape kept (a few hundred KB) for the validation's silhouette check.
+      d.hanging = d.hanger.positions
       d.hanger = null
       this.redraw()
     }

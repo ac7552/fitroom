@@ -51,6 +51,20 @@ at most; `VAL.readMs`, 2½ minutes for the photos), so the pictures show what a 
 loaded; `settled: false` marks one that ran out of time, to run again. `VAL.photoChecks = false` skips the
 runner's own reading of each photo (the `sleeves` check), which is slow in a busy tab.
 
+## Accuracy
+
+`accuracy.js` adds automatic checks to every garment a run puts on (`item.accuracy`): the construction as
+drafted (sleeves, hood, collar, closure, one-piece) against the hand labels in `accuracy.json`, the hanging
+outline against the photo's (IoU, 0.9 to pass), the share of cloth points that landed on skin, hair or
+backdrop (under 1% to pass), and any pattern piece left with no photo on it. `accuracy.json` also carries the
+accuracy set's own runs:
+
+    mkdir -p public/validation && cp script/validation/{runner.js,sheet.js,runs.json,accuracy.js,accuracy.json} public/validation/
+    const VAL = (await import("/validation/runner.js")).default
+    VAL.noLook = true; VAL.photoChecks = false
+    VAL.load((await (await fetch("/validation/accuracy.json")).json()).runs); VAL.start()
+    await VAL.wait(); VAL.score()          // { share, passed, made, by: { construction, silhouette, foreign, pieces } }
+
 ## Grading
 
     const sheet = (await import("/validation/sheet.js")).default

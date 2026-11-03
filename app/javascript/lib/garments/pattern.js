@@ -67,10 +67,12 @@ export function draftTop(styleName, size, body, cut = null) {
   if (styleName === "dress" && cut && !["short", "long"].includes(cut.sleeves)) return draftDress(size, body, cut)
   if (styleName === "tank") return draftTank(size, body)
   let style = dressStyle(STYLES[styleName] ?? STYLES.tee, cut)
-  // A jacket or coat with a hood (a parka, a hooded puffer): the hood in place of its collar, worn down.
-  if (cut?.hood && !style.shaped && style.collar !== "hood") style = { ...style, collar: "hood" }
-  // A half-zip or quarter-zip pullover: a stand collar, and a zip from it a little way down the front.
-  if (cut?.half_zip && !style.shaped && style.collar !== "hood") style = { ...style, collar: "stand", closure: "halfzip" }
+  // A jacket or coat with a hood (a parka, a hooded puffer), or a hooded dress: the hood in place of its
+  // collar, worn down.
+  if (cut?.hood && style.collar !== "hood") style = { ...style, collar: "hood" }
+  // A half-zip or quarter-zip pullover (or dress): a stand collar (or its hood), and a zip from it a little
+  // way down the front.
+  if (cut?.half_zip) style = { ...style, collar: style.collar === "hood" ? "hood" : "stand", closure: "halfzip" }
   // What the shop's photo showed of the make (photo_fit.js, as cut.photo): the collar, the sleeves' length,
   // bands at the cuffs and hem. The photo outranks the listing's words on a top that isn't shaped.
   if (cut?.photo && !style.shaped) style = photographed(style, cut.photo)

@@ -107,3 +107,11 @@ test("the flat field takes the photographer's gradient out and keeps the weave a
   assert.ok(at(10, 100) < at(5, 100) - 15)
   assert.ok(data[4 * (100 * w + 10) + 3] < data[4 * (100 * w + 5) + 3] - 10)
 })
+
+test("a similarity fitted by least squares recovers a move, turn and scale", async () => {
+  const { similarity } = await import("lib/garments/redrape")
+  const angle = 0.3, scale = 2.5, src = [[0, 0], [10, 0], [10, 5], [0, 5], [5, 2]]
+  const dst = src.map(([x, y]) => [100 + scale * (Math.cos(angle) * x - Math.sin(angle) * y), 40 + scale * (Math.sin(angle) * x + Math.cos(angle) * y)])
+  const t = similarity(src, dst)
+  for (let k = 0; k < src.length; k++) { const [x, y] = t(src[k]); assert.ok(Math.hypot(x - dst[k][0], y - dst[k][1]) < 1e-6) }
+})

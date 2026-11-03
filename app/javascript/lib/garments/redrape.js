@@ -15,7 +15,8 @@
 // and the hanger's hook, are left out, but anything inside the garment's outline (a pale print on dark
 // cloth) is kept. Nothing here reads the body or the person.
 import { Drape } from "lib/garments/drape"
-import { boxBlur, garmentMask } from "lib/garments/print"
+import { boxBlur, garmentMask, isSkin, photoTraits } from "lib/garments/print"
+import { wornGarmentMask } from "lib/garments/segment"
 
 // Frames the hanger drape runs at most (it stops when still).
 const HANGER_FRAMES = 400
@@ -388,7 +389,7 @@ export function registerPhoto(top, hanging, front, back = null) {
     let t = hi > lo ? Math.min(1, Math.max(0, (X - lo) / (hi - lo))) : 0.5
     if (layout.mirror) t = 1 - t
     const [a, b] = range
-    const inset = Math.max(1, Math.round(layout.width * 0.002))
+    const inset = Math.max(3, Math.round(layout.width * 0.004))
     const xPhoto = a + inset + t * Math.max(0, b - a - 2 * inset)
     return [xPhoto, layout.top + y]
   }
@@ -458,7 +459,7 @@ export function collarStrip(photo) {
 
 // A store photo as a canvas (at most `size` across) with its cloth mask: { canvas, mask, box } or null.
 // labels: paint over a neck label (patchLabels; not for trousers, whose drawstring would go the same way).
-export async function loadPhotoForRedrape(src, size = 2000, { labels = true } = {}) {
+export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kind = "top", part = null } = {}) {
   const image = await new Promise((resolve, reject) => { const img = new Image(); img.crossOrigin = "anonymous"; img.onload = () => resolve(img); img.onerror = reject; img.src = src })
   const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.round(image.naturalWidth * scale), h = Math.round(image.naturalHeight * scale)
@@ -466,21 +467,174 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true } = 
   canvas.width = w; canvas.height = h
   const ctx = canvas.getContext("2d", { willReadFrequently: true })
   ctx.drawImage(image, 0, 0, w, h)
-  // The mask at a quarter size (it's read row by row), scaled up when used.
+  // The mask at half size (it's read row by row), scaled up when used.
   const small = document.createElement("canvas")
   const sw = Math.round(w / 2), sh = Math.round(h / 2)
   small.width = sw; small.height = sh
   const sctx = small.getContext("2d", { willReadFrequently: true })
   sctx.drawImage(canvas, 0, 0, sw, sh)
-  const found = clothMask(sctx.getImageData(0, 0, sw, sh).data, sw, sh)
+  const smallData = sctx.getImageData(0, 0, sw, sh).data
+  // On someone: the garment alone (segment.js's wornGarmentMask), not the person; only the cloth is laid on.
+  const worn = photoTraits(smallData, sw, sh).skin > WORN_SKIN && faceAtTop(smallData, sw, sh)
+  let found = clothMask(smallData, sw, sh)
+  if (worn) {
+    const garment = await wornGarmentMask(smallData, sw, sh, kind).catch(() => null)
+    found = garment ? maskFound(garment, sw, sh, found?.bg ?? backdropOf(smallData, sw, sh)) : null
+  }
   if (!found) return null
+  // A one-piece's half: the photo's garment cut at its waist (the narrowest row between a third and two
+  // thirds of the way down), the upper part for its top, the lower for its shorts or pants.
+  if (part) {
+    found = cutAtWaist(found, sw, sh, part)
+    if (!found) return null
+  }
   const mask = new Uint8Array(w * h)
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) mask[y * w + x] = found.mask[Math.min(sh - 1, y >> 1) * sw + Math.min(sw - 1, x >> 1)]
   const b = found.box
   const box = { left: b.left * 2, right: Math.min(w - 1, b.right * 2 + 1), top: b.top * 2, bottom: Math.min(h - 1, b.bottom * 2 + 1), w, h }
-  if (labels) patchLabels(ctx, mask, box)
+  if (labels && !worn) patchLabels(ctx, mask, box)
   const flat = flatField(ctx, mask, box)
-  return { canvas, mask, box, bg: found.bg, flat }
+  // Past the cloth's edge, the cloth's own colour (bleed), so the texture's filtering never draws in the backdrop.
+  if (flat) bleed(flat.data, mask, w, h, BLEED)
+  const plain = ctx.getImageData(0, 0, w, h)
+  bleed(plain.data, mask, w, h, BLEED)
+  ctx.putImageData(plain, 0, 0)
+  return { canvas, mask, box, bg: found.bg, flat, worn, cloth: clothColourOf(plain.data, mask, w, h) }
+}
+
+// The share of a photo that's skin above which it's taken to be on someone (photoTraits' skin, which leaves
+// out skin-coloured cloth).
+const WORN_SKIN = 0.01
+// How far past the cloth's edge its colour is carried (pixels at the photo's working size).
+const BLEED = 16
+
+function cutAtWaist(found, w, h, part) {
+  const { mask, box } = found
+  const span = box.bottom - box.top
+  let waist = Math.round(box.top + 0.45 * span), least = Infinity
+  for (let y = Math.round(box.top + span / 3); y <= box.top + (2 * span) / 3; y++) {
+    let a = -1, b = -1
+    for (let x = box.left; x <= box.right; x++) if (mask[y * w + x]) { if (a < 0) a = x; b = x }
+    if (a >= 0 && b - a < least) { least = b - a; waist = y }
+  }
+  const out = Uint8Array.from(mask)
+  if (part === "upper") out.fill(0, (waist + 1) * w)
+  else out.fill(0, 0, waist * w)
+  return maskFound(out, w, h, found.bg)
+}
+
+// Whether a photo shows someone: skin across the top of the figure (a face, a neck), which a garment laid
+// out or hung never has (a tan print on a tee is skin-coloured too, but lower down).
+function faceAtTop(data, w, h) {
+  const person = garmentMask(data, w, h)?.mask
+  if (!person) return false
+  let top = -1, bottom = -1
+  for (let y = 0; y < h && top < 0; y++) for (let x = 0; x < w; x++) if (person[y * w + x]) { top = y; break }
+  for (let y = h - 1; y >= 0 && bottom < 0; y--) for (let x = 0; x < w; x++) if (person[y * w + x]) { bottom = y; break }
+  if (top < 0) return false
+  let skin = 0, all = 0
+  for (let y = top; y < top + 0.15 * (bottom - top); y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x
+    if (!person[i]) continue
+    all++
+    if (isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2])) skin++
+  }
+  return all > 0 && skin / all > 0.25
+}
+
+// A mask as clothMask gives one: { mask, box, bg }.
+function maskFound(mask, w, h, bg) {
+  let left = w, right = -1, top = h, bottom = -1
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y) }
+  return right < 0 ? null : { mask, box: { left, right, top, bottom, w, h }, bg, hung: false }
+}
+
+// The backdrop's colour: the median of the photo's border.
+function backdropOf(data, w, h) {
+  const median = values => { values.sort((a, b) => a - b); return values[values.length >> 1] }
+  return [0, 1, 2].map(c => { const e = []; for (let x = 0; x < w; x += 4) e.push(data[4 * x + c], data[4 * ((h - 1) * w + x) + c]); return median(e) })
+}
+
+// The cloth's colour: the median of the masked pixels.
+function clothColourOf(data, mask, w, h) {
+  const samples = [[], [], []]
+  for (let i = 0; i < w * h; i += 7) if (mask[i]) for (let c = 0; c < 3; c++) samples[c].push(data[4 * i + c])
+  if (!samples[0].length) return null
+  return samples.map(v => { v.sort((a, b) => a - b); return v[v.length >> 1] })
+}
+
+// Every pixel within `radius` of the cloth (mask) but outside it takes the colour of the nearest cloth pixel
+// (a breadth-first spread outward, a ring a pass); its alpha, where it holds a relief, flat (128).
+export function bleed(data, mask, w, h, radius) {
+  const filled = Uint8Array.from(mask)
+  let frontier = []
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x
+    if (!mask[i]) continue
+    if ((x > 0 && !mask[i - 1]) || (x < w - 1 && !mask[i + 1]) || (y > 0 && !mask[i - w]) || (y < h - 1 && !mask[i + w])) frontier.push(i)
+  }
+  for (let ring = 0; ring < radius && frontier.length; ring++) {
+    const next = []
+    for (const i of frontier) {
+      const x = i % w, y = (i - x) / w
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+        if (j < 0 || filled[j]) continue
+        filled[j] = 1
+        data[4 * j] = data[4 * i]; data[4 * j + 1] = data[4 * i + 1]; data[4 * j + 2] = data[4 * i + 2]; data[4 * j + 3] = 128
+        next.push(j)
+      }
+    }
+    frontier = next
+  }
+}
+
+// A re-draped photo checked point by point: a cloth point whose place in its photo isn't the garment's cloth
+// (off the mask, or skin where the cloth isn't skin-coloured: a hand, a neck, hair at a collar) takes the
+// place of its nearest neighbour on the same pattern piece that is. uv: registerPhoto's, changed in place;
+// photos: { front, back } as loadPhotoForRedrape gives them. Returns how many points were moved.
+export function guardForeign(top, uv, photos) {
+  const { cloth } = top
+  const n = cloth.points.length
+  const bad = new Uint8Array(n)
+  const context = new Map()
+  const pixelsOf = photo => {
+    if (!context.has(photo)) context.set(photo, photo.canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, photo.canvas.width, photo.canvas.height).data)
+    return context.get(photo)
+  }
+  let count = 0
+  for (let i = 0; i < n; i++) {
+    const photo = uv[3 * i + 2] === 3 && photos.back ? photos.back : photos.front
+    const w = photo.canvas.width, h = photo.canvas.height
+    const x = Math.min(w - 1, Math.max(0, Math.round(uv[3 * i] * w))), y = Math.min(h - 1, Math.max(0, Math.round((1 - uv[3 * i + 1]) * h)))
+    const k = y * w + x
+    // Off the cloth: no cloth within a few pixels (a point at the very edge is the edge, not the backdrop).
+    let near = false
+    for (let dy = -4; dy <= 4 && !near; dy += 2) for (let dx = -4; dx <= 4 && !near; dx += 2) {
+      const yy = y + dy, xx = x + dx
+      if (yy >= 0 && yy < h && xx >= 0 && xx < w && photo.mask[yy * w + xx]) near = true
+    }
+    if (!near) { bad[i] = 1; count++; continue }
+    // Skin only counts on a photo of someone wearing it (a flat photo's red or tan cloth reads as skin too),
+    // and not where the cloth itself is skin-coloured.
+    if (!photo.worn || !photo.mask[k]) continue
+    const d = pixelsOf(photo)
+    const clothSkin = photo.cloth && isSkin(...photo.cloth)
+    if (!clothSkin && isSkin(d[4 * k], d[4 * k + 1], d[4 * k + 2])) { bad[i] = 1; count++ }
+  }
+  if (!count) return 0
+  // Neighbours on the same piece, by the cloth's triangles.
+  const next = Array.from({ length: n }, () => [])
+  for (const [a, b, c] of cloth.triangles) for (const [p, q] of [[a, b], [b, c], [c, a]]) if (cloth.panel[p] === cloth.panel[q]) { next[p].push(q); next[q].push(p) }
+  const from = new Int32Array(n).fill(-1)
+  let frontier = []
+  for (let i = 0; i < n; i++) if (!bad[i]) { from[i] = i; frontier.push(i) }
+  while (frontier.length) {
+    const more = []
+    for (const i of frontier) for (const j of next[i]) if (from[j] < 0) { from[j] = from[i]; more.push(j) }
+    frontier = more
+  }
+  for (let i = 0; i < n; i++) if (bad[i] && from[i] >= 0) { const j = from[i]; uv[3 * i] = uv[3 * j]; uv[3 * i + 1] = uv[3 * j + 1]; uv[3 * i + 2] = uv[3 * j + 2] }
+  return count
 }
 
 // The photo as a material rather than a picture: its light taken out, its relief kept. The photographer's
@@ -630,4 +784,130 @@ function patchLabels(ctx, mask, box) {
     }
   }
   if (painted) ctx.putImageData(image, 0, box.top)
+}
+
+// Lettering, appliqué and logos kept rigid. The point-by-point registration bends a print with the rows it
+// crosses, which shears a word where a row's ends move (the zip, a sleeve's seam, a fold the hanging shape
+// has and the photo hasn't). So each graphic in the photo (a patch of pixels far from the cloth's colour,
+// its letters joined) is laid on the cloth as one piece: the points that land on it take the place a single
+// move, turn and scale of their own pattern piece gives them (fitted, by least squares, to where the
+// registration put them), blended back into the registration over a margin round it, so the print follows
+// the cloth's drape without ever shearing. An all-over print (most of the garment) is left as registered.
+// uv: registerPhoto's, changed in place; photo: loadPhotoForRedrape's; which: 1 (front) or 3 (back).
+// Returns how many graphics were laid rigid.
+export function rigidPrints(top, uv, photo, which = 1) {
+  const { cloth } = top
+  const W = photo.canvas.width, H = photo.canvas.height
+  const sw = W >> 1, sh = H >> 1
+  if (!photo.cloth || sw < 32 || sh < 32) return 0
+  const data = photo.canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, W, H).data
+  const [cr, cg, cb] = photo.cloth
+  // The graphic's pixels at half size: far from the cloth's colour, on the cloth.
+  const graphic = new Uint8Array(sw * sh)
+  let on = 0, cloth2 = 0
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    const X = 2 * x, Y = 2 * y, k = Y * W + X
+    if (!photo.mask[k]) continue
+    cloth2++
+    const i = 4 * k
+    if (Math.hypot(data[i] - cr, data[i + 1] - cg, data[i + 2] - cb) > 70) { graphic[y * sw + x] = 1; on++ }
+  }
+  if (!cloth2 || on < 0.003 * cloth2 || on > 0.4 * cloth2) return 0
+  // Letters joined into words (grown by 1.2% of the garment's width), then the pieces as regions.
+  const box = photo.box, reach = Math.max(2, Math.round((box.right - box.left) * 0.006))
+  const grown = boxBlur(Float32Array.from(graphic), sw, sh, reach)
+  const label = new Int32Array(sw * sh).fill(-1)
+  const regions = []
+  for (let k = 0; k < sw * sh; k++) {
+    if (grown[k] <= 0.02 || label[k] >= 0) continue
+    const stack = [k], cells = []
+    label[k] = regions.length
+    while (stack.length) {
+      const i = stack.pop(), x = i % sw, y = (i - x) / sw
+      cells.push(i)
+      for (const j of [x > 0 ? i - 1 : -1, x < sw - 1 ? i + 1 : -1, y > 0 ? i - sw : -1, y < sh - 1 ? i + sw : -1]) {
+        if (j < 0 || label[j] >= 0 || grown[j] <= 0.02) continue
+        label[j] = regions.length
+        stack.push(j)
+      }
+    }
+    regions.push(cells.length)
+  }
+  const keep = regions.map(area => area >= 0.002 * cloth2 && area <= 0.35 * cloth2)
+  if (!keep.some(Boolean)) return 0
+  // Each point's region (by where the registration put it), on this photo.
+  const n = cloth.points.length
+  const regionOf = new Int32Array(n).fill(-1)
+  for (let i = 0; i < n; i++) {
+    if (uv[3 * i + 2] !== which) continue
+    const x = Math.min(sw - 1, Math.max(0, Math.floor((uv[3 * i] * W) / 2))), y = Math.min(sh - 1, Math.max(0, Math.floor(((1 - uv[3 * i + 1]) * H) / 2)))
+    const r = label[y * sw + x]
+    if (r >= 0 && keep[r]) regionOf[i] = r
+  }
+  // A region's points on one pattern piece: fit pattern (cm) to photo (pixels), a similarity, and lay them by it.
+  const groups = new Map()
+  for (let i = 0; i < n; i++) if (regionOf[i] >= 0) { const key = `${regionOf[i]}:${cloth.panel[i]}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(i) }
+  let laid = 0
+  for (const points of groups.values()) {
+    if (points.length < 12) continue
+    const dst = points.map(i => [uv[3 * i] * W, (1 - uv[3 * i + 1]) * H])
+    // A pattern piece is drawn y up and the photo y down, and a piece may lie either way round on it: the
+    // pattern's points are tried each way, the best fit kept.
+    let best = null
+    for (const [fx, fy] of [[1, -1], [-1, -1], [1, 1], [-1, 1]]) {
+      const src = points.map(i => [fx * cloth.points[i][0], fy * cloth.points[i][1]])
+      const t = similarity(src, dst)
+      if (!t) continue
+      let err = 0
+      for (let k = 0; k < points.length; k++) { const [x, y] = t(src[k]); err += Math.hypot(x - dst[k][0], y - dst[k][1]) }
+      if (!best || err < best.err) best = { t, src, err }
+    }
+    // Too far from the registration (a wrong match): left as registered.
+    if (!best || best.err / points.length > 0.05 * (box.right - box.left)) continue
+    const { t, src } = best
+    // Blended in from the region's edge: a point's weight by how many of its neighbours are in the region.
+    const inRegion = new Set(points)
+    for (let k = 0; k < points.length; k++) {
+      const i = points[k]
+      const [x, y] = t(src[k])
+      const w = edgeWeight(cloth, i, inRegion)
+      uv[3 * i] = (w * x + (1 - w) * dst[k][0]) / W
+      uv[3 * i + 1] = 1 - (w * y + (1 - w) * dst[k][1]) / H
+    }
+    laid++
+  }
+  return laid
+}
+
+// A point's share of neighbours in a set, through the cloth's triangles (1 deep inside, about 0.5 at the edge).
+let neighbourCache = new WeakMap()
+function edgeWeight(cloth, i, set) {
+  let next = neighbourCache.get(cloth)
+  if (!next) {
+    next = Array.from({ length: cloth.points.length }, () => new Set())
+    for (const [a, b, c] of cloth.triangles) { next[a].add(b).add(c); next[b].add(a).add(c); next[c].add(a).add(b) }
+    neighbourCache.set(cloth, next)
+  }
+  let inside = 0, all = 0
+  for (const j of next[i]) { all++; if (set.has(j)) inside++ }
+  return all ? Math.min(1, Math.max(0, (inside / all - 0.5) * 2)) : 1
+}
+
+// The least-squares similarity (move, turn, scale; no mirroring) from points src to dst ([x, y] each), as a
+// function, or null when the points are degenerate.
+export function similarity(src, dst) {
+  const n = src.length
+  let sx = 0, sy = 0, dx = 0, dy = 0
+  for (let k = 0; k < n; k++) { sx += src[k][0]; sy += src[k][1]; dx += dst[k][0]; dy += dst[k][1] }
+  sx /= n; sy /= n; dx /= n; dy /= n
+  let a = 0, b = 0, ss = 0
+  for (let k = 0; k < n; k++) {
+    const px = src[k][0] - sx, py = src[k][1] - sy, qx = dst[k][0] - dx, qy = dst[k][1] - dy
+    a += px * qx + py * qy
+    b += px * qy - py * qx
+    ss += px * px + py * py
+  }
+  if (ss < 1e-9) return null
+  const c = a / ss, s = b / ss
+  return ([x, y]) => [dx + c * (x - sx) - s * (y - sy), dy + s * (x - sx) + c * (y - sy)]
 }
