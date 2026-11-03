@@ -115,3 +115,46 @@ test("a similarity fitted by least squares recovers a move, turn and scale", asy
   const t = similarity(src, dst)
   for (let k = 0; k < src.length; k++) { const [x, y] = t(src[k]); assert.ok(Math.hypot(x - dst[k][0], y - dst[k][1]) < 1e-6) }
 })
+
+// A photo as the re-drape reads it, from raw pixels, with no browser: its canvas only gives its pixels back.
+function photoOf({ data, w, h }, extra = {}) {
+  const found = clothMask(data, w, h)
+  const canvas = { width: w, height: h, getContext: () => ({ getImageData: () => ({ data }) }) }
+  return { canvas, mask: found.mask, box: { ...found.box, w, h }, cloth: [60, 40, 30], worn: false, ...extra }
+}
+
+test("the plainest patch of cloth is found where the cloth is one colour", async () => {
+  const { plainPatch } = await import("lib/garments/redrape")
+  const shot = photo()
+  // A navy letter across the middle of the body.
+  for (let y = 120; y < 170; y++) for (let x = 90; x < 150; x++) shot.data.set([20, 30, 90, 255], 4 * (y * shot.w + x))
+  const patch = plainPatch(photoOf(shot), [60, 40, 30])
+  assert.ok(patch)
+  const inLetter = patch.x + patch.w > 90 && patch.x < 150 && patch.y + patch.h > 120 && patch.y < 170
+  assert.ok(!inLetter, "not on the lettering")
+  assert.equal(plainPatch(photoOf(shot), [250, 250, 0]), null, "no patch in a colour the photo hasn't got")
+})
+
+test("a hood and a sleeve that took the body's lettering are laid on plain cloth; the front keeps its photo", async () => {
+  const { trustPieces } = await import("lib/garments/redrape")
+  const shot = photo()
+  for (let y = 100; y < 200; y++) for (let x = 40; x <= 200; x++) if (shot.data[4 * (y * shot.w + x)] === 60) shot.data.set([20, 30, 90, 255], 4 * (y * shot.w + x))
+  const front = photoOf(shot)
+  // Four pieces of a few points each: the front on the lettering and the cloth, a sleeve all on the lettering,
+  // a hood on the cloth, a back (no photo of its own).
+  const cloth = { panels: ["front", "sleeve_L", "hood_L", "back"], points: [], panel: [] }
+  const uv = []
+  const at = (p, x, y, px, py) => { cloth.points.push([px, py]); cloth.panel.push(p); uv.push(x / shot.w, 1 - y / shot.h, 1) }
+  for (let k = 0; k < 10; k++) { at(0, 100 + k, k < 2 ? 150 : 80, k, 0); at(1, 50, 120 + k, 0, k); at(2, 120, 70 + k, k, k); at(3, 100 + k, 80, k, 0) }
+  const out = trustPieces({ cloth }, Float32Array.from(uv), { front, back: null })
+  assert.deepEqual(out.plain.sort(), ["back", "hood_L", "sleeve_L"])
+  assert.equal(out.far.front, 0.2)
+})
+
+test("a hood standing up above the shoulders is kept, not cut off as a hanger's hook", () => {
+  const { data, w, h } = photo()
+  // A hood 50 wide from row 20 to the shoulders at row 60, in the cloth's colour.
+  for (let y = 20; y < 60; y++) for (let x = 95; x <= 145; x++) data.set([60, 40, 30, 255], 4 * (y * w + x))
+  const found = clothMask(data, w, h)
+  assert.equal(found.box.top, 20)
+})

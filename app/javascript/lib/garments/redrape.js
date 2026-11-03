@@ -118,12 +118,22 @@ export function clothMask(data, w, h) {
   }
   const widest = Math.max(...widths)
   let top = -1, bottom = -1, left = w, right = 0
-  // The hanger's hook: the rows at the top narrower than a third of the widest.
+  // The hanger's hook: the rows at the top narrower than a third of the widest. Not a hood standing up (or a
+  // high collar): that's broad for a hook, a tenth of the garment or more across.
   let first = -1, hookEnd = -1
   for (let y = 0; y < h; y++) {
     if (!widths[y]) continue
     if (first < 0) first = y
-    if (widths[y] < widest * 0.3) { out.fill(0, y * w, (y + 1) * w); hookEnd = y } else break
+    if (widths[y] < widest * 0.3) hookEnd = y; else break
+  }
+  if (hookEnd >= 0) {
+    const narrow = []
+    for (let y = first; y <= hookEnd; y++) if (widths[y]) narrow.push(widths[y])
+    // A hook is a wire or a hook of plastic, a few percent of the garment across; a hood's crown narrows to
+    // nothing at its very top but is a fifth of the garment across a little below.
+    const broad = median(narrow) >= widest * 0.1
+    if (broad) hookEnd = -1
+    else out.fill(0, first * w, (hookEnd + 1) * w)
   }
   top = hookEnd >= 0 ? hookEnd + 1 : first
   if (top < 0 || top >= h) return null
@@ -910,4 +920,122 @@ export function similarity(src, dst) {
   if (ss < 1e-9) return null
   const c = a / ss, s = b / ss
   return ([x, y]) => [dx + c * (x - sx) - s * (y - sy), dy + s * (x - sx) + c * (y - sy)]
+}
+
+// Which pieces the photos really show, and plain cloth for the rest. Laying a photo on point for point only
+// works where the photo shows that piece: a hood on a front photo is seen from inside or folded down, a
+// sleeve laid along the body borrows the body's lettering, a sleeve on someone wearing it is half arm. Such a
+// piece shows a patch of the photo's plainest cloth instead (plainPatch: its colour and weave, no picture),
+// which can look plain where the garment isn't, but never shows something that isn't the garment.
+//
+//   hood            always plain (its outside isn't on a front photo)
+//   sleeves, bands  plain when more of the piece is off the cloth's colour than the photo can explain:
+//                   a fifth of a sleeve (a sixth on a worn photo), half a band
+//   the back        plain when there's no photo of it and the front has a graphic (a chest print isn't
+//                   on the back too), else the front laid on as before
+//
+// photos: { front, back } as loadPhotoForRedrape gives them; uv as registerPhoto gives it, changed in place.
+// Returns { plain: [piece names], far: { name: share } } (far: the share of each piece's points off the
+// cloth's colour, before any were made plain).
+export function trustPieces(top, uv, photos) {
+  const { cloth } = top
+  const n = cloth.points.length
+  const names = cloth.panels
+  const pixels = new Map()
+  const pixelsOf = photo => {
+    if (!pixels.has(photo)) pixels.set(photo, photo.canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, photo.canvas.width, photo.canvas.height).data)
+    return pixels.get(photo)
+  }
+  const photoOf = i => (uv[3 * i + 2] === 3 && photos.back ? photos.back : photos.front)
+  // How much of each piece is off the cloth's colour, and its middle colour.
+  const stats = names.map(() => ({ n: 0, far: 0, rgb: [[], [], []] }))
+  for (let i = 0; i < n; i++) {
+    if (!(uv[3 * i + 2] > 0)) continue
+    const photo = photoOf(i), w = photo.canvas.width, h = photo.canvas.height
+    const x = Math.min(w - 1, Math.max(0, Math.round(uv[3 * i] * w))), y = Math.min(h - 1, Math.max(0, Math.round((1 - uv[3 * i + 1]) * h)))
+    const d = pixelsOf(photo), k = 4 * (y * w + x)
+    const s = stats[cloth.panel[i]]
+    s.n++
+    if (!photo.cloth || Math.hypot(d[k] - photo.cloth[0], d[k + 1] - photo.cloth[1], d[k + 2] - photo.cloth[2]) > FAR) s.far++
+    for (let c = 0; c < 3; c++) s.rgb[c].push(d[k + c])
+  }
+  const far = Object.fromEntries(names.map((name, p) => [name, stats[p].n ? Math.round((stats[p].far / stats[p].n) * 100) / 100 : null]))
+  const graphic = far.front != null && far.front > 0.04 && far.front < 0.7
+  const worn = Boolean(photos.front.worn)
+  const plain = []
+  // A pair (the two sleeves, cuffs, halves of a hood) goes together: one plain sleeve beside one printed one
+  // looks more wrong than either.
+  const pairOf = name => name.replace(/_[LR]$/, "")
+  const worst = {}
+  for (const name of names) if (far[name] != null) worst[pairOf(name)] = Math.max(worst[pairOf(name)] ?? 0, far[name])
+  for (const [p, name] of names.entries()) {
+    if (far[name] == null) continue
+    const share = worst[pairOf(name)]
+    let reason = null
+    if (/^hood/.test(name)) reason = "hood"
+    else if (/^sleeve/.test(name) && share > (worn ? 0.16 : 0.2)) reason = "sleeve"
+    else if (/^(cuff|waistband|collar|placket)/.test(name) && share > 0.5) reason = "band"
+    else if (/^back/.test(name) && !photos.back && graphic) reason = "back"
+    if (!reason) continue
+    // Bands keep their own colour (a black rib on grey); the rest take the cloth's.
+    const median = values => { const v = [...values].sort((a, b) => a - b); return v[v.length >> 1] }
+    const target = reason === "band" ? stats[p].rgb.map(median) : null
+    const source = reason === "back" || !photos.back || !/^back/.test(name) ? photos.front : photos.back
+    const patch = plainPatch(source, target ?? source.cloth)
+    if (!patch) continue
+    layPatch(cloth, uv, p, source, patch, source === photos.back ? 3 : 1)
+    plain.push(name)
+  }
+  return { plain, far }
+}
+
+// The share of a piece off the cloth's colour counts pixels this far from it (RGB distance): a heather's
+// light and dark flecks are nearer than that, lettering and skin and a lining in shadow are further.
+const FAR = 70
+
+// The plainest square of cloth in a photo near a colour: the window, about a twentieth of the garment across,
+// all on the cloth (and no skin, on a worn photo), whose colour is nearest the target and whose pixels vary
+// least. { x, y, w, h } in the photo's pixels, or null.
+export function plainPatch(photo, target) {
+  if (!photo?.mask || !target) return null
+  const { box } = photo
+  const W = photo.canvas.width, H = photo.canvas.height
+  const d = photo.canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, W, H).data
+  const size = Math.max(8, Math.round(0.05 * (box.right - box.left)))
+  const step = Math.max(2, size >> 1), probe = Math.max(1, size >> 3)
+  let best = null
+  for (let y = box.top; y + size <= box.bottom; y += step) for (let x = box.left; x + size <= box.right; x += step) {
+    let n = 0, sum = [0, 0, 0], sq = 0, ok = true
+    for (let yy = y; yy < y + size && ok; yy += probe) for (let xx = x; xx < x + size; xx += probe) {
+      const k = yy * W + xx
+      if (!photo.mask[k]) { ok = false; break }
+      const r = d[4 * k], g = d[4 * k + 1], b = d[4 * k + 2]
+      if (photo.worn && isSkin(r, g, b)) { ok = false; break }
+      sum[0] += r; sum[1] += g; sum[2] += b; sq += r * r + g * g + b * b; n++
+    }
+    if (!ok || !n) continue
+    const mean = sum.map(v => v / n)
+    const spread = Math.sqrt(Math.max(0, sq / n - (mean[0] ** 2 + mean[1] ** 2 + mean[2] ** 2)))
+    const score = Math.hypot(mean[0] - target[0], mean[1] - target[1], mean[2] - target[2]) + spread
+    if (!best || score < best.score) best = { score, x, y, w: size, h: size, gap: Math.hypot(mean[0] - target[0], mean[1] - target[1], mean[2] - target[2]) }
+  }
+  // Nothing near the colour (a band in a colour the photo shows nowhere broad enough): no patch.
+  return best && best.gap < 45 ? best : null
+}
+
+// A piece's points laid on a patch: the piece's pattern, scaled the same both ways to fit inside it.
+function layPatch(cloth, uv, panel, photo, patch, which) {
+  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity
+  for (let i = 0; i < cloth.points.length; i++) if (cloth.panel[i] === panel) {
+    const [x, y] = cloth.points[i]
+    minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y)
+  }
+  const span = Math.max(1e-6, maxx - minx, maxy - miny)
+  const inner = 0.8 * patch.w, x0 = patch.x + 0.1 * patch.w, y0 = patch.y + 0.1 * patch.h
+  const W = photo.canvas.width, H = photo.canvas.height
+  for (let i = 0; i < cloth.points.length; i++) if (cloth.panel[i] === panel) {
+    const [x, y] = cloth.points[i]
+    const qx = x0 + ((x - minx) / span) * inner, qy = y0 + ((maxy - y) / span) * inner
+    uv[3 * i] = qx / W; uv[3 * i + 1] = 1 - qy / H; uv[3 * i + 2] = which
+  }
 }

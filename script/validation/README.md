@@ -78,3 +78,17 @@ Every garment of an outfit gets `ok`, `minor` or `fail` and, when it isn't ok, o
 
 A garment counts once, at its worst grade over the outfits it's in (`na`: another garment of the same kind took
 its place in that outfit, so it's graded in its other one). `runs/` and `sheets/` aren't kept in git.
+
+### Holding a change to the last run
+
+`baseline.json` keeps each garment's checks from the last accepted run (`{ score, passes }`, from
+`VAL.score().share` and `VAL.passes()`). After a change, run the set and call `await VAL.gate()`: it lists
+every check a garment passed before and fails now, and says whether the score held. A change ships only when
+the gate is `ok`; then the new run becomes the baseline. A failure someone reports (a screenshot) goes into
+`accuracy.json` as a label, with an `expect` note of what must be true of it (`backPlain`), so it stays in
+the set.
+
+The `appearance` check reads what each piece actually shows (its points' colours in the photos, after every
+correction): a sleeve or hood in the garment's colour, the back as plain as the back photo (or plain when
+there's none and the front has a chest graphic), the front's graphic about as much of it as of the photo.
+

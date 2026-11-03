@@ -9,7 +9,14 @@
 //                 guard moved them: stage.js's d.foreign)
 //   pieces        pattern pieces left with no photo on them (a band, a cuff, a hood) while the photo is on
 //
-// A check passes at: construction all fields equal; silhouette 0.9 or more; foreign under 1%; pieces none.
+//   appearance    what each piece shows, read off the cloth's own texture (where its points land in the
+//                 photos, after every correction), against what the photos show of the garment: a sleeve or
+//                 hood in the garment's colour (not a lining, lettering or skin), the back as plain as the
+//                 back photo (or plain, when there's none and the front has a chest graphic), the front's
+//                 graphic about as much of the front as it is of the photo's
+//
+// A check passes at: construction all fields equal; silhouette 0.9 or more; foreign under 1%; pieces none;
+// appearance no piece wrong.
 const SLOT = { top: "top", jacket: "outer", coat: "outer", trousers: "bottom" }
 
 export const PASS = { silhouette: 0.9, foreign: 0.01 }
@@ -70,6 +77,65 @@ export function bare(d) {
   return cloth.panels.filter((_, p) => !seen.has(p))
 }
 
+// What each piece shows: the share of its points whose colour in the photo is off the garment's cloth colour
+// (FAR away), and its middle colour; and what the photos show (the share of the photo's cloth off its
+// colour, front and back). { pieces: { name: { far, rgb } }, photo: { front, back }, wrong: [{ piece, why }] }.
+const FAR = 70
+function clothShare(photo) {
+  const W = photo.canvas.width, H = photo.canvas.height
+  const d = photo.canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, W, H).data
+  let n = 0, far = 0
+  for (let y = photo.box.top; y <= photo.box.bottom; y += 4) for (let x = photo.box.left; x <= photo.box.right; x += 4) {
+    const k = y * W + x
+    if (!photo.mask[k]) continue
+    n++
+    if (Math.hypot(d[4 * k] - photo.cloth[0], d[4 * k + 1] - photo.cloth[1], d[4 * k + 2] - photo.cloth[2]) > FAR) far++
+  }
+  return n ? far / n : null
+}
+export function appearance(d) {
+  const photos = d.redrapePhotos, uv = d.redrape?.uv
+  if (!photos?.front?.cloth || !uv) return null
+  const { cloth } = d.top
+  const pixels = new Map()
+  const at = (photo, i) => {
+    if (!pixels.has(photo)) pixels.set(photo, photo.canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, photo.canvas.width, photo.canvas.height).data)
+    const w = photo.canvas.width, h = photo.canvas.height, D = pixels.get(photo)
+    const x = Math.min(w - 1, Math.max(0, Math.round(uv[3 * i] * w))), y = Math.min(h - 1, Math.max(0, Math.round((1 - uv[3 * i + 1]) * h)))
+    const k = 4 * (y * w + x)
+    return [D[k], D[k + 1], D[k + 2]]
+  }
+  const acc = cloth.panels.map(() => ({ n: 0, far: 0, sum: [0, 0, 0] }))
+  const ref = photos.front.cloth
+  for (let i = 0; i < cloth.points.length; i++) {
+    const z = uv[3 * i + 2]
+    if (!(z > 0)) continue
+    const c = at(z === 3 && photos.back ? photos.back : photos.front, i)
+    const a = acc[cloth.panel[i]]
+    a.n++; for (let k = 0; k < 3; k++) a.sum[k] += c[k]
+    if (Math.hypot(c[0] - ref[0], c[1] - ref[1], c[2] - ref[2]) > FAR) a.far++
+  }
+  const pieces = Object.fromEntries(cloth.panels.map((name, p) => [name, acc[p].n ? { far: Math.round((acc[p].far / acc[p].n) * 100) / 100, rgb: acc[p].sum.map(v => Math.round(v / acc[p].n)) } : null]))
+  const photo = { front: clothShare(photos.front), back: photos.back ? clothShare(photos.back) : null }
+  const wrong = []
+  for (const [name, piece] of Object.entries(pieces)) {
+    if (!piece) continue
+    if (/^(sleeve|hood)/.test(name) && piece.far > 0.25) wrong.push({ piece: name, why: `${Math.round(piece.far * 100)}% off the garment's colour` })
+  }
+  const back = pieces.back
+  if (back) {
+    // As plain as the back photo, or plain when there's none and the front's graphic is a placed one.
+    const allowed = photo.back != null ? photo.back + 0.1 : photo.front != null && photo.front < 0.7 ? 0.08 : 1
+    if (back.far > allowed) wrong.push({ piece: "back", why: `${Math.round(back.far * 100)}% graphic where the photo has ${Math.round((photo.back ?? 0) * 100)}%` })
+  }
+  const front = pieces.front ?? pieces.front_L
+  if (front && photo.front != null && photo.front > 0.05) {
+    const ratio = front.far / photo.front
+    if (ratio < 0.6 || ratio > 1.6) wrong.push({ piece: "front", why: `graphic ${Math.round(front.far * 100)}% of the front, ${Math.round(photo.front * 100)}% of the photo's` })
+  }
+  return { pieces, photo, wrong }
+}
+
 // The checks for one garment. stage: the page's FittingStage; kind: the outfit's kind; label: its entry in
 // accuracy.json (or null).
 export function accuracyOf(stage, kind, label) {
@@ -86,11 +152,19 @@ export function accuracyOf(stage, kind, label) {
   out.silhouette = front ? silhouette(d, front) : null
   out.foreign = d.redrape ? Math.round(((d.foreign ?? 0) / d.top.cloth.points.length) * 1000) / 1000 : null
   out.bare = bare(d)
+  out.plain = d.trust?.plain ?? []
+  out.appearance = d.redrape ? appearance(d) : null
+  // The listing's own notes (accuracy.json "expect"), checked by what the appearance read.
+  if (out.appearance && label?.expect) for (const [what, value] of Object.entries(label.expect)) {
+    if (what === "backPlain" && value && (out.appearance.pieces.back?.far ?? 0) > 0.08) out.appearance.wrong.push({ piece: "back", why: "the back should be plain" })
+  }
   out.pass = {
     construction: out.construction ? out.construction.ok : null,
     silhouette: out.silhouette == null ? null : out.silhouette >= PASS.silhouette,
     foreign: out.foreign == null ? null : out.foreign < PASS.foreign,
-    pieces: d.redrape ? out.bare.length === 0 : null
+    // A piece left with no photo while the photo's on, unless it was made plain on purpose (trustPieces).
+    pieces: d.redrape ? out.bare.every(name => out.plain.includes(name)) : null,
+    appearance: out.appearance ? out.appearance.wrong.length === 0 : null
   }
   return out
 }

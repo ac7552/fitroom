@@ -6,7 +6,7 @@
     "neesx480": { "sleeves": "long", "hood": false, "collar": "shirt", "closure": "buttons", "onePiece": false },
     "khm034891-232": { "sleeves": "long", "hood": false, "collar": "band", "closure": "buttons", "onePiece": false },
     "casm-ss26-sh-003-05": { "sleeves": "short", "hood": false, "collar": "shirt", "closure": "buttons", "onePiece": false },
-    "khma030338-198": { "sleeves": "long", "hood": true, "closure": "zip", "onePiece": false },
+    "khma030338-198": { "sleeves": "long", "hood": true, "closure": "zip", "onePiece": false, "expect": { "backPlain": true } },
     "amfw2610-for": { "sleeves": "none", "hood": false, "onePiece": false },
     "jpdr191-m031p-000201": { "sleeves": "long", "hood": false, "onePiece": false },
     "sir326-1018": { "sleeves": "none", "hood": false, "onePiece": false },

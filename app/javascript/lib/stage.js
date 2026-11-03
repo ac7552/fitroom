@@ -15,7 +15,7 @@ import { shoeTexture, viewTexture } from "lib/garments/print"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
 import { meanRatio } from "lib/projection"
 import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
-import { HangerDrape, collarColour, collarStrip, guardForeign, loadPhotoForRedrape, registerPhoto, rigidPrints, showsCloth } from "lib/garments/redrape"
+import { HangerDrape, collarColour, collarStrip, guardForeign, loadPhotoForRedrape, registerPhoto, rigidPrints, showsCloth, trustPieces } from "lib/garments/redrape"
 import { easeInOut, framing } from "lib/framing"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
@@ -1889,6 +1889,9 @@ export class FittingStage {
         d.rigid = rigidPrints(d.top, uv, front, 1) + (back ? rigidPrints(d.top, uv, back, 3) : 0)
         // No skin, hair or backdrop on the cloth: a point that lands on any takes its neighbour's place.
         d.foreign = guardForeign(d.top, uv, { front, back })
+        // Plain cloth on the pieces the photos don't really show (a hood, a sleeve that took the body's
+        // lettering, a back with no photo of its own), never something that isn't the garment.
+        d.trust = trustPieces(d.top, uv, { front, back })
         d.redrape = { image: front.flat ?? front.canvas, back: back ? { image: back.flat ?? back.canvas } : null, uv, collar: collarColour(front), collarStrip: collarStrip(front) }
         d.redrapeState = "done"
         // A cut-out the listing names that the photo shows covered (a drape over it) isn't cut.

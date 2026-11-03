@@ -15,7 +15,7 @@ const s = c.stage
 VAL.c = c; VAL.s = s
 const P = await import("lib/garments/print")
 // The accuracy checks (accuracy.js) and the hand labels they're held to (accuracy.json), when served.
-const A = await import("/validation/accuracy.js").catch(() => null)
+const A = await import("/validation/accuracy.js" + new URL(import.meta.url).search).catch(() => null)   // the runner's ?v=, so a new copy isn't served from cache
 VAL.labels ??= await fetch("/validation/accuracy.json").then(r => (r.ok ? r.json() : null)).then(j => j?.labels ?? {}).catch(() => ({}))
 
 // The photo check runs once, its first reading kept (VAL.firstLook, on by default): a check that fails is tried
@@ -213,5 +213,20 @@ VAL.wait = async (ms = 30000) => { const end = Date.now() + ms; while (VAL.runni
 // The results of runs `from` to `to` (in the order they finished), with or without their pictures.
 // The accuracy score over the results so far (accuracy.js's score): the share of the automatic checks passed.
 VAL.score = () => (A ? A.score(VAL.results) : null)
+// Each garment's checks passed and failed, by its handle: what baseline.json keeps, to hold a change to.
+VAL.passes = () => Object.fromEntries(Object.values(VAL.results).flatMap(r => (r.items ?? []).filter(i => i.accuracy?.pass).map(i => [i.handle, i.accuracy.pass])))
+// The gate: every check a garment passed in the baseline (baseline.json, or one given) it still passes, and
+// the score is no lower. { ok, regressions: [{ handle, check }], score, was }.
+VAL.gate = async (baseline = null) => {
+  baseline ??= await fetch("/validation/baseline.json", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+  if (!baseline) return { ok: null, why: "no baseline.json" }
+  const now = VAL.passes(), regressions = []
+  for (const [handle, checks] of Object.entries(baseline.passes ?? {})) {
+    if (!now[handle]) continue
+    for (const [check, ok] of Object.entries(checks)) if (ok === true && now[handle][check] === false) regressions.push({ handle, check })
+  }
+  const score = VAL.score()
+  return { ok: regressions.length === 0 && (baseline.score == null || score.share >= baseline.score), regressions, score: score.share, was: baseline.score ?? null }
+}
 VAL.export = (from = 0, to = Infinity, { pics = true } = {}) => JSON.stringify(Object.values(VAL.results).slice(from, to).map(r => pics ? r : { ...r, pics: undefined, items: r.items.map(i => ({ ...i, photoThumb: undefined })) }))
 export default VAL
