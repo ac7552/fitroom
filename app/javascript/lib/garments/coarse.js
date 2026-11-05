@@ -8,8 +8,9 @@
 // lies in on its pattern piece), so the page draws the garment settling as before, at its full resolution.
 import { Drape } from "lib/garments/drape"
 
-// How much coarser the first cloth is (its spacing over the fine one's).
-export const COARSE_FACTOR = 2
+// The first cloth's spacing (cm between its points): twice a top's 1.6 cm; pants' 2 cm cloth only 1.6 times as
+// coarse, as a jogger's cuff cut at 4 cm (two rows of points) folds out and stays folded once it's fine.
+export const COARSE_SPACING = 3.2
 // What the fine cloth does once it's laid where the coarse one settled: a few frames easing to its own size
 // (keeping no speed: its rows are a little long or short where the coarse cloth curved between its points),
 // then a short settle (the garment settles again, at full resolution, as it is posed: see stage.js#posing).

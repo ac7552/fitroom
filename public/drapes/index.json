@@ -1471,5 +1471,934 @@
       "opening": 46.36
     },
     "name": null
+  },
+  {
+    "file": "men-tee-96-atlas.json",
+    "style": "tee",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 96,
+      "length": 60,
+      "sleeve": 22,
+      "shoulders": 42,
+      "hem": 95.03999999999999
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-longsleeve-96-atlas.json",
+    "style": "longsleeve",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 96,
+      "length": 60,
+      "sleeve": 55.5,
+      "shoulders": 42,
+      "hem": 95.03999999999999,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-longsleeve-120-atlas.json",
+    "style": "longsleeve",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 120,
+      "length": 76,
+      "sleeve": 55.5,
+      "shoulders": 53,
+      "hem": 118.8,
+      "opening": 25.2
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-longsleeve-150-atlas.json",
+    "style": "longsleeve",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 150,
+      "length": 95,
+      "sleeve": 55.5,
+      "shoulders": 66,
+      "hem": 148.5,
+      "opening": 31.5
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-sweatshirt-96-atlas.json",
+    "style": "sweatshirt",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 54,
+      "sleeve": 55.5,
+      "shoulders": 42,
+      "hem": 96,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-hoodie-96-atlas.json",
+    "style": "hoodie",
+    "bodyType": "men",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 54,
+      "sleeve": 55.5,
+      "shoulders": 42,
+      "hem": 96,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-zip-96-atlas.json",
+    "style": "zip",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 56,
+      "sleeve": 57.5,
+      "shoulders": 42,
+      "hem": 96,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-bomber-96-atlas.json",
+    "style": "bomber",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 54,
+      "sleeve": 55.5,
+      "shoulders": 42,
+      "hem": 96,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-shortshirt-96-atlas.json",
+    "style": "shortshirt",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 96,
+      "length": 60,
+      "sleeve": 22,
+      "shoulders": 42,
+      "hem": 95.03999999999999
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-shortshirt-150-atlas.json",
+    "style": "shortshirt",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 150,
+      "length": 95,
+      "sleeve": 22,
+      "shoulders": 66,
+      "hem": 148.5
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-polo-96-atlas.json",
+    "style": "polo",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 96,
+      "length": 60,
+      "sleeve": 22,
+      "shoulders": 42,
+      "hem": 95.03999999999999
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-rugby-96-atlas.json",
+    "style": "rugby",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 96,
+      "length": 60,
+      "sleeve": 55.5,
+      "shoulders": 42,
+      "hem": 95.03999999999999,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-tank-150-atlas.json",
+    "style": "tank",
+    "bodyType": "men",
+    "panels": "back,front",
+    "measures": {
+      "chest": 150,
+      "length": 95,
+      "sleeve": 25.25,
+      "shoulders": 37.5,
+      "hem": 148.5
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-sweater-96-atlas.json",
+    "style": "sweater",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 54,
+      "sleeve": 55.5,
+      "shoulders": 42,
+      "hem": 96,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-shortknit-96-atlas.json",
+    "style": "shortknit",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 54,
+      "sleeve": 22,
+      "shoulders": 42,
+      "hem": 96
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-shortknit-120-atlas.json",
+    "style": "shortknit",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 120,
+      "length": 70,
+      "sleeve": 22,
+      "shoulders": 53,
+      "hem": 120
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-shortknit-150-atlas.json",
+    "style": "shortknit",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 150,
+      "length": 89,
+      "sleeve": 22,
+      "shoulders": 66,
+      "hem": 150
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-cardigan-96-atlas.json",
+    "style": "cardigan",
+    "bodyType": "men",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 96,
+      "length": 54,
+      "sleeve": 55.5,
+      "shoulders": 42,
+      "hem": 96,
+      "opening": 24.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-coat-96-atlas.json",
+    "style": "coat",
+    "bodyType": "men",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 96,
+      "length": 98,
+      "sleeve": 62,
+      "shoulders": 42,
+      "hem": 95.03999999999999,
+      "opening": 27.168719609486118
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-tee-135-atlas.json",
+    "style": "tee",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 135,
+      "length": 85,
+      "sleeve": 22,
+      "shoulders": 59,
+      "hem": 133.65
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-longsleeve-86-atlas.json",
+    "style": "longsleeve",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 86,
+      "length": 54,
+      "sleeve": 48.5,
+      "shoulders": 38,
+      "hem": 85.14,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-longsleeve-135-atlas.json",
+    "style": "longsleeve",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 135,
+      "length": 85,
+      "sleeve": 48.5,
+      "shoulders": 59,
+      "hem": 133.65,
+      "opening": 28.349999999999998
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-sweatshirt-86-atlas.json",
+    "style": "sweatshirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 48,
+      "sleeve": 48.5,
+      "shoulders": 38,
+      "hem": 86,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-sweatshirt-108-atlas.json",
+    "style": "sweatshirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 108,
+      "length": 62,
+      "sleeve": 48.5,
+      "shoulders": 48,
+      "hem": 108,
+      "opening": 22.68
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-sweatshirt-135-atlas.json",
+    "style": "sweatshirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 135,
+      "length": 79,
+      "sleeve": 48.5,
+      "shoulders": 59,
+      "hem": 135,
+      "opening": 28.349999999999998
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-hoodie-86-atlas.json",
+    "style": "hoodie",
+    "bodyType": "women",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 48,
+      "sleeve": 48.5,
+      "shoulders": 38,
+      "hem": 86,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-hoodie-108-atlas.json",
+    "style": "hoodie",
+    "bodyType": "women",
+    "panels": "back,cuff_L,cuff_R,front,hood_L,hood_R,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 108,
+      "length": 62,
+      "sleeve": 48.5,
+      "shoulders": 48,
+      "hem": 108,
+      "opening": 22.68
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-zip-86-atlas.json",
+    "style": "zip",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 50,
+      "sleeve": 50.5,
+      "shoulders": 38,
+      "hem": 86,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-zip-108-atlas.json",
+    "style": "zip",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 108,
+      "length": 64,
+      "sleeve": 50.5,
+      "shoulders": 48,
+      "hem": 108,
+      "opening": 22.68
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-bomber-86-atlas.json",
+    "style": "bomber",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 48,
+      "sleeve": 48.5,
+      "shoulders": 38,
+      "hem": 86,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-bomber-135-atlas.json",
+    "style": "bomber",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 135,
+      "length": 79,
+      "sleeve": 48.5,
+      "shoulders": 59,
+      "hem": 135,
+      "opening": 28.349999999999998
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shirt-86-atlas.json",
+    "style": "shirt",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 50,
+      "sleeve": 50.5,
+      "shoulders": 38,
+      "hem": 86,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shortshirt-86-atlas.json",
+    "style": "shortshirt",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 86,
+      "length": 54,
+      "sleeve": 22,
+      "shoulders": 38,
+      "hem": 85.14
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shortshirt-108-atlas.json",
+    "style": "shortshirt",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 108,
+      "length": 68,
+      "sleeve": 22,
+      "shoulders": 48,
+      "hem": 106.92
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shortshirt-135-atlas.json",
+    "style": "shortshirt",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 135,
+      "length": 85,
+      "sleeve": 22,
+      "shoulders": 59,
+      "hem": 133.65
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-polo-86-atlas.json",
+    "style": "polo",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 86,
+      "length": 54,
+      "sleeve": 22,
+      "shoulders": 38,
+      "hem": 85.14
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-rugby-86-atlas.json",
+    "style": "rugby",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 86,
+      "length": 54,
+      "sleeve": 48.5,
+      "shoulders": 38,
+      "hem": 85.14,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-rugby-108-atlas.json",
+    "style": "rugby",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 108,
+      "length": 68,
+      "sleeve": 48.5,
+      "shoulders": 48,
+      "hem": 106.92,
+      "opening": 22.68
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-rugby-135-atlas.json",
+    "style": "rugby",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 135,
+      "length": 85,
+      "sleeve": 48.5,
+      "shoulders": 59,
+      "hem": 133.65,
+      "opening": 28.349999999999998
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-sweater-86-atlas.json",
+    "style": "sweater",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 48,
+      "sleeve": 48.5,
+      "shoulders": 38,
+      "hem": 86,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-sweater-108-atlas.json",
+    "style": "sweater",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 108,
+      "length": 62,
+      "sleeve": 48.5,
+      "shoulders": 48,
+      "hem": 108,
+      "opening": 22.68
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-sweater-135-atlas.json",
+    "style": "sweater",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 135,
+      "length": 79,
+      "sleeve": 48.5,
+      "shoulders": 59,
+      "hem": 135,
+      "opening": 28.349999999999998
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shortknit-86-atlas.json",
+    "style": "shortknit",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 48,
+      "sleeve": 22,
+      "shoulders": 38,
+      "hem": 86
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shortknit-108-atlas.json",
+    "style": "shortknit",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 108,
+      "length": 62,
+      "sleeve": 22,
+      "shoulders": 48,
+      "hem": 108
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shortknit-135-atlas.json",
+    "style": "shortknit",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 135,
+      "length": 79,
+      "sleeve": 22,
+      "shoulders": 59,
+      "hem": 135
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-cardigan-86-atlas.json",
+    "style": "cardigan",
+    "bodyType": "women",
+    "panels": "back,collar,cuff_L,cuff_R,front,sleeve_L,sleeve_R,waistband",
+    "measures": {
+      "chest": 86,
+      "length": 48,
+      "sleeve": 48.5,
+      "shoulders": 38,
+      "hem": 86,
+      "opening": 20.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-coat-86-atlas.json",
+    "style": "coat",
+    "bodyType": "women",
+    "panels": "back,collar,front,sleeve_L,sleeve_R",
+    "measures": {
+      "chest": 86,
+      "length": 91,
+      "sleeve": 55,
+      "shoulders": 38,
+      "hem": 85.14,
+      "opening": 23.21246481330811
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-trousers-72-atlas.json",
+    "style": "trousers",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 72,
+      "length": 103.16273085594179,
+      "inseam": 81,
+      "rise": 22.16273085594178,
+      "thigh": 52,
+      "opening": 40
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-joggers-72-atlas.json",
+    "style": "joggers",
+    "bodyType": "men",
+    "panels": "back_L,back_R,cuff_L,cuff_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 72,
+      "length": 89.87204814195633,
+      "inseam": 81,
+      "rise": 15.872048141956334,
+      "thigh": 52,
+      "opening": 26
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-leggings-72-atlas.json",
+    "style": "leggings",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 72,
+      "length": 102.16273085594179,
+      "inseam": 81,
+      "rise": 21.16273085594178,
+      "thigh": 52,
+      "opening": 22
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-leggings-90-atlas.json",
+    "style": "leggings",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 90,
+      "length": 98.29007399272919,
+      "inseam": 81,
+      "rise": 17.290073992729198,
+      "thigh": 65,
+      "opening": 22
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-leggings-112-atlas.json",
+    "style": "leggings",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 112,
+      "length": 95,
+      "inseam": 81,
+      "rise": 14,
+      "thigh": 81,
+      "opening": 22
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-shorts-112-atlas.json",
+    "style": "shorts",
+    "bodyType": "men",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 112,
+      "length": 34,
+      "inseam": 20,
+      "rise": 14,
+      "thigh": 81,
+      "opening": 56
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-skirt-72-atlas.json",
+    "style": "skirt",
+    "bodyType": "men",
+    "panels": "back,front,waistband",
+    "measures": {
+      "waist": 72,
+      "hips": 90,
+      "length": 60,
+      "inseam": 34,
+      "rise": 26,
+      "hem": 91.8
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-skirt-90-atlas.json",
+    "style": "skirt",
+    "bodyType": "men",
+    "panels": "back,front,waistband",
+    "measures": {
+      "waist": 90,
+      "hips": 113,
+      "length": 60,
+      "inseam": 38,
+      "rise": 22,
+      "hem": 115.26
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "men-skirt-112-atlas.json",
+    "style": "skirt",
+    "bodyType": "men",
+    "panels": "back,front,waistband",
+    "measures": {
+      "waist": 112,
+      "hips": 140,
+      "length": 60,
+      "inseam": 53,
+      "rise": 7,
+      "hem": 142.8
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-trousers-64-atlas.json",
+    "style": "trousers",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 64,
+      "length": 97.58953056335449,
+      "inseam": 76,
+      "rise": 21.589530563354487,
+      "thigh": 46,
+      "opening": 40
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-jeans-100-atlas.json",
+    "style": "jeans",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 100,
+      "length": 90,
+      "inseam": 76,
+      "rise": 14,
+      "thigh": 72,
+      "opening": 40
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-joggers-64-atlas.json",
+    "style": "joggers",
+    "bodyType": "women",
+    "panels": "back_L,back_R,cuff_L,cuff_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 64,
+      "length": 84.44214792251586,
+      "inseam": 76,
+      "rise": 15.442147922515865,
+      "thigh": 46,
+      "opening": 26
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-joggers-100-atlas.json",
+    "style": "joggers",
+    "bodyType": "women",
+    "panels": "back_L,back_R,cuff_L,cuff_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 100,
+      "length": 83,
+      "inseam": 76,
+      "rise": 14,
+      "thigh": 72,
+      "opening": 26
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-leggings-64-atlas.json",
+    "style": "leggings",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 64,
+      "length": 96.58953056335449,
+      "inseam": 76,
+      "rise": 20.589530563354487,
+      "thigh": 46,
+      "opening": 22
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-shorts-100-atlas.json",
+    "style": "shorts",
+    "bodyType": "women",
+    "panels": "back_L,back_R,front_L,front_R,waistband",
+    "measures": {
+      "waist": 100,
+      "length": 34,
+      "inseam": 20,
+      "rise": 14,
+      "thigh": 72,
+      "opening": 56
+    },
+    "name": "atlas"
+  },
+  {
+    "file": "women-skirt-100-atlas.json",
+    "style": "skirt",
+    "bodyType": "women",
+    "panels": "back,front,waistband",
+    "measures": {
+      "waist": 100,
+      "hips": 125,
+      "length": 60,
+      "inseam": 50,
+      "rise": 10,
+      "hem": 127.5
+    },
+    "name": "atlas"
   }
 ]

@@ -1,5 +1,5 @@
 import * as THREE from "three"
-import { COARSE_FACTOR, COARSE_ON, FINE_FRAMES, coarseFirst } from "lib/garments/coarse"
+import { COARSE_SPACING, COARSE_ON, FINE_FRAMES, coarseFirst } from "lib/garments/coarse"
 import { bodyFrame, SkinField } from "lib/garments/body"
 import { STYLES, draftTop } from "lib/garments/pattern"
 import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms, riseFor } from "lib/garments/pants"
@@ -474,7 +474,7 @@ export function sewingFor({ item, body, frame, field, measures }) {
     : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 }
   // Sewn and settled as a coarser cloth first, then finished at full resolution (coarse.js); ?coarse=off drapes
   // the full cloth all the way.
-  const coarse = COARSE_ON && !item.noCoarse ? cutCloth(spacing * COARSE_FACTOR) : null
+  const coarse = COARSE_ON && !item.noCoarse ? cutCloth(Math.max(spacing, COARSE_SPACING)) : null
   const steps = coarse ? coarseFirst(drape, { cloth: coarse.cloth, start: coarse.positions, options: coarse.options }, { ...body, field }, phases) : drape.phases(phases)
   // About how many steps the drape takes (sewing stops when the seams close, so it's a guess), for a
   // progress bar.
