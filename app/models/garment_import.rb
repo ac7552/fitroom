@@ -67,6 +67,9 @@ class GarmentImport
   # Down as a filling, not as a word ("dress it up or down", "button-down", "down the front").
   INSULATED = /\bdown[- ](?:filled|fill|insulated|jacket|parka|coat|vest|puffer)\b|(?:goose|duck) down\b|\bdown (?:and|&) feathers?\b|downproof|puffer|quilted|insulated|padded|parka|windbreaker|shell/i
   HOODED_OUTERWEAR = Regexp.union(INSULATED, /zip(?:per)? closure|two-way zip/i)
+  # A sweatshirt's make: a zip-up hoodie with these is a sweatshirt that zips (worn as a top, drawn as a
+  # hoodie with its zip), not a shell jacket with a hood, whatever its zip is called.
+  SWEATSHIRT_MAKE = /kangaroo|ribbed (?:cuffs?|hems?|trims?|waistband)|rib(?:bed)?[- ]knit (?:cuffs?|hems?)|french terry|loopback|\bterry\b|\bfleece\b|brushed (?:back|inside|interior)|sweatshirt/i
   # A puffer (a down or padded jacket, coat or vest, quilted into baffles): drawn lofted, standing off the
   # body, its baffles puffed. Not "button-down", nor a shell that's only "padded at the shoulders".
   PUFFER = /puffer|nuptse|\bdown[- ](?:filled|fill|jacket|parka|coat|vest|insulat\w*)|(?:goose|duck) down|down (?:and|&) feather|fill[- ]power|quilted|baffle|\binsulated\b|\bpadded (?:jacket|coat|vest|parka)/i
@@ -931,7 +934,7 @@ class GarmentImport
     return "jacket" if words.match?(JACKETS)
     if words.match?(/hoodie|hooded/i) && product[:description].to_s.match?(HOODED_OUTERWEAR)
       # A knit hoodie that zips is still a knit top; an insulated one is a jacket whatever it's made of.
-      return "jacket" if product[:description].to_s.match?(INSULATED) || !knitwear?(product)
+      return "jacket" if product[:description].to_s.match?(INSULATED) || !(knitwear?(product) || product[:description].to_s.match?(SWEATSHIRT_MAKE))
     end
     return "trousers" if words.match?(TROUSERS)
     return "top" if words.match?(TOPS)

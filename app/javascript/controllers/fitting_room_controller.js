@@ -2330,12 +2330,37 @@ async function readShoePhotos(images, first) {
 // edges with no one in it (photoTraits); 0 when none does.
 async function garmentPhotoIndex(images) {
   const first = (images ?? []).slice(0, 6)
+  // Never the photo of its back (by the shop's words for it, or its file's name), while there's another.
+  const back = first.map(image => photoOfBack(image))
+  const allowed = i => !back[i] || back.every(Boolean)
+  // The one the shop says is the front, laid out or hung, first.
+  const front = first.findIndex((image, i) => allowed(i) && /\bfront\b/i.test(photoWords(image)) && !/\b(?:on|worn|model)\b/i.test(String(image.alt ?? "")))
+  if (front >= 0) return front
   const traits = await Promise.all(first.map(async image => {
     const small = await readShopPhoto(image.src, 400).catch(() => null)
     return small ? readPhotoTraits(small).catch(() => null) : null
   }))
-  const k = traits.findIndex(t => t?.garment && t.touches === 0 && t.skin < 0.01)
-  return k < 0 ? 0 : k
+  const k = traits.findIndex((t, i) => allowed(i) && t?.garment && t.touches === 0 && t.skin < 0.01)
+  if (k >= 0) return k
+  // A print in tans and browns (a camo) reads a little as skin: the first garment on its own, clear of the
+  // frame's edges, with no more skin than such a print shows.
+  const loose = traits.findIndex((t, i) => allowed(i) && t?.garment && t.touches === 0 && t.skin < 0.05)
+  if (loose >= 0) return loose
+  const plain = first.findIndex((_, i) => allowed(i))
+  return plain < 0 ? 0 : plain
+}
+
+// What the shop says a photo is: its alt text and its file's name.
+function photoWords(image) {
+  return `${image?.alt ?? ""} ${String(image?.src ?? "").split("/").pop().split("?")[0].replace(/[-_.]+/g, " ")}`
+}
+
+// Whether a photo is of the garment's back, by the shop's words for it ("shown from the back", "Back view",
+// "...-back.jpg"). Not "back pocket" or "back of the neck" on a front photo's description.
+function photoOfBack(image) {
+  const alt = String(image?.alt ?? "")
+  if (/\b(?:from|of) the back\b|\bback (?:view|side|shot)\b|\bfrom behind\b|\brear view\b|\bshown (?:from )?(?:the )?back\b/i.test(alt)) return true
+  return /(?:^|[-_ ])back(?:[-_ .]|$)/i.test(String(image?.src ?? "").split("/").pop().split("?")[0])
 }
 
 // The shop's photo of the back, when it has one: the photo named for the back, or else the second photo
@@ -2343,7 +2368,7 @@ async function garmentPhotoIndex(images) {
 // pocket or a photo on a model isn't that shape).
 async function readBackPhoto(images, { shape, bottomShape, front = 0 }) {
   const rest = (images ?? []).filter((_, i) => i !== front).slice(0, 5)
-  const named = rest.find(image => /back/i.test(String(image.src).split("/").pop().split("?")[0]))
+  const named = rest.find(image => photoOfBack(image)) ?? rest.find(image => /back/i.test(String(image.src).split("/").pop().split("?")[0]))
   if (named) return readShopPhoto(named.src)
   const near = (a, b) => a && b && Math.abs(a / b - 1) < 0.15
   // The first of the other photos that's the garment laid out or hung as the front is (standing clear of the

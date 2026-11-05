@@ -127,9 +127,36 @@ function stripCanvas(strip) {
 // An all-over print's cloth: a piece of the front clear of the collar, the buttons down the middle, the
 // chest pocket and the hem (the photo's left side, the wearer's right), to repeat over the other pieces.
 // Its size (across, down) and where it starts below the shoulders (from) are in front widths.
+// Of a few such pieces (either side, from the chest or from lower down), the one with least in it that's
+// far lighter than the print round it: a hoodie's drawcords hang over the chest, and a piece of one repeated
+// over the sleeves and back reads as white bars.
+export const TILE_WINDOWS = [[0.06, 0.44, 0.3, 0.92], [0.06, 0.38, 0.3, 0.92], [0.62, 0.94, 0.3, 0.92], [0.06, 0.4, 0.5, 0.92], [0.6, 0.94, 0.5, 0.92]]
+export function tileWindow(data, pw, ph) {
+  const light = (x0, x1, y0, y1) => {
+    let n = 0, sum = 0
+    const lums = []
+    for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) {
+      const i = 4 * (y * pw + x), l = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+      lums.push(l); sum += l
+    }
+    lums.sort((a, b) => a - b)
+    const typical = lums[Math.floor(lums.length * 0.5)] ?? 0
+    for (const l of lums) if (l > typical + 90) n++
+    return lums.length ? n / lums.length : 1
+  }
+  let best = null
+  for (const [a, b, c, d] of TILE_WINDOWS) {
+    const box = [Math.round(pw * a), Math.round(pw * b), Math.round(ph * c), Math.round(ph * d)]
+    const score = light(...box)
+    // (The first, the widest and tallest, unless another is clearly cleaner.)
+    if (!best || score < best.score - 0.002) best = { box, score }
+  }
+  return best.box
+}
+
 function allOverTile(print) {
   const { width: pw, height: ph, data } = print
-  const x0 = Math.round(pw * 0.06), x1 = Math.round(pw * 0.44), y0 = Math.round(ph * 0.3), y1 = Math.round(ph * 0.92)
+  const [x0, x1, y0, y1] = tileWindow(data, pw, ph)
   const tile = document.createElement("canvas")
   tile.width = x1 - x0
   tile.height = y1 - y0
@@ -320,7 +347,10 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   for (let k = 0; k < pw * ph; k++) reach[k] = Math.max(reach[k], out[4 * k + 3] / 255)
   const spread = printSpread(reach, pw, ph, k => !gap[k] && Boolean(garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)]))
   // Print all over the front (and bold rows or columns in it may be stripes).
-  const strong = coverage > 0.25 && spread >= ALL_OVER_SPREAD
+  // Or a low-contrast print all over it (a camo in browns and tans, a tie-dye): few marks are far enough from
+  // the cloth's commonest colour to count above, but over every part of the front much of it is another
+  // colour than that, by more than a fold's shading changes it.
+  const strong = (coverage > 0.25 && spread >= ALL_OVER_SPREAD) || mottled(lab, baseLab, pw, ph, k => !gap[k] && Boolean(garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)]), k => (top + Math.floor(k / pw)) * w + x0 + (k % pw))
   // An all-over print: the whole front, as photographed.
   if (strong && patterns) {
     for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
@@ -349,7 +379,7 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   let collarTop = top
   if (!hood) while (collarTop > 0 && rows.rowMax[collarTop - 1] - rows.rowMin[collarTop - 1] >= Math.max(3, widest * 0.12)) collarTop--
   const fromTop = Math.min(0.25, Math.max(0, (top - collarTop) / Math.max(1, bottom - collarTop)))
-  const print = coverage > 0.003 || patterned ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip, fromTop } : null
+  const print = coverage > 0.003 || patterned || (strong && patterns) ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip, fromTop } : null
   // A graphic on a sleeve (an all-over print or stripes already cover them).
   const sleeves = allOver || !sleeveGuess ? { left: null, right: null } : {
     left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
@@ -366,6 +396,26 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
 // and where the graphic sits on the front, as shares of its width and length (left, right, top, bottom), or
 // null when there's none. The collar's top band is left out: a label in the neck, or the cloth's inside seen
 // through the neck of a render, isn't the graphic.
+// Whether a front is mottled all over in colours near its own (see findPrint): in each of a 3 by 3 grid over
+// it, at least MOTTLED_CELL of the cloth is more than MOTTLED_GAP (Lab) from its commonest colour, and
+// MOTTLED_ALL over the whole front. Kith's Daily Paper camo hoodie is 0.31 or more in every cell; of 15 plain
+// Kith tops (tmp/kith), the nearest, a black polo's shine, is 0.11 in its emptiest.
+// inside(k): whether point k of the front (pw by ph) is cloth; at(k): its index in the photo's lab.
+const MOTTLED_GAP = 12, MOTTLED_CELL = 0.25, MOTTLED_ALL = 0.33
+export function mottled(lab, baseLab, pw, ph, inside, at) {
+  const off = new Float32Array(9), all = new Float32Array(9)
+  for (let k = 0; k < pw * ph; k++) {
+    if (!inside(k)) continue
+    const i = at(k), cell = Math.min(2, Math.floor(3 * (k % pw) / pw)) + 3 * Math.min(2, Math.floor(3 * Math.floor(k / pw) / ph))
+    const d = Math.hypot(lab[3 * i] - baseLab[0], lab[3 * i + 1] - baseLab[1], lab[3 * i + 2] - baseLab[2])
+    all[cell]++
+    if (d > MOTTLED_GAP) off[cell]++
+  }
+  const total = all.reduce((a, b) => a + b, 0)
+  if (total < 100 || all.some(n => n < total / 30)) return false
+  return off.every((n, c) => n / all[c] >= MOTTLED_CELL) && off.reduce((a, b) => a + b, 0) / total >= MOTTLED_ALL
+}
+
 export function lookOf(out, pw, ph, coverage, allOver, color) {
   // The graphic's extent: its marks grown a little so a word's letters join up, then the pieces that are only
   // specks (a fold's shadow, a crease by the hem) left out. Thin lettering stays; it's part of a word.

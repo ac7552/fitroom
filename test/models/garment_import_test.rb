@@ -417,6 +417,16 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_nil import.from_shopify("https://shop.example/products/other-tee", given:), "details for another product are ignored"
   end
 
+  test "a cotton zip-up hoodie with ribbed cuffs and a kangaroo pocket is a hoodie that zips, not a jacket" do
+    # Kith's Daily Paper Boxy Camo Zip Up Hoodie: its "front zipper closure" used to make it a shell jacket.
+    import = GarmentImport.new
+    product = { name: "Daily Paper Boxy Camo Zip Up Hoodie - Stone Gray", category: "Hoodies",
+      description: "100% cotton All-over Croc Camo print Drawcord-adjustable two-piece hood Front zipper closure Kangaroo pocket Ribbed cuffs and hem Relaxed fit" }
+    assert_equal "top", import.send(:kind_of, product)
+    # A nylon one with the same zip is still a jacket.
+    assert_equal "jacket", import.send(:kind_of, product.merge(description: "Nylon shell Fixed hood Front zipper closure"))
+  end
+
   test "a shrunken sweater hoodie with a two-way zip is a fitted knit top, not a zip jacket" do
     # Kith's "Adley Shrunken Multi Sweater Hoodie" (women's), as the browser reads it: a cotton-viscose knit
     # in the women's hoodies collection. Its "two-way zipper" used to make it outerwear, like a down hoodie.
