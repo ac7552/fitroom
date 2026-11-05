@@ -7,6 +7,7 @@
 // by the browser after that). The photo itself never leaves the page. Anything that goes wrong (no
 // network, an old browser, a mask that doesn't look like the garment) leaves the photo as it was.
 
+import { loadTransformers } from "lib/hosted"
 import { garmentMask, isSkin, keepInside, loadImage, paintOut, photoTraits, pickMask, promptPoints } from "lib/garments/print"
 import { remoteMasks, visionUrl } from "lib/garments/vision"
 
@@ -19,7 +20,8 @@ const SKIN_SHARE = 0.002   // the share of the photo that's skin below which the
 let loading = null
 function load() {
   loading ??= (async () => {
-    const t = await import(/* webpackIgnore: true */ LIBRARY)
+    // (From the Fitroom server when it has a copy, hosted.js; else the CDN.)
+    const t = await loadTransformers(LIBRARY)
     t.env.allowLocalModels = false
     // In a worker, so the page (the 3D view, the fit) keeps going while a photo is cleaned.
     if (t.env.backends?.onnx?.wasm) t.env.backends.onnx.wasm.proxy = true

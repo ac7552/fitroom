@@ -48,3 +48,8 @@ __pycache__/
 # The vision service's packages (script/server).
 node_modules/
 /script/validation/pages/
+
+# The photo tools the server serves itself, fetched when the Docker image is built (script/vendor/fetch.mjs).
+/public/vendor/
+# The Blender add-on and assets for studio photos on the droplet, put here before building (docs/droplet.md).
+/deploy/studio/*.zip

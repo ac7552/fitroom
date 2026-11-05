@@ -61,3 +61,46 @@ export async function remoteEmbedding(pixels, { timeout = 10000 } = {}) {
   const result = await call("/embed", { width: pixels.width, height: pixels.height, rgba: base64Of(new Uint8Array(pixels.data.buffer ?? pixels.data)) }, timeout)
   return result?.embedding ?? null
 }
+
+// Which of the service's optional models are on (its GET /up: { details, parse }), asked once; {} without a
+// service. (An optional route that isn't there answers 404, which would mark the whole service down.)
+let features = null
+export function visionFeatures() {
+  const base = visionUrl()
+  if (!base) return Promise.resolve({})
+  features ??= fetch(`${base.replace(/\/$/, "")}/up`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}))
+  return features
+}
+
+// A clothes-parsing model's reading of a photo ({ data, width, height } RGBA): { labels, map (Uint8Array,
+// each pixel's index into labels, 255 for none) }, or null when the service has no such model.
+export async function remoteParse(data, width, height, { timeout = 15000 } = {}) {
+  if (!(await visionFeatures()).parse) return null
+  const result = await call("/parse", { width, height, rgba: base64Of(data instanceof Uint8Array ? data : new Uint8Array(data.buffer ?? data)) }, timeout)
+  if (!result?.labels || !result.map) return null
+  return { labels: result.labels, map: bytesOf(result.map) }
+}
+
+// What a clothes-parsing model's labels say isn't the garment: a person's skin, hair and face, the
+// backdrop, and what's worn with it. (SegFormer's clothes labels, as the model names them.)
+const NOT_CLOTH = /^(background|hair|face|hat|sunglasses|left[- ]?(arm|leg|shoe)|right[- ]?(arm|leg|shoe)|bag)$/i
+
+// The cloth mask (Uint8Array, 1 for cloth) with what the parse says isn't cloth taken off it, in place.
+// Only taken off, never added; and not at all when it would take off more than `most` of it (a model
+// trained on people can misread a garment laid flat). Returns how much was taken off (a share).
+export function trimByParse(mask, parse, most = 0.35) {
+  const foreign = parse.labels.map(label => NOT_CLOTH.test(label.trim()))
+  let on = 0, off = 0
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue
+    on++
+    const k = parse.map[i]
+    if (k !== 255 && foreign[k]) off++
+  }
+  if (!on || off / on > most) return 0
+  for (let i = 0; i < mask.length; i++) {
+    const k = parse.map[i]
+    if (mask[i] && k !== 255 && foreign[k]) mask[i] = 0
+  }
+  return off / on
+}

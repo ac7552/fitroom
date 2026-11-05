@@ -50,10 +50,14 @@ export function loadPoseLandmarker() {
 }
 
 async function createLandmarker() {
-  const { FilesetResolver, PoseLandmarker } = await import(`${CDN}/vision_bundle.mjs`)
-  const vision = await FilesetResolver.forVisionTasks(`${CDN}/wasm`)
+  // (From the Fitroom server when it has a copy, hosted.js; else the CDN and Google's model storage.)
+  // (Imported here, not at the top: Node's tests load this file on its own, without the page's import map.)
+  const { mediapipeSources } = await import("lib/hosted")
+  const { base, model } = await mediapipeSources(CDN, MODEL)
+  const { FilesetResolver, PoseLandmarker } = await import(/* webpackIgnore: true */ `${base}/vision_bundle.mjs`)
+  const vision = await FilesetResolver.forVisionTasks(`${base}/wasm`)
   const options = delegate => ({
-    baseOptions: { modelAssetPath: MODEL, delegate },
+    baseOptions: { modelAssetPath: model, delegate },
     runningMode: "IMAGE", numPoses: 1, outputSegmentationMasks: true
   })
   try {

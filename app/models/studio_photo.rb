@@ -26,7 +26,8 @@ class StudioPhoto
   FABRICS = %w[wool cotton denim leather nylon].freeze
   STYLES = %w[tailored zip bomber shirt].freeze
   MAX_AGE = 10.minutes
-  TIMEOUT = 240 # seconds
+  # Seconds a render may take; a droplet's CPU is slower than a Mac's (FITROOM_STUDIO_TIMEOUT).
+  TIMEOUT = Integer(ENV.fetch("FITROOM_STUDIO_TIMEOUT", 240))
   CALIBRATION = Rails.root.join("public/models/mannequin.json")
   POSES = Rails.root.join("public/models/poses.json")
   PHOTO = %r{\Adata:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+\z}

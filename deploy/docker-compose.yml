@@ -3,7 +3,11 @@
 # docs/droplet.md.
 services:
   web:
-    build: ..
+    build:
+      context: ..
+      # FITROOM_STUDIO=1 in .env builds Blender in, for studio photos on the CPU (deploy/studio/README.md).
+      args:
+        STUDIO: ${FITROOM_STUDIO:-0}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -23,6 +27,11 @@ services:
   vision:
     build: ../script/server
     restart: unless-stopped
+    environment:
+      # Optional models, off when empty (docs/droplet.md): what a photo shows, and a clothes parse that keeps
+      # skin, hair and backdrop off the cloth.
+      DETAILS_MODEL: ${FITROOM_DETAILS_MODEL:-}
+      PARSE_MODEL: ${FITROOM_PARSE_MODEL:-}
     volumes:
       - models:/models
     expose:
@@ -39,6 +48,20 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    depends_on:
+      - web
+
+  # Jobs run by hand or by cron, not kept running (`docker compose --profile tools run --rm ...`; see
+  # docs/droplet.md): the drape atlas (script/bank/atlas.mjs) and the nightly accuracy run
+  # (script/validation/nightly.mjs), in Playwright's image with its Chromium, on the droplet's CPU.
+  tools:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    profiles: ["tools"]
+    working_dir: /app
+    volumes:
+      - ..:/app
+    environment:
+      PLAYWRIGHT_MODULE: /usr/lib/node_modules/playwright
     depends_on:
       - web
 

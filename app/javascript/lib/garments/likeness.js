@@ -7,6 +7,7 @@
 // that), in a worker. The pictures never leave the page. Anything that goes wrong (no network, an old browser,
 // too slow) gives null, and the 3D view's check goes on without it (look_check.js).
 
+import { loadTransformers } from "lib/hosted"
 import { remoteEmbedding, visionUrl } from "lib/garments/vision"
 
 const LIBRARY = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1"
@@ -15,7 +16,8 @@ const MODEL = "onnx-community/dinov2-small"
 let loading = null
 function load() {
   loading ??= (async () => {
-    const t = await import(/* webpackIgnore: true */ LIBRARY)
+    // (From the Fitroom server when it has a copy, hosted.js; else the CDN.)
+    const t = await loadTransformers(LIBRARY)
     t.env.allowLocalModels = false
     if (t.env.backends?.onnx?.wasm) t.env.backends.onnx.wasm.proxy = true
     const model = await t.AutoModel.from_pretrained(MODEL, { dtype: "q8", device: "wasm" })

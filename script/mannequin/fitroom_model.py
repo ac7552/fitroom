@@ -11,9 +11,21 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 
-from bl_ext.blender_org.mpfb.services.humanservice import HumanService
-from bl_ext.blender_org.mpfb.services.locationservice import LocationService
-from bl_ext.blender_org.mpfb.services.targetservice import TargetService
+import importlib
+
+# MPFB installed from Blender's extensions site (a Mac's Blender: bl_ext.blender_org) or from its file (the
+# droplet's image, Dockerfile's studio stage: bl_ext.user_default).
+for _repo in ("blender_org", "user_default"):
+    try:
+        _services = f"bl_ext.{_repo}.mpfb.services"
+        HumanService = importlib.import_module(f"{_services}.humanservice").HumanService
+        LocationService = importlib.import_module(f"{_services}.locationservice").LocationService
+        TargetService = importlib.import_module(f"{_services}.targetservice").TargetService
+        break
+    except ImportError:
+        continue
+else:
+    raise ImportError("MPFB isn't installed in this Blender (see docs/how-it-works.md, The 3D model)")
 
 OUT = os.path.abspath(sys.argv[sys.argv.index("--") + 1]) if "--" in sys.argv else os.path.abspath("public/models")
 DATA = LocationService.get_user_data()

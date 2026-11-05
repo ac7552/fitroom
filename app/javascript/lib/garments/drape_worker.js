@@ -116,6 +116,7 @@ async function hang({ id, top, restX }, post) {
     if (job.dropped) return
   }
   jobs.delete(id)
-  const x = hanger.positions
+  // (A copy: the drape's own points are in its WebAssembly memory, which can't be sent away.)
+  const x = hanger.positions.slice()
   post({ type: "hung", id, x }, [x.buffer])
 }

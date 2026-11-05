@@ -15,13 +15,18 @@
 //               what a garment photo shows, by a vision-language model (SigLIP) asked in words (DETAILS below);
 //               advisory: the page's own reading of a listing decides, unless the import is told otherwise.
 //               Off unless DETAILS_MODEL is set (the model is 400 MB; see docs/droplet.md).
-// GET  /up      → ok once the models are loaded
+// POST /parse   { width, height, rgba (base64) } → { labels: [names], map: base64 of width×height bytes, each the
+//               index of its pixel's label (255: none) }: a clothes-parsing model's reading of the photo (skin,
+//               hair, face, arms, legs, background, and the garments), for the page to take what isn't cloth
+//               off a photo's cloth mask. Off unless PARSE_MODEL is set (e.g. Xenova/segformer_b2_clothes,
+//               about 30 MB at 8 bits; check its license for your use). Not yet tried on the droplet.
+// GET  /up      → ok once the models are loaded, and which optional ones are on ({ details, parse })
 //
 // The models (about 40 MB) are fetched from the Hugging Face hub into MODELS_DIR the first time (or put
 // there beforehand: see docs/droplet.md), then read from disk.
 import http from "node:http"
 import path from "node:path"
-import { env, SamModel, AutoProcessor, AutoModel, AutoTokenizer, RawImage } from "@huggingface/transformers"
+import { env, pipeline, SamModel, AutoProcessor, AutoModel, AutoTokenizer, RawImage } from "@huggingface/transformers"
 
 const PORT = Number(process.env.PORT ?? 8787)
 const MODELS_DIR = process.env.MODELS_DIR ?? path.resolve("tmp/models")
@@ -30,6 +35,8 @@ const DINO = "onnx-community/dinov2-small"
 // A SigLIP in ONNX for the details: Xenova/siglip-base-patch16-224 (Apache-2.0) runs here; a fashion-tuned one
 // (Marqo/marqo-fashionSigLIP, Apache-2.0) is better at clothes but has no ONNX export on the hub yet.
 const DETAILS_MODEL = process.env.DETAILS_MODEL ?? null
+// A clothes-parsing model for /parse (a SegFormer trained on people's clothes, in ONNX), or none.
+const PARSE_MODEL = process.env.PARSE_MODEL ?? null
 // The questions, each as the sentences the photo is matched against (the best match answers).
 const DETAILS = {
   hood: { none: "a photo of a garment with no hood", hood: "a photo of a hooded garment with a hood" },
@@ -45,7 +52,7 @@ env.allowLocalModels = true
 env.localModelPath = MODELS_DIR
 env.allowRemoteModels = process.env.MODELS_OFFLINE !== "1"
 
-let sam = null, dino = null, siglip = null
+let sam = null, dino = null, siglip = null, parser = null
 const loading = (async () => {
   const [samModel, samProcessor, dinoModel, dinoProcessor] = await Promise.all([
     SamModel.from_pretrained(SAM, { dtype: "q8", device: "cpu" }),
@@ -64,6 +71,10 @@ const loading = (async () => {
     ])
     siglip = { model, processor, tokenizer }
     console.log(`[vision] details model ready (${DETAILS_MODEL})`)
+  }
+  if (PARSE_MODEL) {
+    parser = await pipeline("image-segmentation", PARSE_MODEL, { dtype: "q8", device: "cpu" })
+    console.log(`[vision] parse model ready (${PARSE_MODEL})`)
   }
 })().catch(error => { console.error("[vision] couldn't load the models:", error.message); process.exitCode = 1 })
 
@@ -124,7 +135,26 @@ async function details({ width, height, rgba }) {
   return out
 }
 
-const ROUTES = { "/clean": clean, "/embed": embed, "/details": details }
+// What each pixel of a photo is (parse): the model's segments flattened into one label map.
+async function parse({ width, height, rgba }) {
+  if (!parser) throw new Error("no parse model")
+  if (!(width > 0 && height > 0 && width * height <= 1024 * 1024)) throw new Error("bad input")
+  const data = Buffer.from(rgba, "base64")
+  if (data.length !== 4 * width * height) throw new Error("bad pixels")
+  const image = new RawImage(new Uint8ClampedArray(data.buffer, data.byteOffset, data.length), width, height, 4).rgb()
+  const segments = await parser(image)
+  const labels = [], map = new Uint8Array(width * height).fill(255)
+  for (const { label, mask } of segments) {
+    if (!mask || labels.length >= 255) continue
+    const k = labels.push(label) - 1
+    const m = mask.width === width && mask.height === height ? mask : await mask.resize(width, height)
+    const bits = m.data, step = m.channels ?? 1
+    for (let i = 0; i < width * height; i++) if (bits[i * step] > 127) map[i] = k
+  }
+  return { labels, map: Buffer.from(map).toString("base64") }
+}
+
+const ROUTES = { "/clean": clean, "/embed": embed, "/details": details, "/parse": parse }
 
 function body(request) {
   return new Promise((resolve, reject) => {
@@ -145,13 +175,14 @@ http.createServer(async (request, response) => {
   const send = (status, payload) => { response.writeHead(status, { "Content-Type": "application/json", ...CORS }); response.end(JSON.stringify(payload)) }
   if (request.method === "OPTIONS") { response.writeHead(204, CORS); return response.end() }
   const url = new URL(request.url, "http://x")
-  if (request.method === "GET" && url.pathname === "/up") return send(sam && dino ? 200 : 503, { ok: Boolean(sam && dino), details: Boolean(siglip) })
+  if (request.method === "GET" && url.pathname === "/up") return send(sam && dino ? 200 : 503, { ok: Boolean(sam && dino), details: Boolean(siglip), parse: Boolean(parser) })
   const route = request.method === "POST" ? ROUTES[url.pathname] : null
   if (!route) return send(404, { error: "no such route" })
   try {
     await loading
     if (!sam || !dino) return send(503, { error: "models not loaded" })
     if (route === details && !siglip) return send(404, { error: "no details model: set DETAILS_MODEL" })
+    if (route === parse && !parser) return send(404, { error: "no parse model: set PARSE_MODEL" })
     const input = await body(request)
     const t0 = performance.now()
     const result = await inTurn(() => route(input))

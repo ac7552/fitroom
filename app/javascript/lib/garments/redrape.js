@@ -16,6 +16,7 @@
 // cloth) is kept. Nothing here reads the body or the person.
 import { boxBlur, garmentMask, isSkin, photoTraits } from "lib/garments/print"
 import { wornGarmentMask } from "lib/garments/segment"
+import { remoteParse, trimByParse } from "lib/garments/vision"
 
 // Rows the hanging silhouette is read at.
 const ROWS = 512
@@ -463,6 +464,10 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kin
     else worn = false
   }
   if (!found) return null
+  // With the vision service's clothes-parsing model (vision.mjs's /parse, when PARSE_MODEL is set), what it
+  // reads as skin, hair or backdrop comes off the cloth mask, so none of it lands on the cloth.
+  const parsed = await remoteParse(smallData, sw, sh).catch(() => null)
+  if (parsed && trimByParse(found.mask, parsed) > 0) { const hung = found.hung; found = maskFound(found.mask, sw, sh, found.bg) ?? found; found.hung = hung }
   // A one-piece's half: the photo's garment cut at its waist (the narrowest row between a third and two
   // thirds of the way down), the upper part for its top, the lower for its shorts or pants.
   if (part) {
