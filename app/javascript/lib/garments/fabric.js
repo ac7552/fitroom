@@ -25,30 +25,30 @@ import { BORDER, DEPTH_BIAS, FACING, LIGHT } from "lib/projection"
 
 // Each cloth: the texture, its tile (metres of cloth one repeat covers), and its finish.
 const CLOTHS = {
-  jersey: { surface: "knit", tile: 0.02, roughness: 0.92, sheen: 0.45, sheenRoughness: 0.7, normal: 0.28 },
-  rib: { surface: "rib", tile: 0.02, roughness: 0.92, sheen: 0.45, sheenRoughness: 0.7, normal: 0.9 },
-  fleece: { surface: "fleece", tile: 0.025, roughness: 0.97, sheen: 0.75, sheenRoughness: 0.85, normal: 0.4 },
+  jersey: { surface: "knit", tile: 0.02, roughness: 0.92, sheen: 0.45, sheenRoughness: 0.7, normal: 0.28, thin: 0.22 },
+  rib: { surface: "rib", tile: 0.02, roughness: 0.92, sheen: 0.45, sheenRoughness: 0.7, normal: 0.9, thin: 0.08 },
+  fleece: { surface: "fleece", tile: 0.025, roughness: 0.97, sheen: 0.75, sheenRoughness: 0.85, normal: 0.4, thin: 0.03 },
   // (anisotropy: the shine drawn out along the threads, as a weave's is; a twill's runs on its diagonal.)
   // Denim: a heavy, slubby 3/1 twill, indigo warp over an undyed weft (weft: how much of it shows).
-  denim: { surface: "denim", tile: 0.014, roughness: 0.9, sheen: 0.12, sheenRoughness: 0.5, normal: 0.55, anisotropy: 0.2, anisotropyRotation: Math.PI / 4, weft: 0.45 },
-  twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5, anisotropy: 0.25, anisotropyRotation: Math.PI / 4 },
-  shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25, anisotropy: 0.3 },
+  denim: { surface: "denim", tile: 0.014, roughness: 0.9, sheen: 0.12, sheenRoughness: 0.5, normal: 0.55, anisotropy: 0.2, anisotropyRotation: Math.PI / 4, weft: 0.45, thin: 0.02 },
+  twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5, anisotropy: 0.25, anisotropyRotation: Math.PI / 4, thin: 0.05 },
+  shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25, anisotropy: 0.3, thin: 0.1 },
   // Nylon pants (track pants, technical trousers): a tight plain weave, matte, with only a faint sheen along
   // the folds; nothing like a jacket's glossy shell.
-  matte: { surface: "plain", tile: 0.006, roughness: 0.82, sheen: 0.16, sheenRoughness: 0.55, normal: 0.12 },
-  wool: { surface: "felt", tile: 0.03, roughness: 0.95, sheen: 0.4, sheenRoughness: 0.6, normal: 0.35 },
+  matte: { surface: "plain", tile: 0.006, roughness: 0.82, sheen: 0.16, sheenRoughness: 0.55, normal: 0.12, thin: 0.08 },
+  wool: { surface: "felt", tile: 0.03, roughness: 0.95, sheen: 0.4, sheenRoughness: 0.6, normal: 0.35, thin: 0.03 },
   // Leather: a fine grain, a soft sheen, nothing like a plastic or vinyl shine (a glossy coat on draped
   // cloth catches every small fold).
-  leather: { surface: "grain", tile: 0.04, roughness: 0.74, sheen: 0.12, sheenRoughness: 0.55, normal: 0.3, clearcoat: 0.03, clearcoatRoughness: 0.8 },
+  leather: { surface: "grain", tile: 0.04, roughness: 0.74, sheen: 0.12, sheenRoughness: 0.55, normal: 0.3, clearcoat: 0.03, clearcoatRoughness: 0.8, thin: 0 },
   // Silk, satin, chiffon: smooth, with a strong soft sheen along the folds.
-  silk: { surface: "smooth", tile: 0.05, roughness: 0.4, sheen: 1, sheenRoughness: 0.3, normal: 0.06, anisotropy: 0.55, anisotropyRotation: Math.PI / 2 },
+  silk: { surface: "smooth", tile: 0.05, roughness: 0.4, sheen: 1, sheenRoughness: 0.3, normal: 0.06, anisotropy: 0.55, anisotropyRotation: Math.PI / 2, thin: 0.35 },
   // Stretch (nylon and elastane): a very fine knit, a little sheen.
-  stretch: { surface: "fine", tile: 0.012, roughness: 0.68, sheen: 0.35, sheenRoughness: 0.45, normal: 0.12 },
+  stretch: { surface: "fine", tile: 0.012, roughness: 0.68, sheen: 0.35, sheenRoughness: 0.45, normal: 0.12, thin: 0.22 },
   // Suiting and other cloths that hold their shape: a tight, matte weave with a faint sheen.
-  structured: { surface: "plain", tile: 0.008, roughness: 0.8, sheen: 0.22, sheenRoughness: 0.5, normal: 0.14 },
+  structured: { surface: "plain", tile: 0.008, roughness: 0.8, sheen: 0.22, sheenRoughness: 0.5, normal: 0.14, thin: 0.08 },
   // A puffer's nylon shell: smooth, with a soft gloss on each baffle (the quilting itself is drawn by the
   // shader, see QUILT).
-  puffer: { surface: "plain", tile: 0.004, roughness: 0.46, sheen: 0.22, sheenRoughness: 0.4, normal: 0.06, clearcoat: 0.3, clearcoatRoughness: 0.5 }
+  puffer: { surface: "plain", tile: 0.004, roughness: 0.46, sheen: 0.22, sheenRoughness: 0.4, normal: 0.06, clearcoat: 0.3, clearcoatRoughness: 0.5, thin: 0 }
 }
 // A puffer's quilting: baffles round the body and the sleeves, SPACING cm apart (by aDown, so they meet at the
 // side seams), each puffed out up to LOFT m between its stitched seams, and a little darker in those seams.
@@ -71,6 +71,9 @@ const ANISO_ON = typeof location === "undefined" || new URLSearchParams(location
 // was set for the drawn surfaces), and how much the cavities between yarns darken.
 const YARN_RELIEF = 0.8
 const YARN_CAVITY = 0.6
+const GLOW_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("glow") !== "off"
+// (Their heights, all scaled: drawn as deep as listed, a hanging tee's front read as crumpled.)
+const WRINKLE_DEPTH = 0.65
 // ?wrinkles=off draws the cloth without them.
 const WRINKLES_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("wrinkles") !== "off"
 // Which pattern fabric (pattern.js) is which cloth here; "denim" and "cotton" are what shops call them.
@@ -424,8 +427,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uDetailRepeat: { value: 1 / look.tile },
     // A cloth whose weft is another colour than its warp (denim's undyed weft): how much it shows.
     uWeft: { value: look.weft ?? 0 },
+    // How much light comes through the cloth from behind (a thin jersey or silk glows a little against the
+    // light; denim and fleece don't): ?glow=off for none.
+    uThin: { value: GLOW_ON && !fitMap ? look.thin ?? 0 : 0 },
     // Drawn wrinkles: x their spacing (cm), y their height at a full squeeze (m; 0 for none).
-    uWrinkle: { value: new THREE.Vector2(WRINKLES[look.surface]?.wave ?? 2, WRINKLES_ON && !details.quilt ? WRINKLES[look.surface]?.depth ?? 0.0024 : 0) },
+    uWrinkle: { value: new THREE.Vector2(WRINKLES[look.surface]?.wave ?? 2, WRINKLES_ON && !details.quilt ? WRINKLE_DEPTH * (WRINKLES[look.surface]?.depth ?? 0.0024) : 0) },
     // The AI's picture of this view, laid back on from its camera (see PROJECTION; stage.js#wearPhoto sets it).
     ...projectionUniforms()
   }
@@ -548,6 +554,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uDetailOn;
         uniform float uDetailRepeat;
         uniform float uWeft;
+        uniform float uThin;
         // The yarn-built surface's detail where this point is (r cavity, g roughness, b yarn tops).
         vec3 gDetail = vec3( 1.0, 0.5, 0.5 );
         uniform vec2 uQuilt;
@@ -753,6 +760,22 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         ${fitMap ? "" : PROJECTION.fragmentApply}`)
       // The inside of the cloth (a hood's, a turned-back cuff's) is in its own shade: its sheen dimmed with it,
       // or a black hood's inside catches a grey shine the outside doesn't.
+      // Light through thin cloth: each light from behind it (on the far side of its surface from the camera)
+      // passes through, softened and in the cloth's colour, most where it shines straight through toward the eye.
+      .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+        #if NUM_DIR_LIGHTS > 0
+          if ( uThin > 0.0 ) {
+            vec3 through = vec3( 0.0 );
+            vec3 eye = normalize( vViewPosition );
+            for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
+              vec3 l = directionalLights[ i ].direction;
+              float behind = max( dot( - normal, l ), 0.0 );
+              float toward = pow( max( dot( eye, - l ) * 0.5 + 0.5, 0.0 ), 3.0 );
+              through += directionalLights[ i ].color * behind * ( 0.35 + 0.65 * toward );
+            }
+            reflectedLight.directDiffuse += through * diffuseColor.rgb * uThin;
+          }
+        #endif`)
       .replace("#include <lights_physical_fragment>", `#include <lights_physical_fragment>
         #ifdef USE_SHEEN
           if ( !gl_FrontFacing ) material.sheenColor *= 0.3;

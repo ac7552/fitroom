@@ -9,6 +9,7 @@ import { bottomsPhotoUV, dressPhotoUV, heightsDown, widthsAcross } from "lib/gar
 import { CLOTHS, Drape } from "lib/garments/drape"
 import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
 import { sheerShow } from "lib/garments/sheer"
+import { fibreColor, fuzzFor } from "lib/garments/fuzz"
 
 // How far the fabric's relief in a re-draped photo (redrape.js's flatField, the alpha channel) stands out
 // of the cloth (m, at the relief's full value): the tilt the shader gives the surface from it.
@@ -507,6 +508,9 @@ export class DrapedTop {
     // The cloth's thickness along its free edges (hems, cuffs, the neckline): see makeRim.
     this.rim = RIM_ON ? this.makeRim() : null
     if (this.rim) this.mesh.add(this.rim.mesh)
+    // Brushed and felted cloth's fibres (fuzz.js).
+    this.fuzz = fuzzFor(this.geometry, this.surface, item.color)
+    if (this.fuzz) this.mesh.add(this.fuzz)
     this.update()
   }
 
@@ -608,7 +612,7 @@ export class DrapedTop {
 
   makeMaterials(renderer) {
     const { item, pattern } = this
-    const surface = this.bottoms ? bottomSurface(item.style, item.fabric) : item.puffer ? "puffer" : surfaceFor(item.style, item.fabric)
+    const surface = this.surface = this.bottoms ? bottomSurface(item.style, item.fabric) : item.puffer ? "puffer" : surfaceFor(item.style, item.fabric)
     const knit = ["jersey", "fleece", "rib"].includes(surface)
     const details = {
       stitch: knit ? "hem" : "topstitch", closure: pattern.closure, pocket: item.style === "hoodie" ? "kangaroo" : null,
@@ -636,6 +640,7 @@ export class DrapedTop {
   }
 
   setColor(color) {
+    this.fuzz?.material.color.copy(fibreColor(color))
     for (const key of ["main", "rib"]) {
       this.materials[key].color.set(color)
       this.materials[key].sheenColor.copy(sheenTint(color))
@@ -801,6 +806,7 @@ export class DrapedTop {
   setFitMap(on) {
     this.mesh.material = on ? [this.materials.fitMain, this.materials.fitRib] : [this.materials.main, this.materials.rib]
     if (this.rim) this.rim.mesh.material = this.mesh.material
+    if (this.fuzz) this.fuzz.visible = !on
   }
 
   // The cloth drawn as a sheet has no thickness, so a hem, a cuff or a neckline seen edge on is a line as thin
@@ -1116,6 +1122,7 @@ export class DrapedTop {
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.geometry.dispose()
     this.rim?.geometry.dispose()
+    this.fuzz?.material.dispose()
     for (const material of Object.values(this.materials)) {
       material.normalMap?.dispose()
       material.dispose()
