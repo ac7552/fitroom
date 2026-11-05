@@ -3,7 +3,6 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
-import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js"
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js"
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js"
@@ -123,10 +122,6 @@ const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
 const TUCKED_LAYERS = ["top", "bottom", "outer"]
 const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
 
-// The softbox (addLights): its size and distance (m), the share of the key light it takes, and how much an
-// area light's per-area intensity must be raised for the same light on the figure as a directional light.
-const SOFTBOX = { width: 1.2, height: 1.6, distance: 3.2, share: 0.45, gain: 3.6 }
-const SOFTBOX_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("softbox") !== "off"
 // Frames averaged for a photo (still.js): smoother edges and softer shadows than one frame.
 const PHOTO_SAMPLES = 16
 // The camera's angle for a "front" photo: a touch off straight on, as lookbooks shoot.
@@ -1179,18 +1174,6 @@ export class FittingStage {
     key.shadow.normalBias = 0.01
     this.scene.add(key)
     this.key = key
-    // A softbox where the key light is: a large, soft source, as a studio lights a garment, so a sheen or a
-    // shine is a broad, soft highlight of its shape rather than a point. It takes a share of the key's light
-    // (SOFTBOX.share), so the figure is as bright as before; the key keeps the rest, and casts the shadows
-    // (an area light casts none). ?softbox=off for the key alone.
-    if (SOFTBOX_ON) {
-      RectAreaLightUniformsLib.init()
-      const box = new THREE.RectAreaLight(0xfff8f0, 1, SOFTBOX.width, SOFTBOX.height)
-      box.position.copy(key.position).normalize().multiplyScalar(SOFTBOX.distance).setY(SOFTBOX.height * 0.9 + 0.6)
-      box.lookAt(0, 1.0, 0)
-      this.scene.add(box)
-      this.softbox = box
-    }
     // A light from behind, which catches the edges of the cloth and lifts the figure off the backdrop: dim and
     // a little cool on the graphite stage (a studio's separation, not a colour cast), stronger in daylight. And
     // in the daylight studio, a cool fill from the other side.
@@ -1242,10 +1225,7 @@ export class FittingStage {
     this.rim.color.set(look.rim.color)
     this.rim.intensity = look.rim.intensity
     this.rim.position.set(...look.rim.position)
-    this.key.intensity = look.key * (this.softbox ? 1 - SOFTBOX.share : 1)
-    // (An area light's intensity is per square metre of it, and it shines from its face only: as bright on
-    // the figure as the share of the key it takes, about.)
-    if (this.softbox) this.softbox.intensity = (look.key * SOFTBOX.share * SOFTBOX.gain) / (SOFTBOX.width * SOFTBOX.height)
+    this.key.intensity = look.key
     this.key.shadow.radius = look.keyRadius
     this.scene.environmentIntensity = look.environment
     this.renderer.toneMappingExposure = look.exposure

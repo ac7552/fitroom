@@ -8,13 +8,12 @@
 //
 //   node script/fabrics/build.mjs [out]      # writes public/models/fabrics/<surface>-normal.webp and -detail.webp
 //
-// (WebP, through sharp, about a tenth the size of PNG: NODE_PATH=<a node_modules with sharp>; without sharp,
-// PNG, and fabric.js's SURFACE_EXT must say so.)
+// (WebP, through sharp, about a tenth the size of PNG: NODE_PATH=<a node_modules with sharp>; sharp is
+// needed.)
 //
 // Each tile repeats seamlessly (every count across it is whole), and is read at fabric.js's CLOTHS tile size.
 import fs from "node:fs"
 import path from "node:path"
-import zlib from "node:zlib"
 import { createRequire } from "node:module"
 
 const OUT = path.resolve(process.argv[2] ?? "public/models/fabrics")
@@ -224,56 +223,32 @@ function bake(fn) {
   for (const h of height) { if (h < lo) lo = h; if (h > hi) hi = h }
   for (let i = 0; i < height.length; i++) height[i] = (height[i] - lo) / (hi - lo || 1)
   const wide = blur(height, 6)
-  const normal = new Uint8Array(N * N * 4), detail = new Uint8Array(N * N * 4)
+  const packed = new Uint8Array(N * N * 4)
   const at = (x, y) => height[((y + N) % N) * N + ((x + N) % N)]
   // (How steep the relief is drawn: the heights span a yarn's thickness, a few pixels across.)
   const STEEP = 5
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const dx = (at(x + 1, y) - at(x - 1, y)) * STEEP, dy = (at(x, y + 1) - at(x, y - 1)) * STEEP
     const l = Math.hypot(dx, dy, 1), i = 4 * (y * N + x)
-    normal[i] = Math.round((-dx / l * 0.5 + 0.5) * 255)
-    normal[i + 1] = Math.round((-dy / l * 0.5 + 0.5) * 255)
-    normal[i + 2] = Math.round((1 / l * 0.5 + 0.5) * 255)
-    normal[i + 3] = 255
+    packed[i] = Math.round((-dx / l * 0.5 + 0.5) * 255)
+    packed[i + 1] = Math.round((-dy / l * 0.5 + 0.5) * 255)
+    packed[i + 2] = Math.round(Math.min(1, which[y * N + x]) * 255)
     const deep = Math.max(0, wide[y * N + x] - height[y * N + x])
-    detail[i] = Math.round(Math.max(0, 1 - deep * 2.6) * 255)
-    detail[i + 1] = Math.round(Math.min(1, 0.45 + deep * 1.5 + (1 - top[y * N + x]) * 0.15) * 255)
-    detail[i + 2] = Math.round(Math.min(1, which[y * N + x]) * 255)
-    detail[i + 3] = 255
+    packed[i + 3] = Math.round(Math.max(0, 1 - deep * 2.6) * 255)
   }
-  return { normal, detail }
-}
-
-// A PNG of N × N RGBA bytes.
-function png(rgba) {
-  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0 })
-  const crc = buf => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
-  const chunk = (type, data) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length)
-    const body = Buffer.concat([Buffer.from(type), data])
-    const sum = Buffer.alloc(4); sum.writeUInt32BE(crc(body))
-    return Buffer.concat([len, body, sum])
-  }
-  const header = Buffer.alloc(13)
-  header.writeUInt32BE(N, 0); header.writeUInt32BE(N, 4); header[8] = 8; header[9] = 6; header[10] = 0; header[11] = 0; header[12] = 0
-  const raw = Buffer.alloc((N * 4 + 1) * N)
-  for (let y = 0; y < N; y++) { raw[y * (N * 4 + 1)] = 0; Buffer.from(rgba.buffer, rgba.byteOffset + y * N * 4, N * 4).copy(raw, y * (N * 4 + 1) + 1) }
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", zlib.deflateSync(raw, { level: 9 })), chunk("IEND", Buffer.alloc(0))])
+  return packed
 }
 
 fs.mkdirSync(OUT, { recursive: true })
 let sharp = null
 try { sharp = createRequire(path.resolve(process.env.NODE_PATH ?? "node_modules", "x"))("sharp") } catch { sharp = null }
-const write = async (file, rgba, quality) => {
-  if (!sharp) return fs.writeFileSync(`${file}.png`, png(rgba))
-  await sharp(Buffer.from(rgba.buffer), { raw: { width: N, height: N, channels: 4 } }).removeAlpha().webp({ quality, effort: 6 }).toFile(`${file}.webp`)
-}
+if (!sharp) { console.error("sharp is needed (NODE_PATH=<a node_modules with sharp>)"); process.exit(1) }
+// (At high quality, and its alpha too: about 200 KB a surface.)
+const write = (file, rgba) => sharp(Buffer.from(rgba.buffer), { raw: { width: N, height: N, channels: 4 } }).webp({ quality: 92, alphaQuality: 90, exact: true, effort: 6 }).toFile(`${file}.webp`)
 const only = process.env.ONLY?.split(",")
 for (const [name, fn] of Object.entries(SURFACES)) {
   if (only && !only.includes(name)) continue
   const t0 = Date.now()
-  const { normal, detail } = bake(fn)
-  await write(path.join(OUT, `${name}-normal`), normal, 92)
-  await write(path.join(OUT, `${name}-detail`), detail, 88)
+  await write(path.join(OUT, name), bake(fn))
   console.log(`${name}: ${Date.now() - t0} ms`)
 }

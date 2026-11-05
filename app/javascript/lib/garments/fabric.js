@@ -81,24 +81,23 @@ const ALIASES = { cotton: "jersey", nylon: "shell", leather: "shell" }
 
 const SIZE = 256
 const textures = new Map()
-// The surfaces built yarn by yarn (script/fabrics/build.mjs): a normal map and a detail map (r: cavity, how far
-// down between yarns; g: roughness; b: the yarns' tops) for each, loaded once, laid on every material of that
-// surface when they arrive (the drawn surface below shows until then). ?yarns=off keeps the drawn ones.
+// The surfaces built yarn by yarn (script/fabrics/build.mjs): one texture each (r, g the surface's tilt, b
+// which yarn is on top, a the cavity between yarns), loaded once and laid on every material of that surface
+// when it arrives, in place of its normal map (the drawn surface shows until then). One texture, not two: a
+// GPU lets a material read only 16, and the cloth's uses 15 with it. ?yarns=off keeps the drawn ones.
 const SURFACES = "/models/fabrics"
 const YARNS_ON = typeof document !== "undefined" && new URLSearchParams(location.search).get("yarns") !== "off"
-const built = new Map()       // surface -> Promise<{ normal, detail }> | null
-const waiting = new Map()     // surface -> Set of materials to give them to
+const built = new Map()       // surface -> Promise<texture | null>
 function builtSurface(kind, renderer) {
   if (!YARNS_ON) return null
   if (!built.has(kind)) {
-    const loader = new THREE.TextureLoader()
-    const load = (name, srgb) => loader.loadAsync(`${SURFACES}/${kind}-${name}.webp`).then(t => {
+    built.set(kind, new THREE.TextureLoader().loadAsync(`${SURFACES}/${kind}.webp`).then(t => {
       t.wrapS = t.wrapT = THREE.RepeatWrapping
-      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace
+      t.colorSpace = THREE.NoColorSpace
+      t.premultiplyAlpha = false
       t.anisotropy = renderer?.capabilities.getMaxAnisotropy() ?? 8
       return t
-    })
-    built.set(kind, Promise.all([load("normal"), load("detail")]).then(([normal, detail]) => ({ normal, detail })).catch(() => null))
+    }).catch(() => null))
   }
   return built.get(kind)
 }
@@ -421,10 +420,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uSheer: { value: details.sheer ?? 1 },
     // A puffer's baffles: x how far each puffs out (m; 0 for no quilting), y how far apart they are (cm).
     uQuilt: { value: new THREE.Vector2(details.quilt ? QUILT.loft : 0, QUILT.spacing) },
-    // The yarn-built surface's detail map (see builtSurface), once loaded, and how many tiles a metre.
-    uDetail: { value: BLANK },
+    // 1 once the yarn-built surface is the normal map (see builtSurface): its b and a are the yarns' detail.
     uDetailOn: { value: 0 },
-    uDetailRepeat: { value: 1 / look.tile },
     // A cloth whose weft is another colour than its warp (denim's undyed weft): how much it shows.
     uWeft: { value: look.weft ?? 0 },
     // How much light comes through the cloth from behind (a thin jersey or silk glows a little against the
@@ -439,16 +436,14 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
   // The yarn-built surface, when it's loaded: its normal map in place of the drawn one, and its detail map.
   builtSurface(look.surface, renderer)?.then(surface => {
     if (!surface) return
-    const normal = surface.normal.clone()
+    const normal = surface.clone()
     normal.repeat.setScalar(1 / look.tile)
     normal.needsUpdate = true
     const old = material.normalMap
     material.normalMap = normal
     material.normalScale.setScalar(look.normal * YARN_RELIEF * (material.normalScale.x / (look.normal || 1)))
     if (old && old !== normal) old.dispose()
-    uniforms.uDetail.value = surface.detail
     uniforms.uDetailOn.value = 1
-    material.needsUpdate = true
   })
   if (details.sheer && details.sheer < 1 && !fitMap) material.transparent = true
   material.customProgramCacheKey = () => `cloth-${fitMap}`
@@ -496,7 +491,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         if ( uQuilt.x > 0.0 ) transformed += normalize( objectNormal ) * uQuilt.x * sqrt( max( sin( 3.14159265 * fract( aDown / uQuilt.y ) ), 0.0 ) ) * smoothstep( 0.0, 2.5, aEdge );`)
     shader.fragmentShader = shader.fragmentShader
       // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
-      .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );") + `
+      .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "if ( uDetailOn > 0.5 ) mapN.z = sqrt( max( 1.0 - dot( mapN.xy, mapN.xy ), 0.0 ) ); // (a yarn-built surface keeps other things in b)\n mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );") + `
         if ( uQuilt.x > 0.0 ) normal = heightNormal( quiltHeight(), - vViewPosition, normal, faceDirection );
         if ( uWrinkle.y > 0.0 && dot( vFold, vFold ) > 1e-4 ) {
           // (Across the tangent frame of the pattern's coordinates, as a normal map is.)
@@ -550,13 +545,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uSheer;
         uniform vec2 uWrinkle;
         varying vec2 vFold;
-        uniform sampler2D uDetail;
         uniform float uDetailOn;
-        uniform float uDetailRepeat;
         uniform float uWeft;
         uniform float uThin;
-        // The yarn-built surface's detail where this point is (r cavity, g roughness, b yarn tops).
-        vec3 gDetail = vec3( 1.0, 0.5, 0.5 );
+        // The yarn-built surface's detail where this point is (r the cavity, 1 open, 0 deep; b the yarn on top).
+        vec3 gDetail = vec3( 1.0, 0.5, 1.0 );
         uniform vec2 uQuilt;
         varying float vCover;
         varying float vStrain;
@@ -627,7 +620,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           return d;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
-        if ( uDetailOn > 0.5 ) gDetail = texture2D( uDetail, vPattern * 0.01 * uDetailRepeat ).rgb;
+        if ( uDetailOn > 0.5 ) { vec4 yarn = texture2D( normalMap, vNormalMapUv ); gDetail = vec3( yarn.a, 0.45 + 0.55 * ( 1.0 - yarn.a ), yarn.b ); }
         // Between the yarns, less light reaches: the weave's own shade (strongest on a dark cloth's light).
         diffuseColor.rgb *= mix( 1.0, 0.55 + 0.45 * gDetail.r, YARN_CAVITY * uDetailOn );
         // Denim: the undyed weft where it's on top, and the indigo warp's slubs, streaks along the grain, lighter

@@ -242,8 +242,9 @@ under a photo so the fabric isn't lit twice.
 - **Depth at its edges**: hems, cuffs and necklines are a strip as deep as the turned-up cloth. `?rim=off`.
 - **Shine along the threads** on silk, twill and nylon shells (anisotropy on the pattern's coordinates).
   `?aniso=off`.
-- **The light**: the key light shares its light with a softbox where it stands, so shine is a broad soft
-  highlight; colours go through Khronos PBR Neutral, which keeps the shops' colours. `?softbox=off`.
+- **The light**: colours go through Khronos PBR Neutral, which keeps the shops' colours. The cloth's shader
+  reads at most 15 textures: a Mac or phone GPU allows 16, and one over that draws nothing
+  (`script/headless/texture_units.mjs` checks it; the headless browser allows 32, so it can't see this).
 - **The still picture** (`lib/still.js`): once nothing moves, frames a fraction of a pixel and the key
   light's place apart are averaged, for smooth edges and soft shadows, with a lens's corners and a fine
   grain. A photo is 16 such frames. `?still=off`, `?finish=off`.
