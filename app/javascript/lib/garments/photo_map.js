@@ -99,9 +99,14 @@ export function dressPhotoUV(cloth, pattern, layout) {
   // A flounce (a dress's) or a hem band (a jacket's) hangs below the body's hem, its own height on: the
   // photo's hem is its hem.
   const band = pattern.panels.flounce ? "flounce" : pattern.panels.waistband ? "waistband" : null
-  const hemPoints = band ? pattern.panels[band].edges.flatMap(e => e.points) : []
-  const bandWidth = hemPoints.length ? Math.max(...hemPoints.map(q => q[0])) : 0
-  const long = m.length + (hemPoints.length ? -Math.min(...hemPoints.map(q => q[1])) : 0)
+  // A tiered skirt's tiers below the first (pattern.js's flounce_2, flounce_3 ...): each its own height further
+  // down the photo, as wide across it as it is round (each is gathered fuller than the one above).
+  const bands = band ? [band, ...Object.keys(pattern.panels).filter(name => /^flounce_\d+$/.test(name)).sort()] : []
+  const bandOf = new Map(bands.map((name, k) => {
+    const points = pattern.panels[name].edges.flatMap(e => e.points)
+    return [name, { k, width: Math.max(...points.map(q => q[0])), height: -Math.min(...points.map(q => q[1])) }]
+  }))
+  const long = m.length + bands.reduce((sum, name) => sum + bandOf.get(name).height, 0)
   // Rows a little inside the outline, as for pants (the cloth's edge, laid flat, catches the light).
   const edge = Math.max(4, Math.round(w * 0.012))
   const clampY = y => Math.min(Math.max(y, top + edge), bottom - edge)
@@ -127,11 +132,13 @@ export function dressPhotoUV(cloth, pattern, layout) {
       const y = downTo(-py)
       const [a, b] = rowAt(y)
       put(i, between(a, b, u), y, name === "front" ? 1 : 2)
-    } else if (name === band) {
+    } else if (bandOf.has(name)) {
       // Sewn round the hem, the back's half then the front's (pattern.js's band: the back's from its far end,
       // the front's from the middle to x 0): across the photo's hem rows, the front's half on the photo.
-      const t = px / (bandWidth || 1)
-      const y = downTo(m.length - py)
+      const strip = bandOf.get(name)
+      const above = bands.slice(0, strip.k).reduce((sum, other) => sum + bandOf.get(other).height, 0)
+      const t = px / (strip.width || 1)
+      const y = downTo(m.length + above - py)
       const [a, b] = rowAt(y)
       const front = t < 0.5
       put(i, between(a, b, front ? 1 - t * 2 : (t - 0.5) * 2), y, front ? 1 : 2)

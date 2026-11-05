@@ -23,6 +23,8 @@ class GarmentImport
   #   printed   true when the listing says the cloth is printed or patterned (only then is a print read off
   #             the photo; a dress's ties and pleats aren't a print)
   #   flounce   true for a gathered strip at the hem ("ruffled hem", "tiered", "flounce"): drawn on the hem
+  #   tiers     for a tiered dress, how many tiers its skirt has (2 to 4; "tiered" alone is 3): each below the
+  #             first a gathered strip sewn to the one above, fuller than it
   #   slit      "side" (one, up the wearer's left) or "sides" (both) for a slit up the side seam; a front or
   #             back slit isn't drawn
   #   belt      "buckle" for a belt at the waist, "tie" for a tie belt or a sash: drawn round the waist
@@ -71,6 +73,8 @@ class GarmentImport
     STRUCTURED = /suiting|scuba|ponte|neoprene|bonded|\bbon(?:ing|ed)\b|corset|structured|tweed|boucl[eé]|\bcrepe\b(?! de chine)/i
     # A hem with a strip gathered onto it: drawn as the body's shape, with the strip on (not as a flare).
     FLOUNCE = /ruffled? hem|ruffle (?:at|on) the hem|flounce|tiered|tiers\b|peplum hem/i
+    TIERED = /\b(two|three|four|[234])[- ]tier(?:ed|s)?\b|\btiered\b|\btiers\b/i
+    TIER_COUNTS = { "two" => 2, "three" => 3, "four" => 4 }.freeze
     # Slits up the side seams (both, or one), and a belt at the waist ("belt loops" aren't one).
     SIDE_SLITS = /side slits|slits (?:at|on|up) (?:the|both) sides|split sides|side splits/i
     SIDE_SLIT = /side slit|side split|slit (?:at|on|up) the side|thigh[- ]high slit|leg slit|high slit/i
@@ -91,6 +95,15 @@ class GarmentImport
     # ("sheer sleeves"; "semi sheer" alone means all of it), and where a scarf is attached ("on the side").
     CUTOUT_PLACES = { "shoulders" => /shoulders?/i, "back" => /back/i, "front" => /front|chest|bust|neck/i, "sides" => /sides?/i, "waist" => /waist|hips?|midriff/i }.freeze
     SHEER_PLACES = { "sleeves" => /sleeves?/i, "back" => /back/i, "sides" => /sides?|panels?/i, "skirt" => /skirt|hem|overlay/i }.freeze
+
+    # How many tiers a tiered dress's skirt has: "three-tiered", "2-tier", "tiered" (three), or nil.
+    def tiers(words)
+      match = words.match(TIERED)
+      return unless match
+
+      count = match[1] ? (TIER_COUNTS[match[1].downcase] || match[1].to_i) : 3
+      count.clamp(2, 4)
+    end
 
     # A keyhole is small, and at the neck in front unless the listing puts it on the back ("keyhole cutout on
     # the back" isn't an open back). "Cutouts on the front and back" are in both places; one "cutout on the
@@ -151,6 +164,7 @@ class GarmentImport
         sheer_kind: sheer(words)&.last,
         scarf: words.match?(/scarf/i) ? (words.match?(/scarf\s+(?:on|at)\s+the\s+side|side scarf/i) ? "side" : "neck") : nil,
         flounce: words.match?(FLOUNCE),
+        tiers: tiers(words),
         slit: if words.match?(SIDE_SLITS) then "sides" elsif words.match?(SIDE_SLIT) then "side" end,
         belt: if words.match?(TIE_BELT) then "tie" elsif words.match?(BELT) then "buckle" end
       }

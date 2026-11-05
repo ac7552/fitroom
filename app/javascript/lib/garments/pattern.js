@@ -78,11 +78,11 @@ export function draftTop(styleName, size, body, cut = null) {
   if (cut?.photo && !style.shaped) style = photographed(style, cut.photo)
   const m = measures(style, size, body, cut)
   if (style.neck) m.frontNeck = style.neck
-  let flounce = 0
+  let flounce = 0, flounces = 0
   if (style.shaped) {
     shapeSkirt(m, size, body, cut)
     if (cut?.neckline) m.frontNeck = NECK_DEPTH[cut.neckline] ?? m.frontNeck
-    if (cut?.flounce) { flounce = Math.min(Math.max(m.length * FLOUNCE.height, 6), 18); m.length -= flounce }
+    if (cut?.flounce) { const f = flounceFor(m, cut); flounce = f.height; flounces = f.count; m.length -= f.height * f.count }
     setSlit(m, cut, flounce)
   }
   const panels = {}
@@ -132,7 +132,7 @@ export function draftTop(styleName, size, body, cut = null) {
     seams.push(["collar", "end_a", "collar", "end_b"])
   }
 
-  if (flounce) addFlounce(panels, seams, flounce)
+  if (flounce) addFlounce(panels, seams, flounce, flounces)
   if (style.hem) {
     const hem = HEMS[style.hem]
     const hems = [["back", "hem"], ["front", "hem"]]
@@ -290,11 +290,32 @@ function splitAt(points, y) {
 // A gathered strip (a flounce, a ruffled hem) sewn on along the dress's hem, longer than it so it gathers,
 // FLOUNCE.height share of the dress's length deep (that much comes off the body, so it ends where it should).
 const FLOUNCE = { gather: 1.6, height: 0.14 }
-function addFlounce(panels, seams, height) {
+// A tiered skirt: each tier below the first a gathered strip sewn to the one above it, TIER.gather times its
+// length, so the skirt widens tier by tier; each tier TIER.height of the dress's length deep.
+const TIER = { gather: 1.35, height: 0.2 }
+// How deep each strip is (cm) and how many (1 for a flounce; a tiered skirt's tiers below its first).
+export function flounceFor(m, cut) {
+  if (!cut?.flounce) return { height: 0, count: 0 }
+  if (cut.tiers >= 2) {
+    const count = cut.tiers - 1
+    return { height: Math.min(Math.max(m.length * TIER.height, 8), 24), count }
+  }
+  return { height: Math.min(Math.max(m.length * FLOUNCE.height, 6), 18), count: 1 }
+}
+function addFlounce(panels, seams, height, count = 1) {
   const hems = [["back", "hem"], ["front", "hem"]]
-  panels.flounce = { edges: band(hems.map(([p, e]) => length(edge(panels[p].edges, e))), FLOUNCE.gather, height, "down"), place: { at: "band", toward: "down" }, fabric: "main" }
+  const tiered = count > 1
+  panels.flounce = { edges: band(hems.map(([p, e]) => length(edge(panels[p].edges, e))), tiered ? TIER.gather : FLOUNCE.gather, height, "down"), place: { at: "band", toward: "down" }, fabric: "main" }
   hems.forEach(([p, e], i) => seams.push([p, e, "flounce", `sewn_${i}`]))
   seams.push(["flounce", "end_a", "flounce", "end_b"])
+  // The tiers below: each sewn by its top to the rim of the one above.
+  for (let k = 2, above = "flounce"; k <= count; k++) {
+    const name = `flounce_${k}`
+    panels[name] = { edges: band([length(edge(panels[above].edges, "rim"))], TIER.gather, height, "down"), place: { at: "band", toward: "down" }, fabric: "main" }
+    seams.push([above, "rim", name, "sewn_0"])
+    seams.push([name, "end_a", name, "end_b"])
+    above = name
+  }
 }
 
 // A dress's side slit (cut.slit "side": one, up the wearer's left; "sides": both), set on m: how deep it runs
@@ -536,8 +557,8 @@ function draftDress(size, body, cut) {
   const style = { ...STYLES.dress, fabric: DRESS_CLOTH[cut.fabric] ?? "jersey" }
   const m = measures({ ...style, sleeve: "short" }, size, body)
   shapeSkirt(m, size, body, cut)
-  const flounce = cut.flounce ? Math.min(Math.max(m.length * FLOUNCE.height, 6), 18) : 0
-  m.length -= flounce
+  const { height: flounce, count: flounces } = flounceFor(m, cut)
+  m.length -= flounce * flounces
   setSlit(m, cut, flounce)
   const neckline = cut.neckline ?? "round"
   m.neckSquare = neckline === "straight" ? 6 : 2
@@ -580,7 +601,7 @@ function draftDress(size, body, cut) {
       seams.push(["front", `shoulder_${s}`, "back", `shoulder_${s}`])
     }
   }
-  if (flounce) addFlounce(panels, seams, flounce)
+  if (flounce) addFlounce(panels, seams, flounce, flounces)
   return { panels, seams, style: "dress", closure: null, fabric: style.fabric, measures: m }
 }
 
