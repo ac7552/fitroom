@@ -48,8 +48,10 @@ Optional settings are environment variables, listed in `.env.example`; copy it t
   leggings and skirts get a real sewing pattern for each size, and a cloth simulation drapes them in the
   browser.
 - **Dresses as they're cut:** strapless, one shoulder, thin or wide straps, sleeves; mini to maxi; fitted
-  to flared; stretch, jersey, silk, leather or cotton. All read from the listing.
-- **The shop's look:** the cloth takes the colour and front print from the store photo.
+  to flared; tiered; stretch, jersey, silk, leather or cotton. Skirts pleated or plain. All read from the
+  listing.
+- **The shop's look:** the store's own photos are laid onto the cloth, and the cloth itself is built yarn
+  by yarn: a weave or a knit, denim's weft, fleece's fuzz, light through a thin tee.
 - **Men's and women's sizes:** letter sizes, US dress sizes, suit sizes, waist sizes and brand numbers
   like "M (2)".
 - **Honest fit:** big-on-purpose clothes are judged as they're meant to be worn, and stretch clothes as
@@ -65,7 +67,9 @@ Optional settings are environment variables, listed in `.env.example`; copy it t
 ## How it's built
 
 Ruby on Rails 8 runs the fit math, the link importer and a JSON API (`/api/v1`). Hotwire Stimulus and
-Three.js r170 run the page: the mannequin, the pattern drafting, the cloth simulation and the fabrics. The
+Three.js r170 run the page: the mannequin, the pattern drafting, the cloth simulation (its inner loops in
+WebAssembly, in a Web Worker) and the fabrics. One droplet with no GPU serves all of it
+([docs/droplet.md](docs/droplet.md)). The
 mannequin is built in Blender from MakeHuman's CC0 assets. The details are in
 [docs/how-it-works.md](docs/how-it-works.md) and the API in [docs/api.md](docs/api.md).
 

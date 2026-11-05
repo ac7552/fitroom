@@ -134,6 +134,20 @@ To rebuild it you need Blender 5.2+, the MPFB extension and MakeHuman's CC0 syst
 /Applications/Blender.app/Contents/MacOS/Blender -b --python script/mannequin/build.py -- public/models
 ```
 
+### Faster draping: coarse first, in WebAssembly, in a worker
+
+- **Coarse first** (`lib/garments/coarse.js`): a garment is sewn and settled as a cloth half as fine (3.2 cm
+  between points, a quarter as many), then cut at full resolution where it ended up and settled a moment
+  more. The fine cloth's points follow the coarse one meanwhile, so the page shows it settling as before.
+  `?coarse=off` drapes the full cloth all the way.
+- **WebAssembly** (`script/wasm/cloth.c`, built by `script/wasm/build.sh` into `lib/garments/cloth_wasm.js`):
+  the solver's inner loops (moving the points, the threads and bends, cloth off itself and off the skin)
+  run as WebAssembly on the drape's own arrays (`lib/garments/cloth_kernel.js`), the same arithmetic in the
+  same order, so a drape comes out the same to the bit (a test holds it to that). `?wasm=off`.
+- **A worker**: the drape runs in a Web Worker unless the address says `?drape=page`.
+
+Headless, a tee and jeans from scratch: 12.5 s of solving before, 4.6 s with all three.
+
 ## The drape bank
 
 A drape depends on the pattern's style, the garment's measurements and the body, not on the shop link. So
@@ -148,7 +162,9 @@ when still and flat photos skipped cleaning); a first-time slip dress in 3 secon
 check passes as before. A style with no entry near it (a ruffled dress, a wide trouser 25% off every entry)
 drapes as it did.
 
-`script/bank/build.js` builds the bank from a list of links (`script/bank/sources.json`): run it in the
+`script/bank/atlas.mjs` fills it with no links at all: every draped style but the dress at three sizes a
+quarter apart, on both example bodies, headless (the drape atlas, 63 entries). `script/bank/build.js` builds
+the bank from a list of links (`script/bank/sources.json`): run it in the
 browser's console on the page opened with `?bank=off`, then commit `public/drapes/`. One entry a style and
 body type covers most sizes; the builder also saves the smallest and largest size of each.
 
@@ -178,6 +194,14 @@ otherwise. A shirt's folded collar (drawn over the drape) is textured with the p
 cut-out the listing names that the photo shows covered (a drape over it) isn't cut. Until the photos are
 on, the garment shows as before (its colour, its cut-out print); `?redrape=off` keeps it that way.
 
+### Hung or laid out
+
+A garment hung up keeps its roundness, about 0.6 times as wide for its height as the same garment
+photographed laid flat. So a top is also laid out on a table with its sleeves at three angles (`hanger.js`'s
+`flat`), each outline is scored against the front photo's cloth mask as the validation's silhouette check
+scores it (`lib/garments/silhouette.js`), and the best is the one its photos are laid on by. On 14 Kith
+photos the outlines matched 0.811 on average instead of 0.788. `?hangtrial=off` hangs it the one way.
+
 ## Fitting the pattern to the photo
 
 A garment laid flat or hung for its shop photo is a scale drawing of the pattern we draft, so a top's
@@ -201,6 +225,28 @@ garment hung in stay as photographed; what's brighter or darker than its near su
 relief (weave, ribbing, stitching, quilting, small creases), kept in the alpha channel as a height the cloth
 shader tilts the surface by, so the page's light plays over the real surface. The modelled gloss comes down
 under a photo so the fabric isn't lit twice.
+
+## How the cloth looks
+
+- **Its surface, yarn by yarn** (`script/fabrics/build.mjs`, into `public/models/fabrics/`): each fabric's
+  structure as its threads make it, a plain, twill, satin or ripstop weave with every yarn over and under its
+  neighbours, jersey's loops, rib, brushed fleece, felted wool, leather's grain, with the yarns' twist and
+  stray fibres. Each gives a normal map and a detail map (cavity between yarns, roughness, which yarn is on
+  top). Denim shows its undyed weft and its slubs, its warp dyed a little deeper so the leg averages to the
+  listing's colour. `?yarns=off` keeps the drawn surfaces.
+- **Wrinkles** where the drape is squeezed, across the way it's squeezed (`aFold`), as deep as its fabric
+  buckles. `?wrinkles=off`.
+- **Fuzz** on fleece and felted wool (`lib/garments/fuzz.js`): thin layers of the garment just off it, each
+  showing the fibres that reach it, at its edges mostly. `?fuzz=off`.
+- **Light through thin cloth**: a jersey, a shirt or silk glows a little against the light. `?glow=off`.
+- **Depth at its edges**: hems, cuffs and necklines are a strip as deep as the turned-up cloth. `?rim=off`.
+- **Shine along the threads** on silk, twill and nylon shells (anisotropy on the pattern's coordinates).
+  `?aniso=off`.
+- **The light**: the key light shares its light with a softbox where it stands, so shine is a broad soft
+  highlight; colours go through Khronos PBR Neutral, which keeps the shops' colours. `?softbox=off`.
+- **The still picture** (`lib/still.js`): once nothing moves, frames a fraction of a pixel and the key
+  light's place apart are averaged, for smooth edges and soft shadows, with a lens's corners and a fine
+  grain. A photo is 16 such frames. `?still=off`, `?finish=off`.
 
 ## Studio photos
 

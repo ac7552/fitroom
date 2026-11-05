@@ -60,8 +60,9 @@ From the droplet's crontab (`crontab -e`), at 3:17 every night:
 17 3 * * * bash -c 'cd /root/fitroom && mkdir -p public/validation && cp script/validation/{runner.js,sheet.js,runs.json,accuracy.js,accuracy.json,baseline.json} public/validation/ && cd deploy && docker compose --profile tools run --rm tools node script/validation/nightly.mjs --base http://web:3000' >> /var/log/fitroom-accuracy.log 2>&1
 ```
 
-(`public/validation/` must be served, which only the development server does; for the nightly run, start the
-web container with `RAILS_ENV=development` or run it on a laptop's `bin/dev`.)
+The web container reads `public/validation/` from the checkout (`docker-compose.yml` mounts it), so the copy
+in the cron line is all it takes; Caddy answers `/validation/*` with a 404, so only the tools container,
+inside the droplet, reaches it.
 
 ## Garment details from the photo (optional)
 

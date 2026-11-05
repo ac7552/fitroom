@@ -15,6 +15,10 @@ services:
       FITROOM_VISION_URL: /vision
     volumes:
       - storage:/rails/storage
+      # The accuracy set's runner and data, for the nightly run (script/validation/nightly.mjs): copied into
+      # public/validation by the cron line in docs/droplet.md. Caddy doesn't serve it to the internet; only the
+      # tools container reaches it, at web:3000.
+      - ../public/validation:/rails/public/validation:ro
     expose:
       - "3000"
     healthcheck:
