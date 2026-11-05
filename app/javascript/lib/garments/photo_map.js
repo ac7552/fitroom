@@ -170,7 +170,7 @@ function halfWidths(edges) {
 
 // Where things are on one photo of the pants (print.js's readBottom layout): its rows, and a point `u` of
 // the way across a leg at a height. behind: it's a photo of the back, so the wearer's left is on its left.
-function onPhoto(layout, m, behind = false) {
+export function onPhoto(layout, m, behind = false) {
   const { w, h, top, bottom, crotch, rows } = layout
   const total = m.band + m.length + (m.cuff ?? 0)
   const scale = (bottom - top) / total   // photo pixels per cm
@@ -202,7 +202,7 @@ function onPhoto(layout, m, behind = false) {
 }
 
 // A leg piece's inner and outer edges (x, cm) at a height py: the crotch seam, then the inseam, and the side.
-function legSpan(edges, m) {
+export function legSpan(edges, m) {
   const along = name => edges.find(e => e.name === name).points
   const side = along("side"), inseam = along("inseam"), crotch = along("crotch")
   return py => [py < -m.rise ? xAt(inseam, py) : xAt(crotch, py), xAt(side, py)]

@@ -880,6 +880,7 @@ export class FittingStage {
     d.top.setSleeves(d.redrape ? null : item.sleevePrint ?? null)
     d.top.setCuffTone(d.redrape ? null : item.cuffTone ?? null)
     d.top.setPhotoMap(d.redrape ?? item.photoMap ?? null)
+    d.top.setLegPrints(item.legPrints ?? null)
     d.top.mesh.visible = d.shown
     if (this.view === "fit") d.top.paintFit(item.checks ?? [], STATUS_COLORS)
     d.top.setFitMap(this.view === "fit")

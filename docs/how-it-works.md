@@ -242,6 +242,13 @@ under a photo so the fabric isn't lit twice.
 - **Depth at its edges**: hems, cuffs and necklines are a strip as deep as the turned-up cloth. `?rim=off`.
 - **Shine along the threads** on silk, twill and nylon shells (anisotropy on the pattern's coordinates).
   `?aniso=off`.
+- **Graphics on pants' legs** (leg_prints.js): lettering down a side seam or a logo on a thigh is found in
+  the photos, painted out of the photo the legs take, and laid on as one piece each, by measurement: as far
+  down the leg as it is below the waistband in the photo, as far in from the side seam as it is in from the
+  leg's outer edge, at one scale both ways, so the photo's row-by-row fit can't tear it. Lettering the back
+  photo shows again at the same seam is laid once. `script/headless/lettering_check.py` reads the word back
+  by OCR (Kith's Essentials sweatpant: 0.17 before, 0.90 after; its shop photo 0.64). The cloth's shader takes
+  16 vertex attributes at most, a Mac's limit (`texture_units.mjs` checks both).
 - **The light**: colours go through Khronos PBR Neutral, which keeps the shops' colours. The cloth's shader
   reads at most 15 textures: a Mac or phone GPU allows 16, and one over that draws nothing
   (`script/headless/texture_units.mjs` checks it; the headless browser allows 32, so it can't see this).

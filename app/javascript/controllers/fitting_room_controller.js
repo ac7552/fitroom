@@ -7,6 +7,7 @@ import { constructionFrom, dressSleeves, fitChart, readOutline } from "lib/garme
 import { likeness, warmLikeness } from "lib/garments/likeness"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto, wornSleeves } from "lib/garments/segment"
+import { legPrintAtlas, readLegPrints } from "lib/garments/leg_prints"
 import { knockoutPhoto } from "lib/garments/knockout"
 import { measureFromPhotos } from "lib/measure_photo"
 import { partRow, uncheckedLine, verdictWords } from "lib/fit_bar"
@@ -294,12 +295,28 @@ export default class extends Controller {
         if (backPhoto) garment.backCleaned = backPhoto !== garment.back_photo
         if (kind === "top") garment.lookPhotos = { front: frontPhoto, back: backPhoto }
         const readBack = src => (bottoms ? readBottomPhoto(src) : readPhoto(src)).catch(() => null)
-        let back = backPhoto ? await readBack(backPhoto) : null
-        if (!back && backPhoto && backPhoto !== garment.back_photo) back = await readBack(garment.back_photo)
+        let back = backPhoto ? await readBack(backPhoto) : null, backSrc = back ? backPhoto : null
+        if (!back && backPhoto && backPhoto !== garment.back_photo) { back = await readBack(garment.back_photo); backSrc = back ? garment.back_photo : null }
         // Not the same garment's back after all (a close-up, or a photo on a model): a different colour, or a
         // top that's plain in front showing a print all over its back.
         if (back && (colorGap(back.color, read.color) > 40 || (!bottoms && !read.print && back.print?.coverage > 0.35))) back = null
         if (this.outfit[kind] !== item) return
+        // Graphics on the legs (lettering down a side seam), laid as one piece each by measurement: painted out
+        // of the photos the legs take, which are read again (leg_prints.js).
+        if (bottoms && read) {
+          const legs = await readLegPrints(frontPhoto, read.layout).catch(() => null)
+          const legsBack = back && backSrc ? await readLegPrints(backSrc, back.layout, { behind: true }).catch(() => null) : null
+          if (this.outfit[kind] !== item) return
+          if (legs || legsBack) {
+            const atlas = legPrintAtlas(legs, legsBack)
+            garment.legPrints = atlas ? { front: { prints: legs?.prints ?? [], layout: read.layout }, back: legsBack ? { prints: legsBack.prints, layout: back.layout } : null, atlas } : null
+            garment.legPhotos = { front: legs?.cleaned ?? frontPhoto, back: legsBack?.cleaned ?? backSrc }
+            const clean = legs ? await readBottomPhoto(legs.cleanedSmall.toDataURL("image/png")).catch(() => null) : null
+            const cleanBack = legsBack ? await readBottomPhoto(legsBack.cleanedSmall.toDataURL("image/png")).catch(() => null) : null
+            if (clean) read = { ...read, image: clean.image, soft: clean.soft }
+            if (cleanBack) back = { ...back, image: cleanBack.image }
+          }
+        }
         if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
         else {
           this.applyTopReading(garment, read, back)
@@ -1864,9 +1881,11 @@ export default class extends Controller {
       // Not for a low-contrast print all over (a camo in browns): laid point for point it swirls and mirrors,
       // and its drawcords land across the shoulders; its cloth repeated over every piece (print.js's tile),
       // with the back's own photo on the back, is truer.
-      photo: kind === "shoes" || garment.print?.mottled ? null : garment.lookPhotos?.front ?? garment.photo ?? null,
+      // Pants with graphics laid as one piece (legPrints) take their photos with the graphics painted out.
+      photo: kind === "shoes" || garment.print?.mottled ? null : garment.legPhotos?.front ?? garment.lookPhotos?.front ?? garment.photo ?? null,
       photoPart: garment.photoPart ?? null,
-      back_photo: kind === "shoes" || garment.print?.mottled ? null : garment.lookPhotos?.back ?? garment.back_photo ?? null,
+      back_photo: kind === "shoes" || garment.print?.mottled ? null : garment.legPhotos?.back ?? garment.lookPhotos?.back ?? garment.back_photo ?? null,
+      legPrints: garment.legPrints ?? null,
       fabric: garment.fabric,
       style: garment.style,
       cut: garment.cut ?? null,

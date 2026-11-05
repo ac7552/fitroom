@@ -374,6 +374,11 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // the middle) down uPrintLength to the hem.
     uPrint: { value: BLANK },
     uPrintOn: { value: 0 },
+    // A graphic on a leg laid as one piece (DrapedTop#setLegPrints): pants don't use uPrint, so its texture
+    // goes there (the shader reads 15 textures of the 16 a GPU allows).
+    uLegPrintOn: { value: 0 },
+    // Each graphic's place in that texture: [u0, v0, du, dv].
+    uLegRects: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
     uPrintHalf: { value: 26 },
     uPrintLength: { value: 70 },
     // How far below the shoulders' high points the photo's front (and its back's) starts, in cm.
@@ -463,14 +468,14 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aStrain;
         attribute vec2 aFold;
         varying vec2 vFold;
-        attribute float aDown;
-        attribute float aAcross;
+        attribute vec3 aPlace;
+        attribute vec3 aLegPrint;
+        varying vec3 vLegPrint;
         uniform vec2 uQuilt;
         varying float vAcross;
         varying float vCover;
         varying float vStrain;
         varying float vDown;
-        attribute float aSheer;
         varying float vHole;
         varying float vSheer;
         varying float vHide;
@@ -481,14 +486,14 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain; vFold = aFold; vDown = aDown; vAcross = aAcross;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aPlace.z; vCover = aCover; vStrain = aStrain; vFold = aFold; vDown = aPlace.x; vAcross = aPlace.y; vLegPrint = aLegPrint;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         transformed += normalize( objectNormal ) * 0.0015;
         // A puffer's baffles: each puffs out between its seams, which stay where the drape left the cloth (so
         // nothing under it shows through there), as do the pieces' edges (puffed by different amounts either side
         // of a seam, the cloth would part along it).
-        if ( uQuilt.x > 0.0 ) transformed += normalize( objectNormal ) * uQuilt.x * sqrt( max( sin( 3.14159265 * fract( aDown / uQuilt.y ) ), 0.0 ) ) * smoothstep( 0.0, 2.5, aEdge );`)
+        if ( uQuilt.x > 0.0 ) transformed += normalize( objectNormal ) * uQuilt.x * sqrt( max( sin( 3.14159265 * fract( aPlace.x / uQuilt.y ) ), 0.0 ) ) * smoothstep( 0.0, 2.5, aEdge );`)
     shader.fragmentShader = shader.fragmentShader
       // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
       .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "if ( uDetailOn > 0.5 ) mapN.z = sqrt( max( 1.0 - dot( mapN.xy, mapN.xy ), 0.0 ) ); // (a yarn-built surface keeps other things in b)\n mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );") + `
@@ -516,6 +521,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform vec3 uMetal;
         uniform sampler2D uPrint;
         uniform float uPrintOn;
+        uniform float uLegPrintOn;
+        uniform vec4 uLegRects[ 4 ];
+        varying vec3 vLegPrint;
         uniform float uPrintHalf;
         uniform float uPrintLength;
         uniform float uPrintTop;
@@ -645,6 +653,16 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           vec4 photo = vPhoto.z < 1.5 ? texture2D( uPhoto, vPhoto.xy ) : vPhoto.z < 2.5 ? texture2D( uPhotoSoft, vPhoto.xy ) : texture2D( uPhotoBack, vPhoto.xy );
           diffuseColor.rgb = photo.rgb;
           gPhotoHeight = photo.a - 0.5;
+        }
+        // A graphic on a leg (lettering down the side, a logo on a thigh), laid as one piece from its photo, so
+        // the photo's registration can't shear it; flat where it's printed (a print hasn't the cloth's relief).
+        if ( uLegPrintOn > 0.5 && vLegPrint.z > 0.5 && gl_FrontFacing && all( greaterThanEqual( vLegPrint.xy, vec2( 0.0 ) ) ) && all( lessThanEqual( vLegPrint.xy, vec2( 1.0 ) ) ) ) {
+          // (Its graphic by number; a triangle between two graphics' points takes the nearer's.)
+          int k = int( floor( vLegPrint.z + 0.5 ) ) - 1;
+          vec4 rect = k == 0 ? uLegRects[ 0 ] : k == 1 ? uLegRects[ 1 ] : k == 2 ? uLegRects[ 2 ] : uLegRects[ 3 ];
+          vec4 graphic = texture2D( uPrint, rect.xy + vec2( vLegPrint.x, 1.0 - vLegPrint.y ) * rect.zw );
+          diffuseColor.rgb = mix( diffuseColor.rgb, graphic.rgb, graphic.a );
+          gPhotoHeight *= 1.0 - graphic.a;
         }
         // Cuffs in the sleeves' own colour (the sleeves themselves take their strips, see uSleeves).
         if ( uCuffTone.w > 0.5 && vPiece > 4.5 ) diffuseColor.rgb = uCuffTone.rgb;

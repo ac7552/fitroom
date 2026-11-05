@@ -1,4 +1,5 @@
-// Checks every shader the 3D view compiles reads no more textures than a real GPU allows a material: 16 (a
+// Checks every shader the 3D view compiles reads no more textures, and takes no more vertex attributes, than a
+// real GPU allows: 16 each. Textures: 16 (a
 // Mac's, most phones'; headless Chromium's software GPU allows 32, so a shader over 16 compiles here and
 // draws nothing on a Mac). Drapes a few outfits with their shop photos, the way the page does, then counts
 // each program's samplers. Exits 1 when any is over.
@@ -23,7 +24,7 @@ const page = await browser.newPage({ viewport: { width: 400, height: 500 } })
 page.on("pageerror", e => console.error("page error:", e.message))
 await page.goto(`${base}/stage.html?bank=off&drape=page${args.query ? "&" + args.query : ""}`)
 await page.waitForFunction(() => window.stageReady, null, { timeout: 120000 })
-let worst = 0
+let worst = 0, worstAttributes = 0
 for (const items of OUTFITS) {
   const found = await page.evaluate(async ({ items, men }) => {
     const stage = window.stage
@@ -44,13 +45,17 @@ for (const items of OUTFITS) {
     return stage.renderer.info.programs.map(p => {
       let n = 0
       for (let i = 0; i < gl.getProgramParameter(p.program, gl.ACTIVE_UNIFORMS); i++) { const u = gl.getActiveUniform(p.program, i); if (SAMPLERS.includes(u.type)) n += u.size }
-      return [p.cacheKey.split(",").slice(0, 2).join(","), n]
+      const names = []; for (let i = 0; i < gl.getProgramParameter(p.program, gl.ACTIVE_ATTRIBUTES); i++) names.push(gl.getActiveAttrib(p.program, i).name)
+      return [p.cacheKey.split(",").slice(0, 2).join(","), n, names.length]
     })
   }, { items, men })
-  const most = Math.max(...found.map(f => f[1]))
+  const most = Math.max(...found.map(f => f[1])), attributes = Math.max(...found.map(f => f[2]))
   worst = Math.max(worst, most)
-  console.log(items.map(i => i.style).join(" + "), "most textures in one shader:", most, found.filter(f => f[1] > LIMIT).length ? `OVER ${LIMIT}: ${JSON.stringify(found.filter(f => f[1] > LIMIT))}` : "")
+  worstAttributes = Math.max(worstAttributes, attributes)
+  console.log(items.map(i => i.style).join(" + "), "most textures in one shader:", most, "most vertex attributes:", attributes, found.filter(f => f[1] > LIMIT || f[2] > LIMIT).length ? `OVER ${LIMIT}: ${JSON.stringify(found.filter(f => f[1] > LIMIT || f[2] > LIMIT))}` : "")
 }
 await browser.close()
-console.log(worst > LIMIT ? `FAIL: a shader reads ${worst} textures; a Mac allows ${LIMIT}` : `ok: at most ${worst} of ${LIMIT}`)
-process.exit(worst > LIMIT ? 1 : 0)
+// Vertex attributes too: WebGL promises 16, and a Mac's GPU gives exactly that.
+console.log(worst > LIMIT ? `FAIL: a shader reads ${worst} textures; a Mac allows ${LIMIT}` : `ok: at most ${worst} of ${LIMIT} textures`)
+console.log(worstAttributes > LIMIT ? `FAIL: a shader takes ${worstAttributes} vertex attributes; a Mac allows ${LIMIT}` : `ok: at most ${worstAttributes} of ${LIMIT} vertex attributes`)
+process.exit(worst > LIMIT || worstAttributes > LIMIT ? 1 : 0)

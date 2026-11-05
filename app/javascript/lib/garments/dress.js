@@ -6,6 +6,7 @@ import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms, riseFor } from
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
 import { bottomsPhotoUV, dressPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
+import { LEG_PRINTS_MAX, legPrintUV } from "lib/garments/leg_prints"
 import { CLOTHS, Drape } from "lib/garments/drape"
 import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
 import { sheerShow } from "lib/garments/sheer"
@@ -593,12 +594,17 @@ export class DrapedTop {
     // A dress's cut-outs and sheer parts, from its listing (see dressDetails).
     const { hole, sheer } = dressDetails(this.item, this.pattern, cloth)
     geometry.setAttribute("aHole", new THREE.BufferAttribute(hole, 1))
-    geometry.setAttribute("aSheer", new THREE.BufferAttribute(sheer, 1))
     geometry.setAttribute("aCover", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("aStrain", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("aFold", new THREE.BufferAttribute(new Float32Array(2 * n), 2))
-    geometry.setAttribute("aDown", new THREE.BufferAttribute(this.bottoms ? new Float32Array(n) : heightsDown(cloth, this.pattern), 1))
-    geometry.setAttribute("aAcross", new THREE.BufferAttribute(this.bottoms ? new Float32Array(n) : widthsAcross(cloth, this.pattern), 1))
+    // How far down and across the garment each point is (stripes and a puffer's baffles), and how sheer it
+    // is: one attribute (a GPU takes 16 at most, and the cloth's shader was at 16).
+    const down = this.bottoms ? null : heightsDown(cloth, this.pattern), across = this.bottoms ? null : widthsAcross(cloth, this.pattern)
+    const place = new Float32Array(3 * n)
+    for (let i = 0; i < n; i++) { place[3 * i] = down?.[i] ?? 0; place[3 * i + 1] = across?.[i] ?? 0; place[3 * i + 2] = sheer[i] }
+    geometry.setAttribute("aPlace", new THREE.BufferAttribute(place, 3))
+    // A graphic on a leg laid as one piece (setLegPrints): [u, v, on] in its texture.
+    geometry.setAttribute("aLegPrint", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
@@ -762,6 +768,30 @@ export class DrapedTop {
   // (print.js's readDressPhoto, its layout marked dress).
   // A re-draped photo (redrape.js) comes with its own texture coordinates (map.uv) and the back photo as
   // map.back.image; the front image serves for the softened copy too.
+  // Graphics on the legs, laid as one piece each by measurement (leg_prints.js): { front: { prints, layout },
+  // back: { prints, layout } | null, atlas: legPrintAtlas's }, or null for none. Pants only.
+  setLegPrints(legs) {
+    if (!this.bottoms || !legs?.atlas) legs = null
+    if (legs === this.legPrints) return
+    this.legPrints = legs
+    this.legTexture?.dispose()
+    this.legTexture = null
+    const attribute = this.geometry.attributes.aLegPrint
+    attribute.array.fill(0)
+    const placed = legs ? legPrintUV(this.cloth, this.pattern, legs) : null
+    if (placed) attribute.array.set(placed.uv)
+    attribute.needsUpdate = true
+    const uniforms = this.materials.main.userData.uniforms
+    for (let k = 0; k < LEG_PRINTS_MAX; k++) uniforms.uLegRects.value[k].set(...(placed?.rects[k] ?? [0, 0, 0, 0]))
+    if (legs) {
+      const t = this.legTexture = new THREE.CanvasTexture(legs.atlas.canvas)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.anisotropy = 8
+      uniforms.uPrint.value = t
+    }
+    uniforms.uLegPrintOn.value = legs ? 1 : 0
+  }
+
   setPhotoMap(map) {
     if (!this.bottoms && !map?.layout?.dress && !map?.uv) map = null
     if (map?.image === this.photoImage && map?.uv === this.photoUV) return
