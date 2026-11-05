@@ -29,6 +29,8 @@ const CLOTHS = {
   rib: { surface: "rib", tile: 0.02, roughness: 0.92, sheen: 0.45, sheenRoughness: 0.7, normal: 0.9 },
   fleece: { surface: "fleece", tile: 0.025, roughness: 0.97, sheen: 0.75, sheenRoughness: 0.85, normal: 0.4 },
   // (anisotropy: the shine drawn out along the threads, as a weave's is; a twill's runs on its diagonal.)
+  // Denim: a heavy, slubby 3/1 twill, indigo warp over an undyed weft (weft: how much of it shows).
+  denim: { surface: "denim", tile: 0.014, roughness: 0.9, sheen: 0.12, sheenRoughness: 0.5, normal: 0.55, anisotropy: 0.2, anisotropyRotation: Math.PI / 4, weft: 0.45 },
   twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5, anisotropy: 0.25, anisotropyRotation: Math.PI / 4 },
   shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25, anisotropy: 0.3 },
   // Nylon pants (track pants, technical trousers): a tight plain weave, matte, with only a faint sheen along
@@ -60,18 +62,43 @@ const CREASE = { fold: 0.6, dark: 0.14, rough: 0.3 }
 // finely, denim and a shell in broad, deep folds.
 const WRINKLES = {
   knit: { wave: 1.7, depth: 0.0022 }, rib: { wave: 1.4, depth: 0.0012 }, fleece: { wave: 2.4, depth: 0.003 },
-  twill: { wave: 2.8, depth: 0.0032 }, ripstop: { wave: 3.2, depth: 0.0034 }, plain: { wave: 2.2, depth: 0.0024 },
+  twill: { wave: 2.8, depth: 0.0032 }, denim: { wave: 3.2, depth: 0.0036 }, ripstop: { wave: 3.2, depth: 0.0034 }, plain: { wave: 2.2, depth: 0.0024 },
   felt: { wave: 3, depth: 0.003 }, grain: { wave: 3.6, depth: 0.003 }, smooth: { wave: 1.3, depth: 0.0018 },
   fine: { wave: 1.4, depth: 0.0016 }
 }
 const ANISO_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("aniso") !== "off"
+// The yarn-built surfaces: how much their relief is drawn at (as a share of each cloth's `normal`, which
+// was set for the drawn surfaces), and how much the cavities between yarns darken.
+const YARN_RELIEF = 0.8
+const YARN_CAVITY = 0.6
 // ?wrinkles=off draws the cloth without them.
 const WRINKLES_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("wrinkles") !== "off"
 // Which pattern fabric (pattern.js) is which cloth here; "denim" and "cotton" are what shops call them.
-const ALIASES = { cotton: "jersey", denim: "twill", nylon: "shell", leather: "shell" }
+const ALIASES = { cotton: "jersey", nylon: "shell", leather: "shell" }
 
 const SIZE = 256
 const textures = new Map()
+// The surfaces built yarn by yarn (script/fabrics/build.mjs): a normal map and a detail map (r: cavity, how far
+// down between yarns; g: roughness; b: the yarns' tops) for each, loaded once, laid on every material of that
+// surface when they arrive (the drawn surface below shows until then). ?yarns=off keeps the drawn ones.
+const SURFACES = "/models/fabrics"
+const YARNS_ON = typeof document !== "undefined" && new URLSearchParams(location.search).get("yarns") !== "off"
+const built = new Map()       // surface -> Promise<{ normal, detail }> | null
+const waiting = new Map()     // surface -> Set of materials to give them to
+function builtSurface(kind, renderer) {
+  if (!YARNS_ON) return null
+  if (!built.has(kind)) {
+    const loader = new THREE.TextureLoader()
+    const load = (name, srgb) => loader.loadAsync(`${SURFACES}/${kind}-${name}.webp`).then(t => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace
+      t.anisotropy = renderer?.capabilities.getMaxAnisotropy() ?? 8
+      return t
+    })
+    built.set(kind, Promise.all([load("normal"), load("detail")]).then(([normal, detail]) => ({ normal, detail })).catch(() => null))
+  }
+  return built.get(kind)
+}
 const BLANK = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat)
 BLANK.needsUpdate = true
 export const BLANK_TEXTURE = BLANK
@@ -391,12 +418,32 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uSheer: { value: details.sheer ?? 1 },
     // A puffer's baffles: x how far each puffs out (m; 0 for no quilting), y how far apart they are (cm).
     uQuilt: { value: new THREE.Vector2(details.quilt ? QUILT.loft : 0, QUILT.spacing) },
+    // The yarn-built surface's detail map (see builtSurface), once loaded, and how many tiles a metre.
+    uDetail: { value: BLANK },
+    uDetailOn: { value: 0 },
+    uDetailRepeat: { value: 1 / look.tile },
+    // A cloth whose weft is another colour than its warp (denim's undyed weft): how much it shows.
+    uWeft: { value: look.weft ?? 0 },
     // Drawn wrinkles: x their spacing (cm), y their height at a full squeeze (m; 0 for none).
     uWrinkle: { value: new THREE.Vector2(WRINKLES[look.surface]?.wave ?? 2, WRINKLES_ON && !details.quilt ? WRINKLES[look.surface]?.depth ?? 0.0024 : 0) },
     // The AI's picture of this view, laid back on from its camera (see PROJECTION; stage.js#wearPhoto sets it).
     ...projectionUniforms()
   }
   material.userData.uniforms = uniforms
+  // The yarn-built surface, when it's loaded: its normal map in place of the drawn one, and its detail map.
+  builtSurface(look.surface, renderer)?.then(surface => {
+    if (!surface) return
+    const normal = surface.normal.clone()
+    normal.repeat.setScalar(1 / look.tile)
+    normal.needsUpdate = true
+    const old = material.normalMap
+    material.normalMap = normal
+    material.normalScale.setScalar(look.normal * YARN_RELIEF * (material.normalScale.x / (look.normal || 1)))
+    if (old && old !== normal) old.dispose()
+    uniforms.uDetail.value = surface.detail
+    uniforms.uDetailOn.value = 1
+    material.needsUpdate = true
+  })
   if (details.sheer && details.sheer < 1 && !fitMap) material.transparent = true
   material.customProgramCacheKey = () => `cloth-${fitMap}`
   material.onBeforeCompile = shader => {
@@ -455,6 +502,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         if ( uPhotoOn > 0.5 && uPhotoBump > 0.0 ) normal = heightNormal( gPhotoHeight * uPhotoBump, - vViewPosition, normal, faceDirection );`)
       .replace("#include <common>", `#include <common>
         #define CREASE_FOLD ${CREASE.fold.toFixed(2)}
+        #define YARN_CAVITY ${YARN_CAVITY.toFixed(2)}
+        #define WEFT_SHARE 0.25
         #define CREASE_DARK ${CREASE.dark.toFixed(2)}
         #define CREASE_ROUGH ${CREASE.rough.toFixed(2)}
         uniform int uStitch;
@@ -495,6 +544,12 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uSheer;
         uniform vec2 uWrinkle;
         varying vec2 vFold;
+        uniform sampler2D uDetail;
+        uniform float uDetailOn;
+        uniform float uDetailRepeat;
+        uniform float uWeft;
+        // The yarn-built surface's detail where this point is (r cavity, g roughness, b yarn tops).
+        vec3 gDetail = vec3( 1.0, 0.5, 0.5 );
         uniform vec2 uQuilt;
         varying float vCover;
         varying float vStrain;
@@ -565,6 +620,23 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           return d;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+        if ( uDetailOn > 0.5 ) gDetail = texture2D( uDetail, vPattern * 0.01 * uDetailRepeat ).rgb;
+        // Between the yarns, less light reaches: the weave's own shade (strongest on a dark cloth's light).
+        diffuseColor.rgb *= mix( 1.0, 0.55 + 0.45 * gDetail.r, YARN_CAVITY * uDetailOn );
+        // Denim: the undyed weft where it's on top, and the indigo warp's slubs, streaks along the grain, lighter
+        // and darker (not on a shop's photo, which shows its own).
+        if ( uWeft > 0.0 && uDetailOn > 0.5 && !( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) ) {
+          // (The weft paler than the warp but of its hue: a shop's "indigo" averages its warp and weft, and a weft
+          // of plain white over a dark warp would push the average off the listing's hue.)
+          vec3 undyed = min( diffuseColor.rgb * 2.4 + 0.035, vec3( 0.9 ) );
+          // The warp dyed a little deeper than the shop's colour, so the cloth averages to it (about a quarter of
+          // a 3/1 twill's face is weft): the colour a shopper sees across a leg stays the listing's.
+          float share = WEFT_SHARE * uWeft;
+          vec3 warp = max( ( diffuseColor.rgb - share * undyed ) / ( 1.0 - share ), vec3( 0.0 ) );
+          diffuseColor.rgb = mix( warp, undyed, ( 1.0 - gDetail.b ) * uWeft );
+          float streak = wrinkleNoise( vec2( vPattern.x * 2.2, vPattern.y * 0.045 ) ) * 0.7 + wrinkleNoise( vec2( vPattern.x * 7.0, vPattern.y * 0.12 ) ) * 0.3;
+          diffuseColor.rgb *= 0.88 + 0.24 * streak;
+        }
         if ( uLookOnly > 0.5 && ( vPiece > 2.5 || !gl_FrontFacing ) ) discard;
         if ( vHide > 0.0 || vHole > 0.0 || vCover > 0.5 ) discard;
         diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
@@ -687,7 +759,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         #endif`)
       .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
         roughnessFactor = mix( roughnessFactor, 0.28, metal );
-        roughnessFactor = min( 1.0, roughnessFactor * ( 1.0 + CREASE_ROUGH * crease ) );`)
+        roughnessFactor = min( 1.0, roughnessFactor * ( 1.0 + CREASE_ROUGH * crease ) );
+        // A yarn's top is a little smoother than the fibres and gaps round it.
+        roughnessFactor = clamp( roughnessFactor * mix( 1.0, 0.78 + 0.44 * gDetail.g, uDetailOn ), 0.04, 1.0 );`)
       .replace("#include <aomap_fragment>", `#include <aomap_fragment>
         reflectedLight.indirectDiffuse *= vShade;
         reflectedLight.indirectSpecular *= vShade;

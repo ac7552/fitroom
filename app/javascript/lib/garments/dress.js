@@ -185,7 +185,7 @@ function surfaceFor(style, fabric) {
   if (fabric === "knit") return "rib"
   if (STYLES[style]?.surface && !["silk", "leather", "nylon"].includes(fabric)) return STYLES[style].surface
   const own = STYLES[style]?.fabric ?? "jersey"
-  if (fabric === "denim") return "twill"
+  if (fabric === "denim") return "denim"
   if (fabric === "linen") return "matte"
   if (fabric === "nylon" || fabric === "leather") return "shell"
   // A zip-up or bomber in cotton or fleece is a sweat or a cotton twill, not a glossy nylon shell.
@@ -200,7 +200,7 @@ function surfaceFor(style, fabric) {
 function bottomSurface(style, fabric) {
   if (style === "leggings") return "stretch"
   if (style === "joggers") return fabric === "nylon" ? "matte" : "fleece"
-  if (style === "jeans" || fabric === "denim") return "twill"
+  if (style === "jeans" || fabric === "denim") return "denim"
   if (fabric === "nylon" || fabric === "linen") return "matte"
   if (fabric === "wool") return "wool"
   if (fabric === "leather") return "leather"
