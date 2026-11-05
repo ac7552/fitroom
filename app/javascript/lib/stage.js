@@ -12,6 +12,7 @@ import { DrapedTop, TUCKABLE, bodySnapshot, coveredPoints, garmentWeights, prepa
 import { bodyFrame } from "lib/garments/body"
 import { RemoteDrape } from "lib/garments/remote_drape"
 import { hangerSpec } from "lib/garments/hanger"
+import { HangTrial, TRIALS, TRIAL_ON } from "lib/garments/silhouette"
 import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
@@ -1864,18 +1865,19 @@ export class FittingStage {
   // drape_worker.js) where there is one, so the page doesn't spend tens of seconds of its frames on it;
   // here, a few milliseconds a frame, where there isn't or it fails. Either way, an object with the
   // HangerDrape's advance(budget), done and positions.
-  hangOff(d) {
+  // flat: laid out instead (hanger.js's flat), or null to hang it.
+  hangOff(d, flat = null) {
     if (HANG_IN_WORKER && this.hangWorker === undefined) this.hangWorker = RemoteDrape.start(1)
     const remote = this.hangWorker
-    if (!remote || remote.failed) return new HangerDrape(d.top, d.restX)
+    if (!remote || remote.failed) return new HangerDrape(d.top, d.restX, { flat })
     const id = `hang:${++this.hangs}`
-    const job = remote.hang(id, { top: hangerSpec(d.top), restX: d.restX })
+    const job = remote.hang(id, { top: hangerSpec(d.top), restX: d.restX, flat })
     let local = null
     return {
       get done() { return local ? local.done : job.done },
       get positions() { return local ? local.positions : job.x },
       advance: budget => {
-        if (!local && job.failed) local = new HangerDrape(d.top, d.restX)
+        if (!local && job.failed) local = new HangerDrape(d.top, d.restX, { flat })
         return local ? local.advance(budget) : !job.done
       }
     }
@@ -1914,7 +1916,9 @@ export class FittingStage {
           if (!photos) { d.redrapeState = "off"; return }
           d.redrapePhotos = photos
           if (d.redrapeTimes) d.redrapeTimes.photos = performance.now() - d.redrapeTimes.asked
-          d.hanger = this.hangOff(d)
+          // A top is hung up and laid out a few ways, and the one whose outline matches the front photo best
+          // is the one the photos are laid on by (silhouette.js); pants are hung by the waist.
+          d.hanger = TRIAL_ON && !d.top.bottoms ? new HangTrial(TRIALS.map(flat => ({ flat, hanger: this.hangOff(d, flat) })), d.top, photos.front) : this.hangOff(d)
           d.redrapeState = d.hanger.done ? "off" : "hanging"
           this.start()
         })
@@ -1959,6 +1963,8 @@ export class FittingStage {
       }
       // The hanging shape kept (a few hundred KB) for the validation's silhouette check.
       d.hanging = d.hanger.positions
+      // (Which way it was hung, and how well each matched: the validation runner reports it.)
+      d.hangTrial = d.hanger.scores ? { chosen: d.hanger.chosen, scores: d.hanger.scores } : null
       d.hanger = null
       this.redraw()
     }

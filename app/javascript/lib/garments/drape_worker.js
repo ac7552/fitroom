@@ -10,7 +10,7 @@
 //   { type: "pose", id, posed, before, now: { body, over, egg }, bottom, last, long }
 //     → { type: "progress", id, x, frame } now and then, then { type: "posed", id, x, frame, field }
 //       (field, on the last step: the posed body's collision field, as plain data; see fieldData)
-//   { type: "hang", id, top: hanger.js's hangerSpec, restX }
+//   { type: "hang", id, top: hanger.js's hangerSpec, restX, flat (hanger.js's: laid out, or null) }
 //     → { type: "hung", id, x }: the garment hung up as a shop photographs it (hanger.js's HangerDrape)
 //   { type: "drop", id }: the garment's gone; stop.
 import { prepareBody, sewingFor } from "lib/garments/dress"
@@ -107,8 +107,8 @@ function yieldToMessages() {
 const turn = () => new Promise(resolve => { const channel = new MessageChannel(); channel.port1.onmessage = () => resolve(); channel.port2.postMessage(0) })
 
 // The hanger drape at full speed, a slice at a time so a "drop" is heard.
-async function hang({ id, top, restX }, post) {
-  const hanger = new HangerDrape(top, restX)
+async function hang({ id, top, restX, flat = null }, post) {
+  const hanger = new HangerDrape(top, restX, { flat })
   const job = { dropped: false }
   jobs.set(id, job)
   while (hanger.advance(250)) {

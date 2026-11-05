@@ -155,6 +155,9 @@ async function check(item, kind, slot) {
   const t = s.slots[slotOf]?.redrapeTimes
   out.times = { read: g.readTimes ?? null, redrape: t ? Object.fromEntries(Object.entries(t).filter(([k]) => k !== "asked").map(([k, v]) => [k, Math.round(v)])) : null }
   if (kind === "trousers" && g.photo) out.checks.photoRead = Boolean(g.photoMap)
+  // How it was hung or laid out for its photos, and how well each way's outline matched (silhouette.js).
+  const trial = s.slots[slotOf]?.hangTrial
+  out.hangTrial = trial ? { chosen: trial.chosen.flat?.angle ?? "hung", scores: trial.scores.map(x => [x.flat?.angle ?? "hung", x.iou == null ? null : Math.round(x.iou * 1000) / 1000]) } : null
   out.photoThumb = g.photo ? await thumb(g.photo, 200) : null
   return out
 }
