@@ -14,6 +14,9 @@ pin "three/addons/utils/BufferGeometryUtils.js", to: "three-addons/BufferGeometr
 pin "three/addons/loaders/RGBELoader.js", to: "three-addons/RGBELoader.js"
 # The mannequin is meshopt-compressed (script/mannequin/squeeze.mjs); three.js r170's decoder, MIT.
 pin "three/addons/libs/meshopt_decoder.module.js", to: "three-addons/meshopt_decoder.module.js"
+# A softbox key light (three.js r170's rectangular area lights and their lookup tables, MIT).
+pin "three/addons/lights/RectAreaLightUniformsLib.js", to: "three-addons/RectAreaLightUniformsLib.js"
+pin "three/addons/lights/RectAreaLightTexturesLib.js", to: "three-addons/RectAreaLightTexturesLib.js"
 # Contact shading (N8AO, CC0) through three.js's own effect pipeline, with SMAA for edges; all r170 like three.js.
 pin "n8ao", to: "n8ao.js"
 pin "postprocessing", to: "postprocessing-shim.js"

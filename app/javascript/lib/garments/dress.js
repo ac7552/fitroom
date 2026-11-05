@@ -845,6 +845,19 @@ export class DrapedTop {
       for (let k = 0; k < count; k++) for (let c = 0; c < size; c++) array[size * k + c] = from[size * source[k] + c]
       geometry.setAttribute(name, new THREE.BufferAttribute(array, size))
     }
+    // The inside points' place on the pattern a little in from the edge (toward the cloth beside it): the strip
+    // needs a direction on the pattern, or its surface's tilt and its shine's direction have none (and an
+    // area light's shine on it comes out black).
+    const uv = geometry.attributes.uv.array, pts = cloth.points
+    inward.forEach((near, k) => {
+      if (!near.length) return
+      const i = source[2 * k]
+      let mx = 0, my = 0
+      for (const j of near) { mx += pts[j][0]; my += pts[j][1] }
+      mx /= near.length; my /= near.length
+      uv[2 * (2 * k + 1)] = (pts[i][0] + (mx - pts[i][0]) * 0.25) / 100
+      uv[2 * (2 * k + 1) + 1] = (pts[i][1] + (my - pts[i][1]) * 0.25) / 100
+    })
     // Two triangles for each step along an edge, between its outside (even) and inside (odd) rim points, in the
     // cloth's own material or its rib's.
     const rib = cloth.panelFabric.map(f => f === "rib")

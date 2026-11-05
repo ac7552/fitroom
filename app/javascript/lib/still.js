@@ -34,12 +34,27 @@ const BLEND = new THREE.ShaderMaterial({
     void main() { gl_FragColor = mix( texture2D( tOld, vUv ), texture2D( tNew, vUv ), weight ); }`,
   depthTest: false, depthWrite: false
 })
+// The still picture shown, finished as a photograph is: a faint fall-off of light toward the corners (a
+// lens's), and a fine, still grain (film's, the same each frame; brightness only, so colours stay true). The
+// photo (drawAveraged) takes the corners only: stage.js grains it itself. ?finish=off for neither.
+const FINISH_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("finish") !== "off"
 const COPY = new THREE.ShaderMaterial({
-  uniforms: { tDiffuse: { value: null } },
+  uniforms: { tDiffuse: { value: null }, uVignette: { value: 0 }, uGrain: { value: 0 }, uSize: { value: new THREE.Vector2(1, 1) } },
   vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
-  fragmentShader: "uniform sampler2D tDiffuse; varying vec2 vUv; void main() { gl_FragColor = texture2D( tDiffuse, vUv ); }",
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uVignette; uniform float uGrain; uniform vec2 uSize; varying vec2 vUv;
+    float grainHash( vec2 p ) { return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }
+    void main() {
+      vec4 c = texture2D( tDiffuse, vUv );
+      vec2 d = ( vUv - 0.5 ) * vec2( uSize.x / uSize.y, 1.0 );
+      c.rgb *= 1.0 - uVignette * smoothstep( 0.35, 1.0, length( d ) * 1.25 );
+      vec2 px = floor( vUv * uSize );
+      float g = ( grainHash( px ) + grainHash( px + 31.7 ) - 1.0 ) * uGrain;
+      c.rgb = clamp( c.rgb + g, 0.0, 1.0 );
+      gl_FragColor = c;
+    }`,
   depthTest: false, depthWrite: false
 })
+const VIGNETTE = 0.1, GRAIN = 0.012
 
 export class StillFrames {
   // stage: the FittingStage (its renderer, scene, camera, key light and effects).
@@ -142,9 +157,13 @@ export class StillFrames {
     return next
   }
 
-  show(target) {
+  // grain: false for the photo (it's grained after).
+  show(target, { grain = true } = {}) {
     const { renderer } = this.stage
     COPY.uniforms.tDiffuse.value = target.texture
+    COPY.uniforms.uVignette.value = FINISH_ON ? VIGNETTE : 0
+    COPY.uniforms.uGrain.value = FINISH_ON && grain ? GRAIN : 0
+    COPY.uniforms.uSize.value.set(target.width, target.height)
     renderer.setRenderTarget(null)
     this.copy.render(renderer)
   }
@@ -166,7 +185,7 @@ export class StillFrames {
     if (!this.stage.effects) return false
     let target = null
     for (let k = 0; k < samples; k++) target = this.add(k)
-    this.show(target)
+    this.show(target, { grain: false })
     this.reset()
     this.signature = null
     return true
