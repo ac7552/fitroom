@@ -510,7 +510,10 @@ function cutAtWaist(found, w, h, part) {
 }
 
 // Whether a photo shows someone: skin across the top of the figure (a face, a neck), which a garment laid
-// out or hung never has (a tan print on a tee is skin-coloured too, but lower down).
+// out or hung never has (a tan print on a tee is skin-coloured too, but lower down), and far more of it there
+// than over the clothes below. A print in tans all over (a camo) is as "skin" on a hood as on the body: Kith's
+// Daily Paper camo zip hoodie was taken for someone wearing it, its tan patches cut out as skin, and the
+// photo stretched over what was left in streaks.
 function faceAtTop(data, w, h) {
   const person = garmentMask(data, w, h)?.mask
   if (!person) return false
@@ -518,14 +521,19 @@ function faceAtTop(data, w, h) {
   for (let y = 0; y < h && top < 0; y++) for (let x = 0; x < w; x++) if (person[y * w + x]) { top = y; break }
   for (let y = h - 1; y >= 0 && bottom < 0; y--) for (let x = 0; x < w; x++) if (person[y * w + x]) { bottom = y; break }
   if (top < 0) return false
-  let skin = 0, all = 0
-  for (let y = top; y < top + 0.15 * (bottom - top); y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x
-    if (!person[i]) continue
-    all++
-    if (isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2])) skin++
+  const share = (from, to) => {
+    let skin = 0, all = 0
+    for (let y = Math.round(from); y < to; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      if (!person[i]) continue
+      all++
+      if (isSkin(data[4 * i], data[4 * i + 1], data[4 * i + 2])) skin++
+    }
+    return all > 0 ? skin / all : 0
   }
-  return all > 0 && skin / all > 0.25
+  const tall = bottom - top
+  const head = share(top, top + 0.15 * tall), body = share(top + 0.3 * tall, top + 0.7 * tall)
+  return head > 0.25 && head > 2 * body
 }
 
 // A mask as clothMask gives one: { mask, box, bg }.

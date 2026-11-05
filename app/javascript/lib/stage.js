@@ -873,6 +873,8 @@ export class FittingStage {
     // The store's photos, for re-draping (advanceRedrape); the drape's own record doesn't carry them.
     // (A romper's or jumpsuit's halves share its photos, each its part: above the waist or below it.)
     d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null, part: item.photoPart ?? null } : null
+    // Its photos taken away (the page decided they're better not laid on): back to its colour and print.
+    if (!d.top.photos && d.redrapeState) { d.redrape = null; d.redrapeState = "off" }
     // With the photographs re-draped onto it (d.redrape), the cloth shows them and nothing else is laid on.
     d.top.setPrint(d.redrape ? null : item.print ?? null, d.redrape ? null : item.backPrint ?? null)
     d.top.setSleeves(d.redrape ? null : item.sleevePrint ?? null)

@@ -20,8 +20,17 @@ export default async function (stage, spec = new URL(import.meta.url).searchPara
     const map = await print.readDressPhoto(FRONT, {})
     if (map) { item.photoMap = { image: map.image, soft: map.soft, layout: map.layout, color: map.color }; item.print = null }
   }
+  // ?redrape=on: the photos laid on point for point after the drape, as the page does (stage.js#advanceRedrape).
+  const redrape = new URL(import.meta.url).searchParams.get("redrape") === "on"
+  // (As the page does: none for a low-contrast print all over, see fitting_room_controller.js#render.)
+  if (redrape && !item.print?.mottled) Object.assign(item, { photo: FRONT, back_photo: BACK, photoPart: null })
   stage.setOutfit([item])
   const deadline = Date.now() + 300000
-  while (!stage.settled && Date.now() < deadline) { stage.advanceDrape(); await new Promise(r => setTimeout(r, 0)) }
+  while (Date.now() < deadline) {
+    stage.advanceDrape(); stage.advanceRedrape?.()
+    await new Promise(r => setTimeout(r, 0))
+    const d = Object.values(stage.slots).find(Boolean)
+    if (stage.settled && (!item.photo || ["done", "off"].includes(d?.redrapeState))) { details.redrape = d?.redrapeState; break }
+  }
   return details
 }

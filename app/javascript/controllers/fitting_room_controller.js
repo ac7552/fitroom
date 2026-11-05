@@ -1861,9 +1861,12 @@ export default class extends Controller {
       photoSize: photoSize(garment.chart),
       photoMap: garment.photoMap ?? null,
       // The store's photos (the front cleaned of a hand or a prop where it was), for re-draping (redrape.js).
-      photo: kind === "shoes" ? null : garment.lookPhotos?.front ?? garment.photo ?? null,
+      // Not for a low-contrast print all over (a camo in browns): laid point for point it swirls and mirrors,
+      // and its drawcords land across the shoulders; its cloth repeated over every piece (print.js's tile),
+      // with the back's own photo on the back, is truer.
+      photo: kind === "shoes" || garment.print?.mottled ? null : garment.lookPhotos?.front ?? garment.photo ?? null,
       photoPart: garment.photoPart ?? null,
-      back_photo: kind === "shoes" ? null : garment.lookPhotos?.back ?? garment.back_photo ?? null,
+      back_photo: kind === "shoes" || garment.print?.mottled ? null : garment.lookPhotos?.back ?? garment.back_photo ?? null,
       fabric: garment.fabric,
       style: garment.style,
       cut: garment.cut ?? null,

@@ -85,7 +85,7 @@ export async function readPhoto(src, { shape = null, hood = true, patterns = tru
     out.getContext("2d").putImageData(new ImageData(found.print.data, found.print.width, found.print.height), 0, 0)
     const strip = found.print.strip
     print = {
-      image: out, coverage: found.print.coverage, spread: found.print.spread, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes, fromTop: found.print.fromTop ?? 0,
+      image: out, coverage: found.print.coverage, spread: found.print.spread, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes, mottled: Boolean(found.print.mottled), fromTop: found.print.fromTop ?? 0,
       strip: strip ? stripCanvas(strip) : null, vertical: Boolean(strip?.vertical),
       stripSpan: strip && !strip.vertical ? strip.span : 1, stripAcross: strip?.vertical ? { from: strip.from, span: strip.span } : null
     }
@@ -350,7 +350,8 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   // Or a low-contrast print all over it (a camo in browns and tans, a tie-dye): few marks are far enough from
   // the cloth's commonest colour to count above, but over every part of the front much of it is another
   // colour than that, by more than a fold's shading changes it.
-  const strong = (coverage > 0.25 && spread >= ALL_OVER_SPREAD) || mottled(lab, baseLab, pw, ph, k => !gap[k] && Boolean(garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)]), k => (top + Math.floor(k / pw)) * w + x0 + (k % pw))
+  const contrasting = coverage > 0.25 && spread >= ALL_OVER_SPREAD
+  const strong = contrasting || mottled(lab, baseLab, pw, ph, k => !gap[k] && Boolean(garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)]), k => (top + Math.floor(k / pw)) * w + x0 + (k % pw))
   // An all-over print: the whole front, as photographed.
   if (strong && patterns) {
     for (let k = 0; k < pw * ph; k++) out[4 * k + 3] = !gap[k] && garment.mask[(top + Math.floor(k / pw)) * w + x0 + (k % pw)] ? 255 : 0
@@ -379,7 +380,7 @@ export function findPrint(data, w, h, shape = null, { hood: hoodGuess = true, pa
   let collarTop = top
   if (!hood) while (collarTop > 0 && rows.rowMax[collarTop - 1] - rows.rowMin[collarTop - 1] >= Math.max(3, widest * 0.12)) collarTop--
   const fromTop = Math.min(0.25, Math.max(0, (top - collarTop) / Math.max(1, bottom - collarTop)))
-  const print = coverage > 0.003 || patterned || (strong && patterns) ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip, fromTop } : null
+  const print = coverage > 0.003 || patterned || (strong && patterns) ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip, fromTop, mottled: strong && !contrasting && !patterned } : null
   // A graphic on a sleeve (an all-over print or stripes already cover them).
   const sleeves = allOver || !sleeveGuess ? { left: null, right: null } : {
     left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
