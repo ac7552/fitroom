@@ -8,8 +8,8 @@ import * as THREE from "three"
 
 // Which surfaces (fabric.js's) have it: { length (m, the fibres' height), density (fibres a cm), opacity }.
 export const FUZZY = {
-  fleece: { length: 0.0016, density: 9, opacity: 0.5 },
-  felt: { length: 0.0012, density: 11, opacity: 0.38 },
+  fleece: { length: 0.0016, density: 9, opacity: 0.38 },
+  felt: { length: 0.0012, density: 11, opacity: 0.3 },
   rib: { length: 0.0007, density: 14, opacity: 0.2 }
 }
 // Layers: fewer on a phone (each is the garment drawn again, faintly).
@@ -68,7 +68,7 @@ export function fuzzFor(geometry, surface, color) {
         // Seen edge on, the fibres stand against the light; seen face on, hardly at all.
         vec3 eye = normalize( vViewPosition );
         float graze = pow( 1.0 - abs( dot( normalize( vNormal ), eye ) ), 1.6 );
-        diffuseColor.a *= uFuzz.z * ( 1.0 - vLayer * 0.7 ) * ( 0.12 + 0.88 * graze );`)
+        diffuseColor.a *= uFuzz.z * ( 1.0 - vLayer * 0.7 ) * ( 0.03 + 0.97 * graze );`)
   }
   const mesh = new THREE.InstancedMesh(geometry, material, LAYERS)
   for (let k = 0; k < LAYERS; k++) mesh.setMatrixAt(k, new THREE.Matrix4())
