@@ -4,7 +4,7 @@
 //   node script/headless/render.mjs --out tmp/shots/hoodie.png --scene daylight --body men --pose standing \
 //        --items '[{"kind":"top","style":"hoodie","size":{"chest":112,"shoulders":50,"sleeve":64,"length":70},"color":"#2a6b3f","fabric":"fleece"}]'
 //
-// Options: --items JSON (see stage.js#setOutfit; sizes in cm), --body men|women, --measures JSON (cm),
+// Options: --query (the page address's, e.g. "still=off// Options: --items JSONcoarse=off"), --items JSON (see stage.js#setOutfit; sizes in cm), --body men|women, --measures JSON (cm),
 // --scene dark|daylight|studio, --pose standing|relaxed|walking|arms_out, --view mannequin|ghost|fit,
 // --tucked, --turn RADIANS (camera round the figure), --width/--height (picture), --script FILE (a JS module
 // run in the page after the drape, with window.stage), --photo (use stage.photo, sharper, rather than a
@@ -36,7 +36,7 @@ const page = await browser.newPage({ viewport: { width, height }, deviceScaleFac
 page.on("pageerror", e => console.error("page error:", e.message))
 page.on("console", m => { if (["error", "warning"].includes(m.type()) || process.env.VERBOSE) console.error("console:", m.text()) })
 page.on("requestfailed", r => console.error("request failed:", r.url(), r.failure()?.errorText))
-await page.goto(`${base}/stage.html`)
+await page.goto(`${base}/stage.html${args.query ? "?" + args.query : ""}`)
 await page.evaluate(([w, h]) => { const s = document.querySelector(".stage"); s.style.width = `${w}px`; s.style.height = `${h}px` }, [width, height])
 await page.waitForFunction(() => window.stageReady, null, { timeout: 120000 })
 

@@ -28,8 +28,9 @@ const CLOTHS = {
   jersey: { surface: "knit", tile: 0.02, roughness: 0.92, sheen: 0.45, sheenRoughness: 0.7, normal: 0.28 },
   rib: { surface: "rib", tile: 0.02, roughness: 0.92, sheen: 0.45, sheenRoughness: 0.7, normal: 0.9 },
   fleece: { surface: "fleece", tile: 0.025, roughness: 0.97, sheen: 0.75, sheenRoughness: 0.85, normal: 0.4 },
-  twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5 },
-  shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25 },
+  // (anisotropy: the shine drawn out along the threads, as a weave's is; a twill's runs on its diagonal.)
+  twill: { surface: "twill", tile: 0.012, roughness: 0.88, sheen: 0.2, sheenRoughness: 0.5, normal: 0.5, anisotropy: 0.25, anisotropyRotation: Math.PI / 4 },
+  shell: { surface: "ripstop", tile: 0.03, roughness: 0.42, sheen: 0.1, sheenRoughness: 0.3, normal: 0.25, clearcoat: 0.25, anisotropy: 0.3 },
   // Nylon pants (track pants, technical trousers): a tight plain weave, matte, with only a faint sheen along
   // the folds; nothing like a jacket's glossy shell.
   matte: { surface: "plain", tile: 0.006, roughness: 0.82, sheen: 0.16, sheenRoughness: 0.55, normal: 0.12 },
@@ -38,7 +39,7 @@ const CLOTHS = {
   // cloth catches every small fold).
   leather: { surface: "grain", tile: 0.04, roughness: 0.74, sheen: 0.12, sheenRoughness: 0.55, normal: 0.3, clearcoat: 0.03, clearcoatRoughness: 0.8 },
   // Silk, satin, chiffon: smooth, with a strong soft sheen along the folds.
-  silk: { surface: "smooth", tile: 0.05, roughness: 0.4, sheen: 1, sheenRoughness: 0.3, normal: 0.06 },
+  silk: { surface: "smooth", tile: 0.05, roughness: 0.4, sheen: 1, sheenRoughness: 0.3, normal: 0.06, anisotropy: 0.55, anisotropyRotation: Math.PI / 2 },
   // Stretch (nylon and elastane): a very fine knit, a little sheen.
   stretch: { surface: "fine", tile: 0.012, roughness: 0.68, sheen: 0.35, sheenRoughness: 0.45, normal: 0.12 },
   // Suiting and other cloths that hold their shape: a tight, matte weave with a faint sheen.
@@ -53,6 +54,19 @@ export const QUILT = { spacing: 11, loft: 0.008, seam: 0.3 }
 // Creases (see the cloth shader): how much a fold's shade (1 - aShade) counts beside the cloth's squeeze, and
 // how much darker and rougher the cloth is at a full crease. Kept low: dark creases read as dirt.
 const CREASE = { fold: 0.6, dark: 0.14, rough: 0.3 }
+// Wrinkles where the cloth is squeezed (aFold, see DrapedTop#markStrain): the drape's points are about 1.6 cm
+// apart, too far to fold as finely as cloth buckles, so the buckling is drawn: ridges across the way the
+// cloth is squeezed, `wave` cm apart and up to `depth` m high at a full squeeze. A light knit or silk buckles
+// finely, denim and a shell in broad, deep folds.
+const WRINKLES = {
+  knit: { wave: 1.7, depth: 0.0022 }, rib: { wave: 1.4, depth: 0.0012 }, fleece: { wave: 2.4, depth: 0.003 },
+  twill: { wave: 2.8, depth: 0.0032 }, ripstop: { wave: 3.2, depth: 0.0034 }, plain: { wave: 2.2, depth: 0.0024 },
+  felt: { wave: 3, depth: 0.003 }, grain: { wave: 3.6, depth: 0.003 }, smooth: { wave: 1.3, depth: 0.0018 },
+  fine: { wave: 1.4, depth: 0.0016 }
+}
+const ANISO_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("aniso") !== "off"
+// ?wrinkles=off draws the cloth without them.
+const WRINKLES_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("wrinkles") !== "off"
 // Which pattern fabric (pattern.js) is which cloth here; "denim" and "cotton" are what shops call them.
 const ALIASES = { cotton: "jersey", denim: "twill", nylon: "shell", leather: "shell" }
 
@@ -314,7 +328,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     color: fitMap ? 0xffffff : color, vertexColors: fitMap, roughness: look.roughness, normalMap,
     normalScale: new THREE.Vector2(look.normal, look.normal), sheen: fitMap ? 0 : look.sheen,
     sheenRoughness: look.sheenRoughness, sheenColor: sheenTint(color),
-    clearcoat: fitMap ? 0 : look.clearcoat ?? 0, clearcoatRoughness: look.clearcoatRoughness ?? 0.5, side: THREE.DoubleSide
+    clearcoat: fitMap ? 0 : look.clearcoat ?? 0, clearcoatRoughness: look.clearcoatRoughness ?? 0.5, side: THREE.DoubleSide,
+    // Along the pattern's threads (the normal map's coordinates are the pattern's, in metres): ?aniso=off for none.
+    anisotropy: fitMap || !ANISO_ON ? 0 : look.anisotropy ?? 0, anisotropyRotation: look.anisotropyRotation ?? 0
   })
   const uniforms = {
     uStitch: { value: { hem: 1, topstitch: 2 }[details.stitch] ?? 0 },
@@ -375,6 +391,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uSheer: { value: details.sheer ?? 1 },
     // A puffer's baffles: x how far each puffs out (m; 0 for no quilting), y how far apart they are (cm).
     uQuilt: { value: new THREE.Vector2(details.quilt ? QUILT.loft : 0, QUILT.spacing) },
+    // Drawn wrinkles: x their spacing (cm), y their height at a full squeeze (m; 0 for none).
+    uWrinkle: { value: new THREE.Vector2(WRINKLES[look.surface]?.wave ?? 2, WRINKLES_ON && !details.quilt ? WRINKLES[look.surface]?.depth ?? 0.0024 : 0) },
     // The AI's picture of this view, laid back on from its camera (see PROJECTION; stage.js#wearPhoto sets it).
     ...projectionUniforms()
   }
@@ -395,6 +413,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute float aHole;
         attribute float aCover;
         attribute float aStrain;
+        attribute vec2 aFold;
+        varying vec2 vFold;
         attribute float aDown;
         attribute float aAcross;
         uniform vec2 uQuilt;
@@ -413,7 +433,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         varying float vShade;
         varying vec2 vPattern;`)
       .replace("#include <uv_vertex>", `#include <uv_vertex>
-        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain; vDown = aDown; vAcross = aAcross;`)
+        vEdge = aEdge; vHem = aHem; vPiece = aPiece; vShade = aShade; vHide = aHide; vPhoto = aPhoto; vPattern = uv * 100.0; vHole = aHole; vSheer = aSheer; vCover = aCover; vStrain = aStrain; vFold = aFold; vDown = aDown; vAcross = aAcross;`)
       // Drawn a hair off the cloth's simulated surface, so the skin under it never shows through.
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         transformed += normalize( objectNormal ) * 0.0015;
@@ -425,6 +445,12 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
       // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
       .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );") + `
         if ( uQuilt.x > 0.0 ) normal = heightNormal( quiltHeight(), - vViewPosition, normal, faceDirection );
+        if ( uWrinkle.y > 0.0 && dot( vFold, vFold ) > 1e-4 ) {
+          // (Across the tangent frame of the pattern's coordinates, as a normal map is.)
+          mat3 wrinkleFrame = getTangentFrame( - vViewPosition, normal, vPattern );
+          vec2 wrinkle = wrinkleSlope() * 100.0;   // per metre of cloth (vPattern is in cm)
+          normal = normalize( normal - wrinkle.x * wrinkleFrame[ 0 ] - wrinkle.y * wrinkleFrame[ 1 ] );
+        }
         // A re-draped photo's relief: the fabric's weave, ribbing, stitching and small creases, as photographed.
         if ( uPhotoOn > 0.5 && uPhotoBump > 0.0 ) normal = heightNormal( gPhotoHeight * uPhotoBump, - vViewPosition, normal, faceDirection );`)
       .replace("#include <common>", `#include <common>
@@ -467,6 +493,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPhotoBump;
         float gPhotoHeight = 0.0;
         uniform float uSheer;
+        uniform vec2 uWrinkle;
+        varying vec2 vFold;
         uniform vec2 uQuilt;
         varying float vCover;
         varying float vStrain;
@@ -486,6 +514,33 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         }
         float dashes( vec2 p ) { return step( fract( ( p.x + p.y ) / 0.42 ), 0.62 ); }
         // A puffer baffle's height (m) at this point, by how far down the garment it is (see uQuilt).
+        // Wrinkles: vFold is how squeezed the cloth is and along which way on its pattern, as the doubled angle
+        // (a direction and its reverse are one way to squeeze, and stay one as they're blended across a
+        // triangle). Ridges run across that way, uWrinkle.x cm apart, bent and broken by a slow noise so they
+        // don't line up like corduroy, each fading out along its length.
+        float wrinkleNoise( vec2 p ) {
+          vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
+          float a = fract( sin( dot( i, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+          float b = fract( sin( dot( i + vec2( 1.0, 0.0 ), vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+          float c = fract( sin( dot( i + vec2( 0.0, 1.0 ), vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+          float d = fract( sin( dot( i + vec2( 1.0, 1.0 ), vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+          return mix( mix( a, b, f.x ), mix( c, d, f.x ), f.y );
+        }
+        // The ridges' slope on the pattern (height per cm, its two components across the pattern's x and y),
+        // worked out exactly rather than from the screen's pixel steps, so the ridges are smooth at any distance.
+        vec2 wrinkleSlope() {
+          float amount = min( length( vFold ), 1.0 );
+          float angle = 0.5 * atan( vFold.y, vFold.x );
+          vec2 along = vec2( cos( angle ), sin( angle ) ), across = vec2( -along.y, along.x );
+          vec2 p = vPattern / uWrinkle.x;
+          float bend = 1.6 * wrinkleNoise( p * 0.3 + 7.0 ) + 0.5 * wrinkleNoise( p * 0.8 );
+          float phase = 6.2832 * ( dot( p, along ) + bend );
+          float breakUp = smoothstep( 0.3, 0.8, wrinkleNoise( vec2( dot( p, across ) * 0.4, dot( p, along ) * 1.1 ) + 3.0 ) );
+          // h = depth * amount * breakUp * (1 + cos(phase)) / 2: its slope along the ridges' way (the noise's own
+          // slope is slow, and left out).
+          float dh = -0.5 * sin( phase ) * 6.2832 / uWrinkle.x;
+          return along * ( uWrinkle.y * amount * breakUp * dh );
+        }
         float quiltHeight() { return uQuilt.x * sqrt( max( sin( 3.14159265 * fract( vDown / uQuilt.y ) ), 1e-3 ) ) * smoothstep( 0.0, 2.5, vEdge ); }
         // The surface's normal tilted by a height's slope (three.js's bump mapping, by screen derivatives).
         vec3 heightNormal( float h, vec3 position, vec3 normal, float faceDirection ) {

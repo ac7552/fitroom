@@ -19,6 +19,7 @@ import { meanRatio } from "lib/projection"
 import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
 import { HangerDrape, collarColour, collarStrip, guardForeign, loadPhotoForRedrape, registerPhoto, rigidPrints, showsCloth, trustPieces } from "lib/garments/redrape"
 import { easeInOut, framing } from "lib/framing"
+import { StillFrames } from "lib/still"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
 // script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
@@ -120,6 +121,8 @@ const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
 const TUCKED_LAYERS = ["top", "bottom", "outer"]
 const TUCKED_OVER = { top: [], bottom: [], outer: ["top", "bottom"] }
 
+// Frames averaged for a photo (still.js): smoother edges and softer shadows than one frame.
+const PHOTO_SAMPLES = 16
 // The camera's angle for a "front" photo: a touch off straight on, as lookbooks shoot.
 const FRONT_ANGLE = 0.12
 // The plain backdrop a garment is photographed on to be checked (lookShot): a shop photo's pale grey.
@@ -181,6 +184,8 @@ export class FittingStage {
     this.controls.maxPolarAngle = 1.75
     this.idleTurn()
     this.effects = this.addEffects()
+    // Once nothing moves, frames averaged into a smoother, softer-shadowed picture (still.js).
+    this.still = this.effects ? new StillFrames(this) : null
     this.setScene("studio")
 
     this.resize()
@@ -1497,7 +1502,8 @@ export class FittingStage {
     }
     this.effects?.composer.setPixelRatio(1)
     this.effects?.composer.setSize(width, height)
-    this.draw()
+    // A photo is the still picture: frames averaged, a fraction of a pixel and the light's place apart (still.js).
+    if (!this.still?.drawAveraged(PHOTO_SAMPLES)) this.draw()
     const grained = withGrain(renderer.domElement)
     const image = toBlob(grained)
     let depth = null, mask = null
@@ -1850,7 +1856,7 @@ export class FittingStage {
     this.wearScarf()
     this.wearCollars()
     this.hideCovered()
-    this.draw()
+    if (!this.still?.draw()) this.draw()
     this.frameId = this.visible ? requestAnimationFrame(this.tick) : null
   }
 

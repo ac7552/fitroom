@@ -6,7 +6,7 @@ import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms, riseFor } from
 import { buildCloth } from "lib/garments/cloth"
 import { placeCloth } from "lib/garments/place"
 import { bottomsPhotoUV, dressPhotoUV, heightsDown, widthsAcross } from "lib/garments/photo_map"
-import { Drape } from "lib/garments/drape"
+import { CLOTHS, Drape } from "lib/garments/drape"
 import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
 import { sheerShow } from "lib/garments/sheer"
 
@@ -21,6 +21,12 @@ const PHOTO_BUMP = 0.0015
 export const TOP_STYLES = Object.keys(STYLES)
 const SPACING = 1.6   // cm between the cloth's points
 const BOTTOM_SPACING = 2   // pants have more cloth, and less fine detail to show
+// The cloth's free edges drawn with depth (DrapedTop#makeRim): how deep, as a share of the fabric's thickness
+// in the drape (a turned-up hem is two layers, and a little more where it rolls); ?rim=off draws none.
+const RIM_DEPTH = 1.4
+const RIM_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("rim") !== "off"
+// How far out along its normal the cloth's shader draws it (fabric.js's begin_vertex).
+const SURFACE_LIFT = 0.0015
 
 // The body as it's shaped and posed now, in world space: positions, normals, triangles, skin weights and bone
 // names (for bodyFrame), from the mannequin's skinned mesh.
@@ -498,6 +504,9 @@ export class DrapedTop {
     this.mesh = new THREE.Mesh(this.geometry, [this.materials.main, this.materials.rib])
     this.mesh.castShadow = this.mesh.receiveShadow = true
     this.mesh.frustumCulled = false
+    // The cloth's thickness along its free edges (hems, cuffs, the neckline): see makeRim.
+    this.rim = RIM_ON ? this.makeRim() : null
+    if (this.rim) this.mesh.add(this.rim.mesh)
     this.update()
   }
 
@@ -583,6 +592,7 @@ export class DrapedTop {
     geometry.setAttribute("aSheer", new THREE.BufferAttribute(sheer, 1))
     geometry.setAttribute("aCover", new THREE.BufferAttribute(new Float32Array(n), 1))
     geometry.setAttribute("aStrain", new THREE.BufferAttribute(new Float32Array(n), 1))
+    geometry.setAttribute("aFold", new THREE.BufferAttribute(new Float32Array(2 * n), 2))
     geometry.setAttribute("aDown", new THREE.BufferAttribute(this.bottoms ? new Float32Array(n) : heightsDown(cloth, this.pattern), 1))
     geometry.setAttribute("aAcross", new THREE.BufferAttribute(this.bottoms ? new Float32Array(n) : widthsAcross(cloth, this.pattern), 1))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
@@ -622,6 +632,7 @@ export class DrapedTop {
     if (covered) attribute.array.set(covered)
     else attribute.array.fill(0)
     attribute.needsUpdate = true
+    if (this.rim) this.updateRim(this.geometry.attributes.position.array, this.geometry.attributes.normal.array)
   }
 
   setColor(color) {
@@ -789,6 +800,95 @@ export class DrapedTop {
 
   setFitMap(on) {
     this.mesh.material = on ? [this.materials.fitMain, this.materials.fitRib] : [this.materials.main, this.materials.rib]
+    if (this.rim) this.rim.mesh.material = this.mesh.material
+  }
+
+  // The cloth drawn as a sheet has no thickness, so a hem, a cuff or a neckline seen edge on is a line as thin
+  // as paper. Along each free edge, a strip as deep as the turned-up cloth is (RIM_DEPTH times the fabric's
+  // thickness) runs in from the outside of the cloth to its inside, facing out past the edge, so the edge
+  // reads as cloth. Its points copy their edge point's attributes (pattern place, piece, hem), so it's drawn
+  // with the cloth's own materials, colour and stitching. Returns { mesh, source, inward } or null.
+  makeRim() {
+    const { cloth } = this
+    const runs = cloth.free.filter(run => run.length >= 2)
+    if (!runs.length) return null
+    // Each rim point's edge point, and (for its facing) the cloth points next to it off the edge.
+    const source = [], pairs = []
+    for (const run of runs) {
+      const start = source.length / 2
+      for (const i of run) source.push(i, i)
+      for (let k = 0; k + 1 < run.length; k++) pairs.push(start + k, start + k + 1)
+    }
+    const near = new Map()
+    for (const [a, b, c] of cloth.triangles) {
+      for (const [p, q] of [[a, b], [b, c], [c, a], [b, a], [c, b], [a, c]]) {
+        if (!cloth.boundary[p] || cloth.boundary[q]) continue
+        if (!near.has(p)) near.set(p, [])
+        near.get(p).push(q)
+      }
+    }
+    const inward = source.filter((_, k) => k % 2 === 0).map(i => near.get(i) ?? [])
+    const count = source.length
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * count), 3).setUsage(THREE.DynamicDrawUsage))
+    geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(3 * count), 3).setUsage(THREE.DynamicDrawUsage))
+    for (const [name, attribute] of Object.entries(this.geometry.attributes)) {
+      if (name === "position" || name === "normal") continue
+      const size = attribute.itemSize, from = attribute.array
+      const array = new Float32Array(size * count)
+      for (let k = 0; k < count; k++) for (let c = 0; c < size; c++) array[size * k + c] = from[size * source[k] + c]
+      geometry.setAttribute(name, new THREE.BufferAttribute(array, size))
+    }
+    // Two triangles for each step along an edge, between its outside (even) and inside (odd) rim points, in the
+    // cloth's own material or its rib's.
+    const rib = cloth.panelFabric.map(f => f === "rib")
+    const main = [], ribbed = []
+    for (let k = 0; k < pairs.length; k += 2) {
+      const a = 2 * pairs[k], b = 2 * pairs[k + 1]
+      ;(rib[cloth.panel[source[a]]] ? ribbed : main).push(a, b, a + 1, b, b + 1, a + 1)
+    }
+    geometry.setIndex([...main, ...ribbed])
+    geometry.addGroup(0, main.length, 0)
+    geometry.addGroup(main.length, ribbed.length, 1)
+    const mesh = new THREE.Mesh(geometry, this.mesh.material)
+    mesh.castShadow = mesh.receiveShadow = true
+    mesh.frustumCulled = false
+    const depth = Math.min(0.007, Math.max(0.003, RIM_DEPTH * (CLOTHS[this.pattern.fabric] ?? CLOTHS.jersey).thickness))
+    return { mesh, geometry, source, inward, depth }
+  }
+
+  // The rim where the cloth is now (update): each edge point's outside at the cloth's drawn surface, its inside
+  // the cloth's depth under it, facing out past the edge (away from the cloth next to it, across the cloth).
+  updateRim(position, normal) {
+    const { geometry, source, inward, depth } = this.rim
+    const out = geometry.attributes.position.array, facing = geometry.attributes.normal.array
+    // (The cloth's shader draws everything SURFACE_LIFT out along its normal: the rim's outside lands on the
+    // cloth's drawn surface, and the lift along the rim's own facing is taken back off.)
+    const lift = SURFACE_LIFT
+    for (let k = 0; k < inward.length; k++) {
+      const i = source[2 * k]
+      const px = position[3 * i], py = position[3 * i + 1], pz = position[3 * i + 2]
+      const nx = normal[3 * i], ny = normal[3 * i + 1], nz = normal[3 * i + 2]
+      // Away from the cloth beside the edge, flattened into the cloth's plane.
+      let ex = 0, ey = 0, ez = 0
+      for (const j of inward[k]) { ex += px - position[3 * j]; ey += py - position[3 * j + 1]; ez += pz - position[3 * j + 2] }
+      const along = ex * nx + ey * ny + ez * nz
+      ex -= along * nx; ey -= along * ny; ez -= along * nz
+      const l = Math.hypot(ex, ey, ez) || 1
+      ex /= l; ey /= l; ez /= l
+      const o = 6 * k
+      out[o] = px + nx * lift - ex * lift; out[o + 1] = py + ny * lift - ey * lift; out[o + 2] = pz + nz * lift - ez * lift
+      out[o + 3] = px - nx * (depth - lift) - ex * lift; out[o + 4] = py - ny * (depth - lift) - ey * lift; out[o + 5] = pz - nz * (depth - lift) - ez * lift
+      for (let c = 0; c < 2; c++) { facing[o + 3 * c] = ex; facing[o + 3 * c + 1] = ey; facing[o + 3 * c + 2] = ez }
+    }
+    // What's hidden on the cloth (tucked in, covered by a garment over it) is hidden on its rim.
+    for (const name of ["aHide", "aCover"]) {
+      const from = this.geometry.attributes[name].array, to = geometry.attributes[name].array
+      for (let k = 0; k < source.length; k++) to[k] = from[source[k]]
+      geometry.attributes[name].needsUpdate = true
+    }
+    geometry.attributes.position.needsUpdate = true
+    geometry.attributes.normal.needsUpdate = true
   }
 
   // Positions and normals from the drape. Normals are worked out on the joined cloth, so they run smoothly
@@ -813,6 +913,7 @@ export class DrapedTop {
     geometry.computeBoundingSphere()
     if (drape.tuck) this.hideTucked()
     if (this.done) this.markStrain()
+    if (this.rim) this.updateRim(position, normal)
   }
 
   // How squeezed the cloth is at each point (0 to 1): its edges shorter than cut, as at the inside of an
@@ -822,24 +923,46 @@ export class DrapedTop {
     const { drape, cloth, triangles } = this
     const map = drape.map, x = drape.x, pts = cloth.points
     const n = pts.length, squeeze = new Float32Array(n)
+    // And which way it's squeezed, on the pattern: each squeezed edge adds its direction (as a tensor, so an
+    // edge and its reverse count alike), weighted by how much it's squeezed.
+    const tensor = new Float32Array(3 * n)
     const edge = (a, b) => {
-      const rest = Math.hypot(pts[a][0] - pts[b][0], pts[a][1] - pts[b][1]) / 100
+      const ux = pts[b][0] - pts[a][0], uy = pts[b][1] - pts[a][1]
+      const rest = Math.hypot(ux, uy) / 100
       if (rest < 1e-4) return
       const ja = map ? map[a] : a, jb = map ? map[b] : b
       const now = Math.hypot(x[3 * ja] - x[3 * jb], x[3 * ja + 1] - x[3 * jb + 1], x[3 * ja + 2] - x[3 * jb + 2])
       const c = 1 - now / rest
       if (c > squeeze[a]) squeeze[a] = c
       if (c > squeeze[b]) squeeze[b] = c
+      if (c > 0) {
+        const dx = ux / (rest * 100), dy = uy / (rest * 100)
+        for (const i of [a, b]) { tensor[3 * i] += c * dx * dx; tensor[3 * i + 1] += c * dx * dy; tensor[3 * i + 2] += c * dy * dy }
+      }
     }
     for (let t = 0; t < triangles.length; t += 3) {
       edge(triangles[t], triangles[t + 1]); edge(triangles[t + 1], triangles[t + 2]); edge(triangles[t + 2], triangles[t])
     }
     const strain = this.geometry.attributes.aStrain
+    const fold = this.geometry.attributes.aFold
     for (let i = 0; i < n; i++) {
       const t = Math.min(1, Math.max(0, (squeeze[i] - 0.03) / 0.17))
       strain.array[i] = t * t * (3 - 2 * t)
+      // Wrinkles (fabric.js's wrinkleSlope): how much, from about the creases' squeeze (4% up), and the way, as the doubled angle of the tensor's main axis; squeezed as much
+      // every way (gathered all round), the ridges have no way to run, and fade.
+      if (!fold) continue
+      const xx = tensor[3 * i], xy = tensor[3 * i + 1], yy = tensor[3 * i + 2]
+      const trace = xx + yy
+      if (trace < 1e-6) { fold.array[2 * i] = fold.array[2 * i + 1] = 0; continue }
+      const c2 = (xx - yy) / trace, s2 = (2 * xy) / trace
+      const w = Math.min(1, Math.max(0, (squeeze[i] - 0.04) / 0.14))
+      const amount = w * w * (3 - 2 * w) * (0.35 + 0.65 * Math.min(1, Math.hypot(c2, s2)))
+      const len = Math.hypot(c2, s2) || 1
+      fold.array[2 * i] = (c2 / len) * amount
+      fold.array[2 * i + 1] = (s2 / len) * amount
     }
     strain.needsUpdate = true
+    if (fold) fold.needsUpdate = true
   }
 
   // A tucked top isn't drawn from a little below the waistband's top down: it's inside the pants there,
@@ -992,6 +1115,7 @@ export class DrapedTop {
     this.backTexture?.dispose()
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.geometry.dispose()
+    this.rim?.geometry.dispose()
     for (const material of Object.values(this.materials)) {
       material.normalMap?.dispose()
       material.dispose()
