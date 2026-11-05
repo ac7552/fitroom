@@ -1,4 +1,4 @@
-// Times the drape on the page against the drape in a Web Worker (?drape=worker, lib/garments/remote_drape.js),
+// Times the drape on the page against the drape in a Web Worker (the default; ?drape=page drapes on the page; lib/garments/remote_drape.js),
 // in the running app, on the Mac, in headless Chrome (a real foreground page: a hidden tab runs slowly), and
 // checks the two come out the same:
 //
@@ -114,7 +114,7 @@ async function main() {
       for (const mode of ["page", "worker"]) {
         const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } })
         page.on("console", message => { if (message.text().startsWith("[drape]")) console.log(`  (${mode}) ${message.text()}`) })
-        await page.goto(`${options.base}/${mode === "worker" ? "?drape=worker" : ""}#fit`, { waitUntil: "load" })
+        await page.goto(`${options.base}/${mode === "worker" ? "" : "?drape=page"}#fit`, { waitUntil: "load" })
         await page.waitForFunction(`window.Stimulus && ${CONTROLLER}?.stage`, null, { timeout: 60000 })
         const m = await page.evaluate(RUN(options.links))
         if (options.gpu && mode === "page" && run === 0) m.gpu = await page.evaluate(GPU)

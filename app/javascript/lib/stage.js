@@ -1,5 +1,6 @@
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js"
@@ -107,8 +108,9 @@ const EASE_KEYS = {
 const LAYERS = ["bottom", "top", "outer"]
 // What a posing step yields while it waits for the drape worker (see posingRemote).
 const WAITING = "waiting"
-// Draping in a Web Worker (remote_drape.js), for now when the page's address asks for it: ?drape=worker.
-const DRAPE_IN_WORKER = typeof location !== "undefined" && new URLSearchParams(location.search).get("drape") === "worker"
+// Draping in a Web Worker (remote_drape.js), so turning the mannequin stays smooth while the cloth settles;
+// ?drape=page drapes on the page instead (it falls back to that by itself where workers can't start).
+const DRAPE_IN_WORKER = typeof location !== "undefined" && typeof Worker !== "undefined" && new URLSearchParams(location.search).get("drape") !== "page"
 const BANK_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("bank") !== "off"
 // The store's photographs laid on a top's cloth point for point (redrape.js); ?redrape=off does without.
 const REDRAPE_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("redrape") !== "off"
@@ -198,7 +200,7 @@ export class FittingStage {
 
   async load() {
     const [gltf, calibration, poses, studio, women] = await Promise.all([
-      new GLTFLoader().loadAsync(`${MODELS}/mannequin.glb`),
+      new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${MODELS}/mannequin.glb`),
       fetch(`${MODELS}/mannequin.json`).then(r => r.json()),
       fetch(`${MODELS}/poses.json`).then(r => r.json()),
       new RGBELoader().loadAsync(`${MODELS}/studio.hdr`),

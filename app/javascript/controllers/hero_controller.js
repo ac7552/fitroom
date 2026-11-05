@@ -1,6 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 
 // The home page's opening scene. In cold mist, Fitroom's jacket starts as a technical drawing (its seams,
@@ -89,7 +90,7 @@ export default class extends Controller {
   // Loading
 
   async load() {
-    const gltf = await new GLTFLoader().loadAsync(this.modelValue)
+    const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(this.modelValue)
     let source
     gltf.scene.updateMatrixWorld(true)
     gltf.scene.traverse(object => { if (object.isMesh && !source) source = object })

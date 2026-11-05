@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { COARSE_FACTOR, COARSE_ON, FINE_FRAMES, coarseFirst } from "lib/garments/coarse"
 import { bodyFrame, SkinField } from "lib/garments/body"
 import { STYLES, draftTop } from "lib/garments/pattern"
 import { BACK_RAISE, BOTTOM_STYLES, bottomMeasures, draftBottoms, riseFor } from "lib/garments/pants"
@@ -410,42 +411,50 @@ export function sewingFor({ item, body, frame, field, measures }) {
   // A top that zips down the front (a zip hoodie) is drafted with that closure, so the zip is drawn on it.
   const cut = item.zip && !bottoms ? { ...(item.cut ?? {}), closure: "zip" } : item.cut ?? null
   const pattern = bottoms ? draftBottoms(item.style, size, wearer, cut) : draftTop(item.style, size, wearer, cut)
-  const cloth = buildCloth(pattern, bottoms ? BOTTOM_SPACING : SPACING)
-  const { positions, attach } = placeCloth(cloth, pattern, frame)
-  // A skirt hangs round both legs; pants go round each.
-  const envelope = bottoms && item.style !== "skirt" ? null : { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor }
   // A dress held up by straps, round the neck (a halter) or round the bust grips where it rests (as straps
   // and boning do, rather than sliding off the shoulders' slope); pants grip at the waist; others slide over
   // the body as usual.
   const holds = ["strapless", "one_shoulder", "halter", "straps", "thin_straps", "none"].includes(item.cut?.sleeves)
-  // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist. A dress with nothing over
-  // its shoulders but what holds it up, held there as a waistband is (its whole weight hangs from it, and it
-  // otherwise slides down into a heap at the feet, or to the waist): a halter by its straps where they meet
-  // round the neck, a strapless one by its top edge (its boning), a one-shoulder one by both.
-  const dressHold = { halter: /^(front|back)\/shoulder_[LR]$/, strapless: /^(front|back)\/top$/, one_shoulder: /^(front|back)\/(?:top|shoulder_L)$/ }[item.cut?.sleeves]
-  const ring = bottoms ? {
-    points: Object.entries(cloth.edges).filter(([key]) => /^(front|back)(_[LR])?\/waist$/.test(key)).flatMap(([, idx]) => idx),
-    length: pattern.measures.waist / 100
-  } : item.style === "dress" && dressHold ? {
-    points: Object.entries(cloth.edges).filter(([key]) => dressHold.test(key)).flatMap(([, idx]) => idx),
-    length: null
-  } : null
-  const drape = new Drape(cloth, positions, { ...body, field }, {
-    // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
-    // hang caught on them, short).
-    fabric: pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, ring,
-    // Pants, and a dress or coat long enough to reach it, rest on the floor (a gown's hem carries its weight
-    // there, rather than pulling it off the shoulders).
-    floor: bottoms || item.style === "dress" || item.style === "coat" ? frame.floor + 0.004 : null,
-    feet: bottoms && item.style !== "skirt" ? frame.feet : null,
-    snug: bottoms && item.style !== "skirt" ? snugRound(item.style, pattern) : null,
-    tuck,
-    // A long hem (pants, skirts, dresses) keeps a smooth edge, but the strip above it is no stiffer than
-    // the rest: stiffened, it rolls out like a cuff and flicks up at the side seams.
-    hemStrip: !bottoms && item.style !== "dress",
-    // A top's sleeves stop at the hands (a sleeve longer than the arm gathers above its cuff).
-    arms: bottoms ? null : frame.arms
-  })
+  const spacing = bottoms ? BOTTOM_SPACING : SPACING
+  // The cloth cut at one spacing, placed round the body, with its waistband and the Drape's options.
+  const cutCloth = spacing => {
+    const cloth = buildCloth(pattern, spacing)
+    const { positions, attach } = placeCloth(cloth, pattern, frame)
+    // A skirt hangs round both legs; pants go round each.
+    const envelope = bottoms && item.style !== "skirt" ? null : { table: frame.torso, top: frame.crotch + 0.03, bottom: frame.floor }
+    // Pants' waist: the top edges of the leg pieces, as long round as the pants' waist. A dress with nothing over
+    // its shoulders but what holds it up, held there as a waistband is (its whole weight hangs from it, and it
+    // otherwise slides down into a heap at the feet, or to the waist): a halter by its straps where they meet
+    // round the neck, a strapless one by its top edge (its boning), a one-shoulder one by both.
+    const dressHold = { halter: /^(front|back)\/shoulder_[LR]$/, strapless: /^(front|back)\/top$/, one_shoulder: /^(front|back)\/(?:top|shoulder_L)$/ }[item.cut?.sleeves]
+    const ring = bottoms ? {
+      points: Object.entries(cloth.edges).filter(([key]) => /^(front|back)(_[LR])?\/waist$/.test(key)).flatMap(([, idx]) => idx),
+      length: pattern.measures.waist / 100
+    } : item.style === "dress" && dressHold ? {
+      points: Object.entries(cloth.edges).filter(([key]) => dressHold.test(key)).flatMap(([, idx]) => idx),
+      length: null
+    } : null
+    const options = {
+      // A coat slides down over the clothes under it as it's sewn (held by them as a top is by skin, it'd
+      // hang caught on them, short).
+      fabric: pattern.fabric, envelope, attach, friction: holds ? 0.12 : item.style === "coat" ? 0.05 : 0.7, ring,
+      // Pants, and a dress or coat long enough to reach it, rest on the floor (a gown's hem carries its weight
+      // there, rather than pulling it off the shoulders).
+      floor: bottoms || item.style === "dress" || item.style === "coat" ? frame.floor + 0.004 : null,
+      feet: bottoms && item.style !== "skirt" ? frame.feet : null,
+      snug: bottoms && item.style !== "skirt" ? snugRound(item.style, pattern) : null,
+      tuck,
+      // A long hem (pants, skirts, dresses) keeps a smooth edge, but the strip above it is no stiffer than
+      // the rest: stiffened, it rolls out like a cuff and flicks up at the side seams.
+      hemStrip: !bottoms && item.style !== "dress",
+      // A top's sleeves stop at the hands (a sleeve longer than the arm gathers above its cuff).
+      arms: bottoms ? null : frame.arms
+    }
+    return { cloth, positions, options }
+  }
+  const fine = cutCloth(spacing)
+  const cloth = fine.cloth
+  const drape = new Drape(cloth, fine.positions, { ...body, field }, fine.options)
   // A long garment (a dress, pants) has further to fall, so it settles for longer.
   const long = pattern.style === "dress" || pattern.measures.length > 85
   // Pants are sewn without gravity (nothing holds them up until they're closed), then fall straight under
@@ -457,10 +466,13 @@ export function sewingFor({ item, body, frame, field, measures }) {
   const phases = skirt ? { settleFrames: 280, calmFrames: 60, relaxFrames: 12, weld: true }
     : bottoms ? { settleFrames: long ? 240 : 160, calmFrames: 60, sewGravity: 0, heavyFrames: drape.snug ? 0 : 60 }
     : long ? { settleFrames: 280, calmFrames: 60, sewGravity: holds ? 0 : 0.4, heavyFrames: item.style === "coat" ? 60 : 0 } : { settleFrames: 140, calmFrames: 45 }
-  const steps = drape.phases(phases)
+  // Sewn and settled as a coarser cloth first, then finished at full resolution (coarse.js); ?coarse=off drapes
+  // the full cloth all the way.
+  const coarse = COARSE_ON && !item.noCoarse ? cutCloth(spacing * COARSE_FACTOR) : null
+  const steps = coarse ? coarseFirst(drape, { cloth: coarse.cloth, start: coarse.positions, options: coarse.options }, { ...body, field }, phases) : drape.phases(phases)
   // About how many steps the drape takes (sewing stops when the seams close, so it's a guess), for a
   // progress bar.
-  const expected = (phases.relaxFrames ?? 0) + (phases.heavyFrames ?? 0) + phases.settleFrames + (bottoms ? 300 : 70)
+  const expected = (phases.relaxFrames ?? 0) + (phases.heavyFrames ?? 0) + phases.settleFrames + (bottoms ? 300 : 70) + (coarse ? FINE_FRAMES : 0)
   return { bottoms, pattern, cloth, drape, steps, expected }
 }
 
