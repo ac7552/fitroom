@@ -712,9 +712,10 @@ export class SkinField {
     for (const { centre, radii } of this.ellipsoids) {
       // Near the surface, |p/r| - 1 scaled by |p/r| / |p/r²| is close to the true distance.
       const px = (x - centre[0]) / radii[0], py = (y - centre[1]) / radii[1], pz = (z - centre[2]) / radii[2]
-      const k0 = Math.hypot(px, py, pz)
+      // (Square roots of sums, as the solver's WebAssembly works them: see grid.)
+      const k0 = Math.sqrt(px * px + py * py + pz * pz)
       const gx = px / radii[0], gy = py / radii[1], gz = pz / radii[2]
-      const k1 = Math.hypot(gx, gy, gz)
+      const k1 = Math.sqrt(gx * gx + gy * gy + gz * gz)
       if (k1 < 1e-9) continue
       const e = (k0 * (k0 - 1)) / k1
       if (e < best) {
@@ -742,7 +743,9 @@ export class SkinField {
       d += D[j] * weight
       mx += M[3 * j] * weight; my += M[3 * j + 1] * weight; mz += M[3 * j + 2] * weight
     }
-    const l = Math.hypot(mx, my, mz)
+    // (A square root of the sum, not Math.hypot, which rounds differently: the cloth solver's WebAssembly
+    // looks the field up this same way, so a drape comes out the same in either.)
+    const l = Math.sqrt(mx * mx + my * my + mz * mz)
     if (l < 1e-3) return this.band
     const h = this.hit
     h[0] = mx / l; h[1] = my / l; h[2] = mz / l

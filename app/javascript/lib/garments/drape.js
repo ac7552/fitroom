@@ -2,8 +2,10 @@
 // gravity, the way garment tools drape a pattern on an avatar. Position-based dynamics (XPBD): every frame is
 // split into small steps; in each, the cloth moves, then each constraint (its threads can't stretch much, it
 // bends only so easily, seams pull together) nudges the points back, and any point inside the skin is pushed
-// out onto it. Pure JavaScript over typed arrays, so it runs in a Web Worker or in Node.
+// out onto it. Typed arrays, so it runs in a Web Worker or in Node; the loops that take most of a step run in
+// WebAssembly where it's there (cloth_kernel.js), the same arithmetic, about twice as fast.
 import { SkinField, keepOffHands } from "lib/garments/body"
+import { ClothKernel, KERNEL_ON } from "lib/garments/cloth_kernel"
 
 // How each kind of cloth behaves: compliance to stretching and to bending (higher is softer), how heavily
 // it's damped, and how far it sits off the skin (m).
@@ -78,7 +80,9 @@ export class Drape {
   // hand (see stayOnArms); a sleeve longer than the arm gathers above its cuff.
   // hands: bodyFrame's hands, for pants: the cloth stays on the body's side of them (see body.js's
   // keepOffHands), as the arms aren't in their collision field.
-  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, tuck = null, hemStrip = true, arms = null, hands = null } = {}) {
+  // kernel: false keeps the whole step in JavaScript (cloth_kernel.js does its loops in WebAssembly otherwise).
+  constructor(cloth, start, body, { fabric = "jersey", friction = 0.7, selfRadius = 0.006, envelope = null, attach = null, floor = null, ring = null, feet = null, snug = null, tuck = null, hemStrip = true, arms = null, hands = null, kernel = true } = {}) {
+    this.noKernel = !kernel
     this.hands = hands
     this.hemStrip = hemStrip
     this.snug = snug
@@ -236,6 +240,8 @@ export class Drape {
       this.bendHem[i] = bends[4 * i + 3] ? 1 : 0
     }
     this.triangles = Uint32Array.from(tris)
+    // The points and constraints into WebAssembly's memory (again after the seams close: new arrays).
+    this.kernel = KERNEL_ON && !this.noKernel ? new ClothKernel(this) : null
   }
 
   // One frame (1/60 s). gravity: on or off (off while the seams close), or a share of it.
@@ -243,6 +249,9 @@ export class Drape {
   // springing (see phases' relaxFrames).
   step({ gravity = true, sew = !this.sewn, still = false } = {}) {
     const h = FRAME / SUBSTEPS
+    const kernel = this.kernel
+    // (A new skin field into the kernel's memory first: it may move the arrays taken below.)
+    kernel?.sync()
     const { x, p, v, w } = this
     const n = this.x.length / 3
     const drag = Math.exp(-this.params.drag * (gravity === true ? 1 : 4) * h)
@@ -250,22 +259,33 @@ export class Drape {
     const stretch = this.params.stretch / (h * h), ribStretch = CLOTHS.rib.stretch / (h * h)
     const bend = this.params.bend / (h * h)
     for (let s = 0; s < SUBSTEPS; s++) {
-      for (let i = 0; i < n; i++) {
-        if (fall) v[3 * i + 1] += fall
-        p[3 * i] = x[3 * i] + v[3 * i] * h
-        p[3 * i + 1] = x[3 * i + 1] + v[3 * i + 1] * h
-        p[3 * i + 2] = x[3 * i + 2] + v[3 * i + 2] * h
+      if (kernel) kernel.predict(n, h, fall)
+      else {
+        for (let i = 0; i < n; i++) {
+          if (fall) v[3 * i + 1] += fall
+          p[3 * i] = x[3 * i] + v[3 * i] * h
+          p[3 * i + 1] = x[3 * i + 1] + v[3 * i + 1] * h
+          p[3 * i + 2] = x[3 * i + 2] + v[3 * i + 2] * h
+        }
       }
       if (sew) this.pullSeams()
-      solveDistances(p, w, this.edges, this.rest, stretch, ribStretch, this.edgeRib, SQUEEZE)
-      solveDistances(p, w, this.bends, this.bendRest, bend, bend * HEM_BEND, this.bendHem)
+      if (kernel) {
+        kernel.solveEdges(stretch, ribStretch, SQUEEZE)
+        kernel.solveBends(bend, bend * HEM_BEND)
+      } else {
+        solveDistances(p, w, this.edges, this.rest, stretch, ribStretch, this.edgeRib, SQUEEZE)
+        solveDistances(p, w, this.bends, this.bendRest, bend, bend * HEM_BEND, this.bendHem)
+      }
       if (this.sewn && s % 2 === 1) this.selfCollide()
       this.collide()
       if (this.ring) this.holdRing()
       if (this.attach) this.reattach(p)
-      for (let i = 0; i < 3 * n; i++) {
-        v[i] = still ? 0 : ((p[i] - x[i]) / h) * drag
-        x[i] = p[i]
+      if (kernel) kernel.finish(3 * n, h, drag, still)
+      else {
+        for (let i = 0; i < 3 * n; i++) {
+          v[i] = still ? 0 : ((p[i] - x[i]) / h) * drag
+          x[i] = p[i]
+        }
       }
     }
     this.frame++
@@ -320,9 +340,16 @@ export class Drape {
     // A point well clear of the skin isn't looked up again until it could have reached it: the skin's
     // distance, less a margin, is how far it may move before the next look (most of the cloth, most of the
     // time, hangs clear of the body, and the look-up is the costliest part of a step).
-    if (this.clearField !== field || this.clear?.length !== n) { this.clear = new Float32Array(n); this.clearField = field }
+    if (this.clearField !== field || this.clear?.length !== n) {
+      if (this.kernel && this.clear?.length === n) this.clear.fill(0)
+      else this.clear = new Float32Array(n)
+      this.clearField = field
+    }
     const clear = this.clear
-    for (let i = 0; i < n; i++) {
+    // (In WebAssembly, for the skin's own grid with cloth not pressed in under a waistband.)
+    const inKernel = this.kernel && !tucks && this.kernel.hasField
+    if (inKernel) this.kernel.collideSkin(n, thick, keep, CLEAR_MARGIN)
+    for (let i = 0; i < (inKernel ? 0 : n); i++) {
       const px = p[3 * i], py = p[3 * i + 1], pz = p[3 * i + 2]
       if (!tucks) {
         const mx = px - x[3 * i], my = py - x[3 * i + 1], mz = pz - x[3 * i + 2]
@@ -386,6 +413,7 @@ export class Drape {
     const n = p.length / 3
     const radius = this.selfRadius
     if (radius <= 0) return
+    if (this.kernel && !(this.tuck && this.simTucks)) { this.kernel.selfCollide(n, radius); return }
     const cell = radius
     const size = 1 << 16, mask = size - 1
     const head = (this.hashHead ??= new Int32Array(size))

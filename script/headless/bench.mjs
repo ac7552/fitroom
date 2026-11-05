@@ -37,6 +37,11 @@ const result = await page.evaluate(async ({ items, measures }) => {
     stats.set(this, s)
   }
   const parts = {}
+  const { ClothKernel } = await import("lib/garments/cloth_kernel")
+  for (const name of ["collideSkin", "selfCollide", "solveEdges", "solveBends", "predict", "finish", "sync"]) {
+    const f = ClothKernel.prototype[name]
+    ClothKernel.prototype[name] = function (...a) { const t = performance.now(); const r = f.apply(this, a); parts["k." + name] = (parts["k." + name] ?? 0) + performance.now() - t; return r }
+  }
   for (const name of ["collide", "selfCollide", "stayOnArms", "stayOffFeet", "stayOutside", "stayTucked", "pullSeams", "holdRing", "seamGap"]) {
     const f = Drape.prototype[name]
     Drape.prototype[name] = function (...a) { const t = performance.now(); const r = f.apply(this, a); parts[name] = (parts[name] ?? 0) + performance.now() - t; return r }
