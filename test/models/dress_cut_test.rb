@@ -145,6 +145,14 @@ class DressCutTest < ActiveSupport::TestCase
     assert_equal "strapless", read.("Off Shoulder Dress", "Off-shoulder neckline Slim fit")[:sleeves]
   end
 
+  test "a cowl neck, a wrap's tie and a pleated skirt are read" do
+    read = ->(description) { GarmentImport::DressCut.read({ name: "Midi Dress", description: description }) }
+    assert_equal "cowl", read.("Satin slip with a cowl neckline")[:neckline]
+    assert_equal "tie", read.("A wrap dress in crepe")[:belt]
+    assert read.("Pleated midi skirt")[:pleats]
+    assert_not read.("Straight midi skirt")[:pleats]
+  end
+
   test "a tiered skirt is read with how many tiers it has" do
     read = ->(description) { GarmentImport::DressCut.read({ name: "Midi Dress", description: description }) }
     assert_equal [ true, 3 ], read.("Tiered midi dress").values_at(:flounce, :tiers)

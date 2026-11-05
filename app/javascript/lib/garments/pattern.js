@@ -549,7 +549,9 @@ const STRAPS = {
   thin_straps: { inset: 6.5, width: 3.6, back: 16 },
   halter: { width: 4.5, back: 24, halter: true }
 }
-const NECK_DEPTH = { round: 9, high: 3, straight: 11, scoop: 15, plunge: 24 }
+// (A cowl is drawn as a scoop: cut with the cloth to spare that falls in its folds, the drape takes the spare
+// cloth in rather than folding it, drape.js's SQUEEZE.)
+const NECK_DEPTH = { round: 9, high: 3, straight: 11, scoop: 15, plunge: 24, cowl: 15 }
 
 // A dress with no sleeves: sleeveless, on straps, strapless, or over one shoulder. Its armholes, neckline and
 // top edge are finished edges (no bands); only its side and shoulder (strap) seams are sewn.

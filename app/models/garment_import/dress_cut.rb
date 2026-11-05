@@ -6,7 +6,7 @@ class GarmentImport
   # A cut: { sleeves:, neckline:, length:, fit:, stretch:, fabric:, printed:, details: }
   #   sleeves   "strapless", "one_shoulder", "halter", "thin_straps", "straps", "none" (sleeveless), "short" or
   #             "long"
-  #   neckline  "straight", "scoop", "plunge", "round" or "high"
+  #   neckline  "straight", "scoop", "plunge", "round", "high" or "cowl" (a front that falls in soft folds)
   #   length    "mini", "knee", "midi" or "maxi"
   #   fit       "fitted", "slim", "relaxed" or "flared"
   #   hem_flare true when only the hem flares out ("flared hem", mermaid, trumpet): the body keeps its fit
@@ -23,6 +23,8 @@ class GarmentImport
   #   printed   true when the listing says the cloth is printed or patterned (only then is a print read off
   #             the photo; a dress's ties and pleats aren't a print)
   #   flounce   true for a gathered strip at the hem ("ruffled hem", "tiered", "flounce"): drawn on the hem
+  #   pleats    true for a pleated or gathered skirt ("pleated", "accordion", "gathered", "box pleats"): a
+  #             skirt is cut fuller at its waist than its waistband and gathered into it
   #   tiers     for a tiered dress, how many tiers its skirt has (2 to 4; "tiered" alone is 3): each below the
   #             first a gathered strip sewn to the one above, fuller than it
   #   slit      "side" (one, up the wearer's left) or "sides" (both) for a slit up the side seam; a front or
@@ -47,7 +49,8 @@ class GarmentImport
     NECKLINES = [
       [ "plunge", /plung|deep[- ]v|v[- ]neck|\bv\b neck|wrap front/i ],
       [ "high", /high[- ]neck|mock[- ]neck|turtle ?neck|funnel neck|halter neck/i ],
-      [ "scoop", /scoop|sweetheart|u[- ]neck|cowl/i ],
+      [ "cowl", /cowl/i ],
+      [ "scoop", /scoop|sweetheart|u[- ]neck/i ],
       [ "straight", /straight neck|square neck|boat ?neck|bateau|straight[- ]across/i ],
       [ "round", /crew ?neck|round neck|jewel neck/i ]
     ].freeze
@@ -73,6 +76,9 @@ class GarmentImport
     STRUCTURED = /suiting|scuba|ponte|neoprene|bonded|\bbon(?:ing|ed)\b|corset|structured|tweed|boucl[eé]|\bcrepe\b(?! de chine)/i
     # A hem with a strip gathered onto it: drawn as the body's shape, with the strip on (not as a flare).
     FLOUNCE = /ruffled? hem|ruffle (?:at|on) the hem|flounce|tiered|tiers\b|peplum hem/i
+    PLEATED = /pleat|accordion|plissé|plisse|gathered (?:skirt|waist)|\bgathered\b/i
+    # A wrap dress or skirt ties at the waist: its belt is a tie, when the listing names no other.
+    WRAP = /\bwrap\b|faux[- ]wrap|wrap[- ](?:front|style|dress|skirt)/i
     TIERED = /\b(two|three|four|[234])[- ]tier(?:ed|s)?\b|\btiered\b|\btiers\b/i
     TIER_COUNTS = { "two" => 2, "three" => 3, "four" => 4 }.freeze
     # Slits up the side seams (both, or one), and a belt at the waist ("belt loops" aren't one).
@@ -165,8 +171,9 @@ class GarmentImport
         scarf: words.match?(/scarf/i) ? (words.match?(/scarf\s+(?:on|at)\s+the\s+side|side scarf/i) ? "side" : "neck") : nil,
         flounce: words.match?(FLOUNCE),
         tiers: tiers(words),
+        pleats: words.match?(PLEATED),
         slit: if words.match?(SIDE_SLITS) then "sides" elsif words.match?(SIDE_SLIT) then "side" end,
-        belt: if words.match?(TIE_BELT) then "tie" elsif words.match?(BELT) then "buckle" end
+        belt: if words.match?(TIE_BELT) then "tie" elsif words.match?(BELT) then "buckle" elsif words.match?(WRAP) then "tie" end
       }
       # What the 3D view doesn't draw (cut-outs, sheer parts and scarves it does; a flounce, a side slit and a
       # belt too: ruffles elsewhere, a front slit and a tie that isn't a belt it doesn't).

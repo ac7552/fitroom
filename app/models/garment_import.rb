@@ -1005,7 +1005,7 @@ class GarmentImport
     # A skirt's cut, read as a dress's is (its length, how it flares, its cloth).
     # A skirt's cut, read as a dress's is (its length, how it flares, its cloth), and the shape its photo
     # showed: its hips and hem over its waist.
-    skirt_cut = style == "skirt" ? DressCut.read(product.except(:dress_shape)).slice(:length, :fit, :stretch, :fabric, :printed, :details, :hem_flare) : nil
+    skirt_cut = style == "skirt" ? DressCut.read(product.except(:dress_shape)).slice(:length, :fit, :stretch, :fabric, :printed, :details, :hem_flare, :pleats, :tiers, :flounce) : nil
     skirt_cut[:fit] = "pleated" if skirt_cut && product.values_at(:name, :description).join(" ").match?(/pleat/i)
     skirt_cut&.delete(:hem_flare) unless skirt_cut&.dig(:hem_flare)
     if skirt_cut && (shape = product[:bottom_shape])&.dig(:skirt) && shape[:hem] >= shape[:hips] * 0.85

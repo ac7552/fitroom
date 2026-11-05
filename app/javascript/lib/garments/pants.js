@@ -28,6 +28,8 @@ function styleOf(styleName, cut) {
 }
 
 
+// A pleated or gathered skirt's fullness: how many times its waistband's length it's cut at its waist.
+const PLEATS = { fullness: 1.7 }
 // How wide a skirt's hem is, over its hips, by its fit: a pencil skirt (fitted), slim, relaxed, an A-line
 // (flared), or pleated (very full).
 const SKIRT_HEM = { fitted: 0.92, slim: 1.02, relaxed: 1.15, flared: 1.45, pleated: 1.8 }
@@ -179,8 +181,12 @@ function draftSkirt(size, body, cut) {
   // shape is known (riseFor, above), so the skirt's top starts at its own size; or by the tape.
   const top = body.riseFor?.(waist) ?? naturalRise * sitAt - style.band.height / 2
   const m = { waist, seat: hips, hips, hem, length, rise: top, seatAt: Math.min(top * 0.62, 18), inseam: Math.max(0, length - top), band: style.band.height, cuff: 0, skirt: true }
+  // Pleated or gathered (cut.pleats): cut PLEATS.fullness times as wide at its waist as its waistband, and at
+  // least that full down to its hem, so the waistband gathers it and it falls in folds.
+  const full = cut?.pleats ? waist * PLEATS.fullness : 0
+  if (full) { m.hips = m.seat = Math.max(hips, full); m.hem = Math.max(hem, full * 1.05) }
   const piece = () => {
-    const hw = waist / 4, hh = hips / 4, he = hem / 4
+    const hw = Math.max(waist, full) / 4, hh = m.hips / 4, he = m.hem / 4
     // Below the seat a flared skirt is a slice of a cone, so its hem is an arc round where the side seams
     // meet: cut straight, its sides would be longer than its middle and hang down in points.
     const k = (he - hh) / (length - m.seatAt)
@@ -212,7 +218,9 @@ function draftSkirt(size, body, cut) {
   }
   const seams = [["front", "side_L", "back", "side_L"], ["front", "side_R", "back", "side_R"]]
   const waists = [["back", "waist"], ["front", "waist"]]
-  panels.waistband = { edges: band(waists.map(([p, e]) => lengthOf(edgeOf(panels[p].edges, e))), style.band.stretch, style.band.height, "up"), place: { at: "band", toward: "up" }, fabric: "main" }
+  // (The waistband as long as the waist, however full the skirt is cut: a pleated one is gathered into it.)
+  const bandLengths = waists.map(([p, e]) => lengthOf(edgeOf(panels[p].edges, e)) * (full ? waist / full : 1))
+  panels.waistband = { edges: band(bandLengths, style.band.stretch, style.band.height, "up"), place: { at: "band", toward: "up" }, fabric: "main" }
   waists.forEach(([p, e], i) => seams.push([p, e, "waistband", `sewn_${i}`]))
   seams.push(["waistband", "end_a", "waistband", "end_b"])
   const fabric = cut?.fabric === "silk" ? "silk" : cut?.fabric === "structured" ? "structured" : cut?.stretch ? "stretch" : style.fabric
