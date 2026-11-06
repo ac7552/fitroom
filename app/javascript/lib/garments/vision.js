@@ -1,8 +1,9 @@
 // The vision service (script/server/vision.mjs), when the server has one: the page's two AI models on store
-// photos (SlimSAM's masks, DINOv2's summary) run there instead of in this browser, several times faster and
-// with nothing to download here. Its address comes from the page (a <meta name="fitroom-vision">, set from
-// FITROOM_VISION_URL); without one, or when it doesn't answer, the browser does the work itself as before.
-// Only store photos go to it, never a picture of the person.
+// photos (SlimSAM's masks, DINOv2's summary) run there instead of in this browser, several times faster than a
+// browser's CPU (a browser with WebGPU runs them on its graphics card: photo_models.js) and with nothing to
+// download here. Its address comes from the page (a <meta name="fitroom-vision">, set from FITROOM_VISION_URL);
+// without one, or when it doesn't answer, the browser does the work itself as before. Only store photos go to
+// it, never a picture of the person.
 
 let address
 export function visionUrl() {

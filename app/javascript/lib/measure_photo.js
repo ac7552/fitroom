@@ -11,7 +11,10 @@
 // Pinned: a dynamic import() of an absolute URL needs no importmap pin, and the page only pays for this
 // download when someone clicks "Measure from photos".
 const CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1"
-const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+// The full pose model, not the lite one: Google's model card puts its points within 20% of the torso's size
+// of the true ones 95.5–96.3% of the time (PCK@0.2 on yoga, dance and HIIT), the lite's 90.2–93.5%, so about
+// half as many points off; for 9.4 MB rather than 5.8, and a still photo reads in tens of milliseconds either way.
+const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
 // Photos are shrunk to this on their longest side before the model sees them: enough for the mask, quick on a phone.
 const MAX_PX = 1024
 

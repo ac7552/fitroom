@@ -3,15 +3,15 @@
 // a hanger, a prop) is painted out in the backdrop's colour. Shop photos taken on a person, or with a hand
 // in a pocket, would otherwise put those in the garment's colour, its print or its photo on the cloth.
 //
-// The model and its library load from a public CDN the first time a photo is cleaned (about 15 MB, cached
-// by the browser after that). The photo itself never leaves the page. Anything that goes wrong (no
-// network, an old browser, a mask that doesn't look like the garment) leaves the photo as it was.
+// The model and its library load the first time a photo is cleaned (about 21 MB on a graphics card, 14 MB on
+// the CPU; kept by the browser after that), and run on the graphics card when there is one (photo_models.js).
+// The photo itself never leaves the page. Anything that goes wrong (no network, an old browser, a mask that
+// doesn't look like the garment) leaves the photo as it was.
 
-import { loadTransformers } from "lib/hosted"
 import { garmentMask, isSkin, keepInside, loadImage, paintOut, photoTraits, pickMask, promptPoints } from "lib/garments/print"
+import { loadPhotoModel, samInputs } from "lib/garments/photo_models"
 import { remoteMasks, visionUrl } from "lib/garments/vision"
 
-const LIBRARY = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1"
 const MODEL = "Xenova/slimsam-77-uniform"
 const SIZE = 640    // the photo is segmented at about this many pixels across
 const FULL = 1600   // and painted out at up to this many
@@ -19,35 +19,27 @@ const SKIN_SHARE = 0.002   // the share of the photo that's skin below which the
 
 let loading = null
 function load() {
-  loading ??= (async () => {
-    // (From the Fitroom server when it has a copy, hosted.js; else the CDN.)
-    const t = await loadTransformers(LIBRARY)
-    t.env.allowLocalModels = false
-    // In a worker, so the page (the 3D view, the fit) keeps going while a photo is cleaned.
-    if (t.env.backends?.onnx?.wasm) t.env.backends.onnx.wasm.proxy = true
-    // On the CPU (WebAssembly): this model's masks come back wrong on WebGPU in this library's version (all
-    // of the picture, or none of it). A photo takes about five seconds.
-    const model = await t.SamModel.from_pretrained(MODEL, { dtype: "q8", device: "wasm" })
-    const processor = await t.AutoProcessor.from_pretrained(MODEL)
-    return { t, model, processor }
-  })().catch(error => { loading = null; throw error })
+  loading ??= loadPhotoModel(t => t.SamModel, MODEL, "sam").catch(error => { loading = null; throw error })
   return loading
 }
 
-// The model's masks for points on a picture (raw: a Transformers.js RawImage; points [[x, y]] in its pixels;
-// labels 1 for "this", 0 for "not this"): { bits, count, scores, dims } as the processor gives them back.
-// The model looks at a picture once (its image encoder, nearly all of its five seconds) and answers any
-// points on it after that in a few milliseconds: what it saw is kept for the last few pictures, by `key`
-// (the photo's address), so cleaning a photo and finding the garment on it again later look once.
+// The model's masks for points on a picture (canvas: the picture, drawn at its size; points [[x, y]] in its
+// pixels; labels 1 for "this", 0 for "not this"): { bits, count, scores } as the processor gives them back.
+// The model looks at a picture once (its image encoder: about a second on a graphics card, five on the CPU)
+// and answers any points on it after that in a tenth of a second: what it saw is kept for the last few
+// pictures, by `key` (the photo's address), so cleaning a photo and finding the garment on it again later look
+// once. The picture goes to the encoder by samInputs, not the processor (the same numbers, a tenth the time on
+// the page's thread).
 const seen = new Map()
-async function masksFor(raw, points, labels, key) {
+async function masksFor(canvas, points, labels, key) {
   const { t, model, processor } = await load()
+  const width = canvas.width, height = canvas.height
   let entry = key ? seen.get(key) : null
   // (Only for the picture at the same size: the masks come back at the size it was first seen at.)
-  if (entry && (entry.width !== raw.width || entry.height !== raw.height)) entry = null
+  if (entry && (entry.width !== width || entry.height !== height)) entry = null
   if (!entry) {
-    const inputs = await processor(raw)
-    entry = { inputs, embeddings: await model.get_image_embeddings(inputs), width: raw.width, height: raw.height }
+    const inputs = samInputs(t, canvas, width, height, processor)
+    entry = { inputs, embeddings: await model.get_image_embeddings({ pixel_values: inputs.pixel_values }), width, height }
     if (key) {
       if (seen.size >= 4) seen.delete(seen.keys().next().value)
       seen.set(key, entry)
@@ -55,7 +47,7 @@ async function masksFor(raw, points, labels, key) {
   }
   const [rh, rw] = entry.inputs.reshaped_input_sizes[0]
   // Points in the picture's pixels, as fractions of it, onto the size the encoder saw it at.
-  const at = points.map(([x, y]) => [(x / raw.width) * rw, (y / raw.height) * rh])
+  const at = points.map(([x, y]) => [(x / width) * rw, (y / height) * rh])
   const inputPoints = new t.Tensor("float32", at.flat(), [1, 1, at.length, 2])
   const inputLabels = new t.Tensor("int64", labels.map(v => BigInt(v)), [1, 1, labels.length])
   const outputs = await model({ ...entry.embeddings, input_points: inputPoints, input_labels: inputLabels })
@@ -93,7 +85,7 @@ async function clean(src, kind) {
   const prompt = promptPoints(pixels.data, w, h, kind)
   if (!prompt) return src
   // Only a hand or an arm is ever painted out (see keepInside), so a photo with no skin in it (a flat shot,
-  // a hanger) is left as it is, and skips the model's five seconds.
+  // a hanger) is left as it is, and skips the model.
   if (photoTraits(pixels.data, w, h).skin < SKIN_SHARE) return src
 
   // The model's masks: from the vision service when the server has one (vision.js), else the model here.
@@ -101,11 +93,7 @@ async function clean(src, kind) {
   let bits, count, scores
   const remote = visionUrl() ? await remoteMasks(pixels.data, w, h, prompt.points) : null
   if (remote) ({ bits, count, scores } = remote)
-  else {
-    const { t } = await load()
-    const raw = new t.RawImage(new Uint8ClampedArray(pixels.data), w, h, 4).rgb()
-    ;({ bits, count, scores } = await masksFor(raw, prompt.points, prompt.points.map(() => 1), photoKey(src)))
-  }
+  else ({ bits, count, scores } = await masksFor(canvas, prompt.points, prompt.points.map(() => 1), photoKey(src)))
 
   const best = pickMask(bits, count, plane, prompt.mask, scores)
   if (best < 0) return src
@@ -198,7 +186,6 @@ export async function wornGarmentMask(data, w, h, kind = "top", src = null) {
   }
   let mask = null
   try {
-    const { t } = await load()
     const scale = Math.min(1, SIZE / Math.max(w, h))
     const sw = Math.round(w * scale), sh = Math.round(h * scale)
     const canvas = document.createElement("canvas")
@@ -208,11 +195,9 @@ export async function wornGarmentMask(data, w, h, kind = "top", src = null) {
     full.width = w; full.height = h
     full.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(data), w, h), 0, 0)
     ctx.drawImage(full, 0, 0, sw, sh)
-    const small = ctx.getImageData(0, 0, sw, sh)
-    const raw = new t.RawImage(new Uint8ClampedArray(small.data), sw, sh, 4).rgb()
     const points = [...positives, ...negatives].map(([x, y]) => [x * scale, y * scale])
     const labels = [...positives.map(() => 1), ...negatives.map(() => 0)]
-    const { bits, count, scores } = await masksFor(raw, points, labels, photoKey(src))
+    const { bits, count, scores } = await masksFor(canvas, points, labels, photoKey(src))
     const plane = sw * sh
     // The mask that holds the points on the cloth and not the face, the largest of those the model is sure of.
     let best = -1, bestArea = 0

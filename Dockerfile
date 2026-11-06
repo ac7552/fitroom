@@ -24,7 +24,7 @@ RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 FROM node:22-slim AS vendor
 WORKDIR /vendor
 COPY script/vendor/fetch.mjs ./
-RUN npm install --no-audit --no-fund --prefix /vendor/pkg @huggingface/transformers@3.5.1 @mediapipe/tasks-vision@1.1.1 && \
+RUN npm install --no-audit --no-fund --prefix /vendor/pkg @huggingface/transformers@4.3.2 @mediapipe/tasks-vision@1.1.1 && \
     node fetch.mjs /vendor/pkg/node_modules /vendor/out
 
 # Blender for studio photos (Cycles on the CPU), only with STUDIO=1 (deploy/.env's FITROOM_STUDIO): see
