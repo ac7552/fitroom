@@ -850,8 +850,10 @@ class GarmentImport
   # Shoes, socks or a belt: their look (a shoe's style, a belt's buckle), colour and cloth, and the shop's sizes
   # to pick from. Nothing is measured: they're drawn on the mannequin as they look.
   def accessory(product, kind, source_url)
-    words = product.values_at(:name, :category, :description).join(" ")
-    named = product.values_at(:name, :category).join(" ")
+    # (The shop's tags count as its category: a boot filed only under "boots".)
+    tags = Array(product[:tags]).reject { it.to_s.include?(" - ") || it.to_s.casecmp?(product[:name].to_s) }.join(" ")
+    words = [ *product.values_at(:name, :category, :description), tags ].join(" ")
+    named = [ *product.values_at(:name, :category), tags ].join(" ")
     style = case kind
             when "shoes" then SHOE_STYLES.find { |_, pattern| named.match?(pattern) }&.first || "sneaker"
             when "socks" then SOCK_STYLES.find { |_, pattern| named.match?(pattern) }&.first || "crew"
@@ -931,7 +933,8 @@ class GarmentImport
     not_fitted = NOT_FITTED.find { |_, pattern| product[:category].to_s.match?(pattern) }
     not_fitted ||= NOT_FITTED.find { |_, pattern| sorted.match?(pattern) || words.match?(pattern) && !words.match?(Regexp.union(DRESSES, TOPS, JACKETS, TROUSERS)) } unless product[:category].to_s.match?(Regexp.union(DRESSES, TOPS, JACKETS, TROUSERS))
     # Shoes, socks and belts are drawn (on the feet, on the legs, round the waist), with no fit to check.
-    if not_fitted && (worn = WORN_ON.find { |kind, pattern| not_fitted.first == ACCESSORY_GROUPS[kind] && words.match?(pattern) && !words.match?(/\bbags?\b|backpack|wallet/i) }&.first)
+    # (By the name and category, or by the shop's tags: Vasque's "Skywalk GTX" is a boot only by its tags.)
+    if not_fitted && (worn = WORN_ON.find { |kind, pattern| not_fitted.first == ACCESSORY_GROUPS[kind] && (words.match?(pattern) || sorted.match?(pattern)) && !words.match?(/\bbags?\b|backpack|wallet/i) }&.first)
       return worn
     end
     if not_fitted

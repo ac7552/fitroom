@@ -135,6 +135,10 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "belt", kind.("Anderson's Leather Black Belt - Black", "Belts")
     assert_raises(GarmentImport::Error) { kind.("Giorgio Armani & Kith Belt Bag - Tan", "Belts") }
     assert_raises(GarmentImport::Error) { kind.("Kith Boxer Brief - Black", "Underwear") }
+    # A shoe the shop files only by its tags (no type, no shoe word in the name) is still shoes, in its style.
+    tagged = { name: "Vasque Skywalk GTX - Olive / Dress Blues", category: nil, tags: %w[boot boots footwear mens], sizes: %w[9 10] }
+    assert_equal "shoes", import.send(:kind_of, tagged)
+    assert_equal "boot", import.send(:accessory, tagged, "shoes", "x")[:style]
     shoe = import.send(:accessory, { name: "Timberland 6 Inch Premium Boot - Wheat", category: "Boots", sizes: %w[8 9 10] }, "shoes", "x")
     assert_equal [ "shoes", "boot" ], shoe.values_at(:garment, :style)
     assert_equal %w[8 9 10], shoe[:chart][:sizes].map { it["name"] }
