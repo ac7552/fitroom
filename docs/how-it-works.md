@@ -155,6 +155,33 @@ To rebuild it you need Blender 5.2+, the MPFB extension and MakeHuman's CC0 syst
 
 Headless, a tee and jeans from scratch: 12.5 s of solving before, 4.6 s with all three.
 
+### The photo models on the graphics card
+
+The two AI models the page runs on store photos, SlimSAM (painting a hand or a prop out of a photo,
+`lib/garments/segment.js`) and DINOv2 (the look check's likeness, `lib/garments/likeness.js`), run on
+Transformers.js 4 through one loader, `lib/garments/photo_models.js`: on the graphics card with WebGPU when
+the browser has one, at half precision when the card does it, and on the CPU (WebAssembly, in ONNX
+Runtime's worker) otherwise. SAM's picture is prepared for it by the canvas and one loop (`samInputs`, to the
+same numbers as its processor) rather than the processor, which took most of a second on the page's thread.
+On an M2 Pro (Chrome 152), ten store photos, against full precision on the CPU:
+
+| | Before (CPU, 8 bits) | Now (WebGPU, half precision) |
+|---|---|---|
+| SlimSAM, a photo looked at | 4.4 s | 1.0 s |
+| SlimSAM, the same mask picked | 8 of 10 (IoU 0.988 at the median) | 10 of 10 (0.997) |
+| SAM's picture prepared, on the page's thread | 0.45 to 0.8 s | 0.03 to 0.09 s |
+| DINOv2, a picture | 2.4 s | 0.07 s |
+| DINOv2, likeness off full precision's by | up to 0.073 | up to 0.007 |
+| Downloaded the first time (both) | 38 MB | 65 MB |
+
+Without WebGPU they run on the CPU at 8 bits as before, but SAM's prompt decoder at full precision (the same
+pick on eight photos rather than seven, IoU 0.996 at the median rather than 0.981; 12 MB more). Transformers.js
+3.5's WebGPU gave SAM's masks wrong; 4.3's gives the CPU's to the pixel at full precision. With the vision
+service (`FITROOM_VISION_URL`), store photos are cleaned and compared on the server as before; a worn photo's
+garment (`wornGarmentMask`) is always found in the browser. Measuring from photos uses MediaPipe's full pose
+model rather than the lite one (PCK@0.2 95.5 to 96.3% on Google's model card rather than 90.2 to 93.5%,
+9.4 MB rather than 5.8).
+
 ## The drape bank
 
 A drape depends on the pattern's style, the garment's measurements and the body, not on the shop link. So
