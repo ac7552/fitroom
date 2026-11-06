@@ -596,10 +596,23 @@ export class FittingStage {
     bc.drawImage(read.canvas, 0, 0, size, size)
     const pixels = bc.getImageData(0, 0, size, size).data
     const colour = new THREE.Color()
+    // The plain colour at a point of the photo: the median over a stretch of its row either side (a
+    // twentieth of the photo), the brightest quarter left out, so a highlight on polished leather, a seam
+    // or a crease doesn't paint a streak on the parts of the shoe the photo can't show.
+    const reach = Math.max(2, Math.round(size * 0.05))
     const sample = (u, v, out, at) => {
       const x = Math.min(size - 1, Math.max(0, Math.round(u * (size - 1)))), y = Math.min(size - 1, Math.max(0, Math.round((1 - v) * (size - 1))))
-      const i = 4 * (y * size + x)
-      colour.setRGB(pixels[i] / 255, pixels[i + 1] / 255, pixels[i + 2] / 255, THREE.SRGBColorSpace)
+      const picked = []
+      for (let dx = -reach; dx <= reach; dx += 2) {
+        const xx = x + dx
+        if (xx < 0 || xx >= size) continue
+        const i = 4 * (y * size + xx)
+        picked.push([pixels[i], pixels[i + 1], pixels[i + 2], pixels[i] + pixels[i + 1] + pixels[i + 2]])
+      }
+      picked.sort((a, b) => a[3] - b[3])
+      const kept = picked.slice(0, Math.max(1, Math.ceil(picked.length * 0.75)))
+      const mid = kept[Math.floor(kept.length / 2)]
+      colour.setRGB(mid[0] / 255, mid[1] / 255, mid[2] / 255, THREE.SRGBColorSpace)
       out[at] = colour.r; out[at + 1] = colour.g; out[at + 2] = colour.b
     }
     const blank = this.feet.blank ??= new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1)

@@ -1643,12 +1643,6 @@ export function shoeSide(data, w, h) {
   // Taller than long, it's a side view only if it's a boot with a shaft: one end (the heel's) stands well
   // over the other (a shoe shot from an angle is a block).
   if (long < 1 && Math.min(tall(0, quarter), tall(SIDE_BINS - quarter, SIDE_BINS)) > 0.6 * Math.max(tall(0, quarter), tall(SIDE_BINS - quarter, SIDE_BINS))) return null
-  // How thick the sole is: up from the bottom, as far as the colour stays the sole's (the bottom few rows'),
-  // in most columns. Sole and upper the same colour: a usual sole, a seventh of the shoe's height.
-  // (A tall boot's: of its length, not its shaft.)
-  const soleThick = soleThickness(lab, mask, w, h, left, right, top, bottom) ?? Math.min((low - high) / 7, (right - left) / 6)
-  // And column by column (a heel, a platform): the sole line below follows it where it's read.
-  const profile = soleProfile(lab, mask, w, h, left, right, top, bottom)
   // The outline's front and back at each height (shares of its length, heel 0 to toe 1), from the floor up in
   // SIDE_BINS steps to its top: how blunt the toe is, how the heel curves, how wide the shaft stands.
   const ends = { front: new Array(SIDE_BINS).fill(null), back: new Array(SIDE_BINS).fill(null) }
@@ -1665,6 +1659,13 @@ export function shoeSide(data, w, h) {
     for (let r = 1; r < SIDE_BINS; r++) if (list[r] === null) list[r] = list[r - 1]
     for (let r = SIDE_BINS - 2; r >= 0; r--) if (list[r] === null) list[r] = list[r + 1]
   }
+  // How thick the sole is: up from the bottom, as far as the colour stays the sole's (the bottom few rows'),
+  // in most columns. Sole and upper the same colour (a black boot on a black platform): where the outline
+  // steps in above the sole, from its depth row by row; neither: a usual sole, a seventh of the shoe's
+  // height (a tall boot's: of its length, not its shaft).
+  const soleThick = soleThickness(lab, mask, w, h, left, right, top, bottom) ?? soleStep(ends, low - high + 1) ?? Math.min((low - high) / 7, (right - left) / 6)
+  // And column by column (a heel, a platform): the sole line below follows it where it's read.
+  const profile = soleProfile(lab, mask, w, h, left, right, top, bottom)
   // A pixel in from the edge, so the outline's own soft edge isn't wrapped on.
   const inset = Math.max(2, h * 0.008)
   const order = toeRight ? b => b : b => SIDE_BINS - 1 - b
@@ -1833,6 +1834,20 @@ function viewOf(data, w, h, side, pair) {
 }
 
 // A shoe's sole's thickness in a side photo (pixels), or null when the sole isn't told apart from the upper.
+// The sole's thickness (px) from the outline's shape: the row, in the bottom third, where the outline steps
+// in the most from one row to the next but one (a platform's or a midsole's ledge under the upper), when
+// that step is a few per cent of the length. Null when the outline tapers evenly (no ledge).
+function soleStep(ends, tall) {
+  const rows = ends.front.length
+  const depth = r => (ends.front[r] ?? 1) - (ends.back[r] ?? 0)
+  let best = -1, bestStep = 0
+  for (let r = 2; r < rows * 0.34; r++) {
+    const step = Math.min(depth(r - 1), depth(r - 2)) - Math.max(depth(r + 1), depth(r + 2))
+    if (step > bestStep) { bestStep = step; best = r }
+  }
+  return bestStep > 0.03 ? ((best + 0.5) / rows) * tall : null
+}
+
 function soleThickness(lab, mask, w, h, left, right, top, bottom) {
   const bins = top.length, middle = []
   for (let b = Math.round(bins * 0.15); b < Math.round(bins * 0.85); b++) middle.push(b)
