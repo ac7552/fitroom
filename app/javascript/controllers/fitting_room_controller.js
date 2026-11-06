@@ -77,6 +77,16 @@ export default class extends Controller {
     this.unit = this.unitTargets.find(radio => radio.checked)?.value ?? "in"
     this.showUnit()
     this.stage = new FittingStage(this.canvasTarget)
+    // When the browser takes the 3D view's graphics away (it resets them when the card hangs), a word saying so,
+    // and if they don't come back, what to do.
+    this.stage.onContextLost = lost => {
+      clearTimeout(this.graphicsTimer)
+      if (!lost) { this.toast("The 3D view is back."); return }
+      this.toast("The browser reset its graphics. Getting the 3D view back…")
+      this.graphicsTimer = setTimeout(() => {
+        if (this.stage?.contextLost) this.toast("The 3D view couldn't get its graphics back. Reload the page to see it again.")
+      }, 5000)
+    }
     this.shownBodyType = this.bodyType
     this.stage.setBodyType(this.bodyType)
     this.showScene(this.sceneTargets.find(radio => radio.checked)?.value ?? "studio")

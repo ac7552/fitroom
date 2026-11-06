@@ -190,6 +190,24 @@ export class FittingStage {
     // PCF, whose edge the key light's shadow radius softens (PCFSoftShadowMap ignores the radius: the head's
     // shadow came down the neck in a stepped line).
     this.renderer.shadowMap.type = THREE.PCFShadowMap
+    // The browser can take its graphics away (it resets its GPU process when the card hangs or runs out of
+    // memory) and give them back. three.js uploads the meshes and textures again by itself; what was drawn on
+    // the card has to be made again (restoreGraphics). Nothing is drawn meanwhile; onContextLost(lost) tells
+    // the page.
+    this.contextLost = false
+    canvas.addEventListener("webglcontextlost", event => {
+      event.preventDefault()
+      this.contextLost = true
+      cancelAnimationFrame(this.frameId)
+      this.frameId = null
+      this.onContextLost?.(true)
+    })
+    canvas.addEventListener("webglcontextrestored", () => {
+      this.contextLost = false
+      this.restoreGraphics()
+      this.onContextLost?.(false)
+      this.start()
+    })
 
     this.scene = new THREE.Scene()
     this.addLights()
@@ -1832,6 +1850,24 @@ export class FittingStage {
     this.stopIdleTurn = this.idle.stop
   }
 
+  // After the graphics were lost and given back: the studio's light made again from its map (it was drawn on
+  // the card, and without it everything is lit by the key light alone: a dark grey mannequin in dark clothes),
+  // the path tracer started afresh (its scene lived on the card), and the still picture from nothing.
+  restoreGraphics() {
+    if (this.studioMap) {
+      const pmrem = new THREE.PMREMGenerator(this.renderer)
+      this.scene.environment?.dispose()
+      this.scene.environment = pmrem.fromEquirectangular(this.studioMap).texture
+      pmrem.dispose()
+    }
+    if (this.trace) {
+      this.trace.dispose()
+      this.trace = new TracedStill(this)
+    }
+    this.still?.reset()
+    if (this.still) this.still.signature = null
+  }
+
   // Contact shading (N8AO): the soft darkening where cloth folds, where an arm meets the body, under a
   // collar and round the feet, as a room's light can't reach. It only darkens what's hidden, so a garment's
   // colour stays the shop's in open light. Then the colours as the renderer would show them (tone mapping),
@@ -1898,11 +1934,12 @@ export class FittingStage {
   }
 
   start() {
-    if (this.frameId || !this.visible) return
+    if (this.frameId || !this.visible || this.contextLost) return
     this.frameId = requestAnimationFrame(this.tick)
   }
 
   tick = () => {
+    if (this.contextLost) { this.frameId = null; return }
     this.animate()
     this.controls.update()
     this.advanceDrape()

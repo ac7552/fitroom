@@ -32,9 +32,10 @@ export default class extends Controller {
 
     this.scene = new THREE.Scene()
     this.scene.fog = new THREE.Fog(MIST, 3.2, 9)
-    const pmrem = new THREE.PMREMGenerator(this.renderer)
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-    pmrem.dispose()
+    this.lightRoom()
+    // (The room's light is drawn on the card: made again when the browser gives the graphics back after
+    // taking them away. three.js uploads the rest again by itself.)
+    this.canvasTarget.addEventListener("webglcontextrestored", () => this.lightRoom())
     const key = new THREE.DirectionalLight(0xf2f6ff, 1.4)
     key.position.set(-2, 3, 3)
     this.scene.add(key, new THREE.HemisphereLight(0xdfe5ef, 0x1b1e24, 0.55))
@@ -80,6 +81,13 @@ export default class extends Controller {
     })
     this.scene.environment?.dispose()
     this.renderer.dispose()
+  }
+
+  lightRoom() {
+    const pmrem = new THREE.PMREMGenerator(this.renderer)
+    this.scene.environment?.dispose()
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    pmrem.dispose()
   }
 
   move(event) {

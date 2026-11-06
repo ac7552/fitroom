@@ -1,10 +1,10 @@
 // The path-traced still. Once nothing on screen moves and the clothes are on, the figure is drawn again by
 // a path tracer (three-gpu-pathtracer, on the visitor's own GPU through WebGL2): light bouncing between a
 // sleeve and the body, the colour of a jacket on the shirt under it, soft studio shadows, true translucency
-// through thin cloth, from the same lights and studio map the live view uses. It accumulates a few samples a
-// frame and is shown, denoised, over the live picture as soon as there are enough; as soon as anything
-// moves, it's the live picture again (still.js drives it). The clothes go in as plain maps baked by their own
-// shader (bake.js), the mannequin as it is.
+// through thin cloth, from the same lights and studio map the live view uses. It traces as much a frame as the
+// graphics card gets through in about a frame (see step), and is shown, denoised, over the live picture as soon
+// as there are enough samples; as soon as anything moves, it's the live picture again (still.js drives it).
+// The clothes go in as plain maps baked by their own shader (bake.js), the mannequin as it is.
 //
 // Not everywhere: it needs float render targets (WebGL2 with EXT_color_buffer_float), and on a GPU that takes
 // too long over its first sample it gives up for the session; the live view and still.js's averaging stand in.
@@ -20,8 +20,12 @@ const SAMPLES_SHOW = 8
 const SAMPLES_DONE = 128
 // Fully the traced picture from here (blended with the live one before).
 const SAMPLES_SOLID = 48
-// How long a frame may spend tracing (ms): the page stays responsive.
-const BUDGET_MS = 14
+// The picture is traced a tile at a time, this many across and down.
+const TILES = 2
+// About a frame of the card's time (ms): tiles are asked for a frame at a time, as many as it got through in
+// about this long (up to MAX_TILES_A_FRAME), and no more until it's through them (see step).
+const FRAME_GPU_MS = 12
+const MAX_TILES_A_FRAME = 16
 // A first sample slower than this (ms) means a GPU that can't carry it: off for the session.
 // (?tracepatience=ms raises it: the headless harness traces on a software GPU, slowly.)
 const TOO_SLOW_MS = Number(typeof location !== "undefined" && new URLSearchParams(location.search).get("tracepatience")) || 1500
@@ -39,6 +43,9 @@ export class TracedStill {
     this.quad = null
     this.lights = []
     this.meshes = []
+    // The tiles asked for last, while the card is drawing them: { fence, at, tiles, first, gl }.
+    this.asked = null
+    this.tilesAFrame = 1
   }
 
   // Whether this browser can run it at all.
@@ -84,7 +91,7 @@ export class TracedStill {
       if (!this.tracer) {
         this.tracer = new WebGLPathTracer(renderer)
         this.tracer.renderToCanvas = false
-        this.tracer.tiles.set(2, 2)
+        this.tracer.tiles.set(TILES, TILES)
         this.tracer.bounces = 4
         this.tracer.filterGlossyFactor = 1
         this.tracer.textureSize.set(BAKE_SIZE, BAKE_SIZE)
@@ -164,6 +171,7 @@ export class TracedStill {
 
   disable() {
     this.disabled = true
+    this.dropFence()
     this.clear()
     try { this.tracer?.dispose?.() } catch { /* a tracer that never finished setting up */ }
     this.tracer = null
@@ -178,23 +186,79 @@ export class TracedStill {
   get samples() { return this.tracer ? this.tracer.samples : 0 }
 
   // One frame's worth of tracing, then the still drawn if there's enough. Returns true when it drew.
+  //
+  // Paced by the card, not the page: asking for a tile takes the page a twentieth of a millisecond, drawing it
+  // takes the card hundreds of times that, so a budget of the page's own time (14 ms, as it was) asked for
+  // some 250 quarter-picture tiles a frame, eight seconds of the card's work queued in two frames. That held
+  // up the whole browser, and is long enough for it to take its graphics for hung and reset them: the 3D view
+  // then came back dark (its studio light gone) and then blank. So each frame's tiles are fenced, none are
+  // asked for while the card is still on the last ones, and as many as it got through in about a frame.
   step() {
     if (!this.prepare()) return false
     const tracer = this.tracer
     if (tracer.samples >= SAMPLES_DONE) return this.show()
-    const began = performance.now()
+    if (!this.through()) {
+      if (this.disabled) return false
+      this.stage.start()
+      return tracer.samples >= SAMPLES_SHOW ? this.show() : false
+    }
+    const gl = this.stage.renderer.getContext()
+    const before = tracer.samples
+    let tiles = 0
     try {
-      do tracer.renderSample()
-      while (performance.now() - began < BUDGET_MS && tracer.samples < SAMPLES_DONE)
+      for (; tiles < this.tilesAFrame && tracer.samples < SAMPLES_DONE; tiles++) tracer.renderSample()
     } catch (error) {
       console.warn("[trace] off:", error)
       this.disable()
       return false
     }
-    const took = performance.now() - began
-    if (tracer.samples <= 1 && took > TOO_SLOW_MS) { console.info(`[trace] too slow here (${Math.round(took)} ms a sample): off`); this.disable(); return false }
+    // (Nothing drawn while the tracer waits out its delay after a reset, or compiles: nothing to wait for.)
+    if (tracer.samples > before) {
+      this.asked = { fence: gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0), at: performance.now(), tiles, first: before === 0, gl }
+      gl.flush()
+    }
     this.stage.start()
     return tracer.samples >= SAMPLES_SHOW ? this.show() : false
+  }
+
+  // Whether the card is through the tiles asked for last (true when none are out). When it is, how long it took
+  // sets how many are asked for next: one more while it keeps up within about a frame, fewer when it doesn't.
+  through() {
+    const asked = this.asked
+    if (!asked) return true
+    const { gl } = asked
+    const now = performance.now(), took = now - asked.at
+    // (Judged only while it's watched frame by frame: a wait while the page drew nothing, off screen, says
+    // nothing about the card.)
+    const watched = now - (asked.seen ?? asked.at) < 250
+    asked.seen = now
+    // A first sample this slow: a card that can't carry it (off for the session, as before).
+    const slow = watched && asked.first && (took / asked.tiles) * TILES * TILES > TOO_SLOW_MS
+    if (gl.getSyncParameter(asked.fence, gl.SYNC_STATUS) !== gl.SIGNALED) {
+      if (slow) this.tooSlow(took / asked.tiles)
+      return false
+    }
+    this.dropFence()
+    if (slow) { this.tooSlow(took / asked.tiles); return false }
+    // (It's checked once a frame, so a card that kept up still shows about a frame's wait, 8 to 17 ms.)
+    if (watched) {
+      this.tilesAFrame = took <= FRAME_GPU_MS + 17
+        ? Math.min(MAX_TILES_A_FRAME, this.tilesAFrame + 1)
+        : Math.max(1, Math.floor((this.tilesAFrame * (FRAME_GPU_MS + 17)) / took))
+    }
+    return true
+  }
+
+  tooSlow(perTile) {
+    console.info(`[trace] too slow here (${Math.round(perTile * TILES * TILES)} ms a sample): off`)
+    this.disable()
+  }
+
+  dropFence() {
+    const asked = this.asked
+    this.asked = null
+    // (After the context was lost its fence is no longer the context's own: nothing to delete.)
+    try { if (asked && !asked.gl.isContextLost()) asked.gl.deleteSync(asked.fence) } catch { /* as above */ }
   }
 
   // The live picture, then the traced one over it (its background is clear, so the backdrop, the floor and
@@ -228,6 +292,7 @@ export class TracedStill {
   }
 
   dispose() {
+    this.dropFence()
     this.clear()
     try { this.tracer?.dispose?.() } catch { /* as above */ }
     this.quad?.dispose()
