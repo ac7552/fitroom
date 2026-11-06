@@ -11,6 +11,8 @@ import { CLOTHS, Drape } from "lib/garments/drape"
 import { BLANK_TEXTURE, clothMaterial, sheenTint } from "lib/garments/fabric"
 import { sheerShow } from "lib/garments/sheer"
 import { fibreColor, fuzzFor } from "lib/garments/fuzz"
+import { FineCloth } from "lib/garments/fine"
+import { foldField, wavelengthFor } from "lib/garments/wrinkles"
 
 // How far the fabric's relief in a re-draped photo (redrape.js's flatField, the alpha channel) stands out
 // of the cloth (m, at the relief's full value): the tilt the shader gives the surface from it.
@@ -27,6 +29,11 @@ const BOTTOM_SPACING = 2   // pants have more cloth, and less fine detail to sho
 // in the drape (a turned-up hem is two layers, and a little more where it rolls); ?rim=off draws none.
 const RIM_DEPTH = 1.4
 const RIM_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("rim") !== "off"
+// The render mesh subdivided (fine.js), and the folds laid on it (wrinkles.js): ?fine=off draws the drape's
+// own mesh, ?folds=off the fine mesh without folds.
+const FINE_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("fine") !== "off"
+const FOLDS_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("folds") !== "off"
+const FOLDS_EVERY = 400   // ms between solves of the fold field while the cloth moves
 // How far out along its normal the cloth's shader draws it (fabric.js's begin_vertex).
 const SURFACE_LIFT = 0.0015
 
@@ -502,15 +509,19 @@ export class DrapedTop {
     this.field = field
     this.triangles = Uint32Array.from(this.cloth.triangles.flat())
     this.geometry = this.makeGeometry()
+    // What's drawn: the drape's mesh subdivided (fine.js). Everything the shader reads per point is set on
+    // the drape's geometry and carried over (fine.sync, before each draw).
+    this.fine = FINE_ON ? new FineCloth(this.geometry) : null
     this.materials = this.makeMaterials(renderer)
-    this.mesh = new THREE.Mesh(this.geometry, [this.materials.main, this.materials.rib])
+    this.mesh = new THREE.Mesh(this.fine?.geometry ?? this.geometry, [this.materials.main, this.materials.rib])
     this.mesh.castShadow = this.mesh.receiveShadow = true
     this.mesh.frustumCulled = false
+    if (this.fine) this.mesh.onBeforeRender = () => this.fine.sync()
     // The cloth's thickness along its free edges (hems, cuffs, the neckline): see makeRim.
     this.rim = RIM_ON ? this.makeRim() : null
     if (this.rim) this.mesh.add(this.rim.mesh)
     // Brushed and felted cloth's fibres (fuzz.js).
-    this.fuzz = fuzzFor(this.geometry, this.surface, item.color)
+    this.fuzz = fuzzFor(this.fine?.geometry ?? this.geometry, this.surface, item.color)
     if (this.fuzz) this.mesh.add(this.fuzz)
     this.update()
   }
@@ -976,6 +987,7 @@ export class DrapedTop {
     if (drape.tuck) this.hideTucked()
     if (this.done) this.markStrain()
     if (this.rim) this.updateRim(position, normal)
+    this.fine?.update()
   }
 
   // How squeezed the cloth is at each point (0 to 1): its edges shorter than cut, as at the inside of an
@@ -1025,6 +1037,19 @@ export class DrapedTop {
     }
     strain.needsUpdate = true
     if (fold) fold.needsUpdate = true
+    // The folds themselves, on the fine mesh (wrinkles.js), by the cloth's own fold wavelength: a solve over
+    // the cloth, so not every frame while the cloth still moves (it's settled or settling by now).
+    if (this.fine && FOLDS_ON) {
+      const now = performance.now()
+      if (!this.foldsAt || now - this.foldsAt > FOLDS_EVERY) {
+        this.foldsAt = now
+        this.wavelength ??= wavelengthFor(CLOTHS[this.pattern.fabric] ?? CLOTHS.jersey)
+        // (No folds on a hood or a band: a hood is gathered every way, and the drape alone shapes it.)
+        this.foldEdge ??= Float32Array.from(cloth.toEdge, (d, i) => (/^(hood|cuff|waistband|collar|placket)/.test(cloth.panels[cloth.panel[i]]) ? 0 : d))
+        const field = foldField(pts, triangles, tensor, squeeze, this.foldEdge, this.wavelength)
+        this.fine.setWrinkles(field?.phase ?? null, field?.amp ?? null)
+      }
+    }
   }
 
   // A tucked top isn't drawn from a little below the waistband's top down: it's inside the pants there,
@@ -1177,6 +1202,7 @@ export class DrapedTop {
     this.backTexture?.dispose()
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.geometry.dispose()
+    this.fine?.dispose()
     this.rim?.geometry.dispose()
     this.fuzz?.material.dispose()
     for (const material of Object.values(this.materials)) {

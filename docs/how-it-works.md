@@ -249,6 +249,19 @@ under a photo so the fabric isn't lit twice.
   photo shows again at the same seam is laid once. `script/headless/lettering_check.py` reads the word back
   by OCR (Kith's Essentials sweatpant: 0.17 before, 0.90 after; its shop photo 0.64). The cloth's shader takes
   16 vertex attributes at most, a Mac's limit (`texture_units.mjs` checks both).
+- **A finer mesh, and folds** (fine.js, wrinkles.js): what's drawn is the drape's cloth subdivided once or
+  twice (butterfly subdivision, interpolating: the drape's points stay put, panel edges take their midpoints
+  so seams meet), about 0.5 to 0.8 cm between points, refined again each frame from the drape's positions.
+  The drape itself lets squeezed cloth shorten rather than buckle (drape.js's SQUEEZE; stiffer, it stands
+  off the body and folds no better at its spacing), so the folds are laid on from where it's squeezed: the
+  squeeze tensor gives each point a direction, a least-squares integral of that field over the cloth gives
+  a phase running at 2π a wavelength, and the amplitude follows the buckling law A = (λ/π)√e, capped at a
+  quarter wavelength, faded out within 4 cm of any panel edge, none on hoods and bands. The wavelength is
+  the fabric's: 3.5 cm for jersey, longer as thickness^(3/4) and stiffer bending (fleece 5.4, denim 8.6,
+  silk 2.2). Each fine point moves along its normal by A times a ridge profile (narrow ridge, broad
+  valley, mostly outward). `?fine=off`, `?folds=off`, `?foldgain=3` (to see where they lie),
+  `?squeeze=N` (the drape's compression softness, for experiments). Cost: 4 to 9 ms a frame per garment
+  for the refinement, 10 to 20 ms every 400 ms for the fold field.
 - **Metered to the photo** (stage.js#meter): a camera meters on its subject, and the stage's light is fixed,
   so cloth given its photo's colour came out darker and warmer than the photo (Kith's Armani crewneck: a
   third of a stop under, oatmeal drawn khaki). Once a garment is draped and shown, the scene is drawn as on

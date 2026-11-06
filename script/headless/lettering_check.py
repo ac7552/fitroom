@@ -52,17 +52,21 @@ def lettering(path):
     return Image.fromarray(np.where(crop, 0, 255).astype("uint8"))
 
 def read(image):
+    # (Several sizes and both page modes, the best kept: the reader is touchy about size, and a word that
+    # reads at any of them is a word; torn lettering reads at none.)
     best = ""
     for turn in (90, -90):
-        im = image.rotate(turn, expand=True)
-        scale = max(1, 160 // max(1, im.height))
-        im = im.resize((im.width * scale, im.height * scale))
-        with tempfile.NamedTemporaryFile(suffix=".png") as f:
-            im.save(f.name)
-            text = subprocess.run(["tesseract", f.name, "-", "--psm", "8", "-c", "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ"], capture_output=True, text=True).stdout
-        text = "".join(c for c in text.upper() if c.isalpha())
-        if score(text) > score(best):
-            best = text
+        for height in (160, 220, 300):
+            for psm in ("7", "8"):
+                im = image.rotate(turn, expand=True)
+                scale = max(1, height // max(1, im.height))
+                im = im.resize((im.width * scale, im.height * scale))
+                with tempfile.NamedTemporaryFile(suffix=".png") as f:
+                    im.save(f.name)
+                    text = subprocess.run(["tesseract", f.name, "-", "--psm", psm, "-c", "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ"], capture_output=True, text=True).stdout
+                text = "".join(c for c in text.upper() if c.isalpha())
+                if score(text) > score(best):
+                    best = text
     return best
 
 def score(text, word="ESSENTIALS"):

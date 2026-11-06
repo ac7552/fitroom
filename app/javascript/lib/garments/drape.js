@@ -54,7 +54,7 @@ const MAX_SEW_STEP = 0.0025   // metres a seam closes in one small step, at most
 // cloth left a little short anywhere (laid round a body's curves, it can't be its own size everywhere) has
 // nowhere to go but out of its surface, and where it hangs free (a skirt below the knees) that runs away
 // a little more every small step, until the hem is flung up and lands crumpled.
-export const SQUEEZE = 300
+export const SQUEEZE = Number(typeof location !== "undefined" && new URLSearchParams(location.search).get("squeeze")) || 300
 
 export class Drape {
   // cloth: from cloth.js; start: Float32Array placed positions (place.js); body: { positions, normals, index }
