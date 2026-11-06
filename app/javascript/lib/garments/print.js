@@ -1818,10 +1818,22 @@ function viewOf(data, w, h, side, pair) {
     const opening = colourOf(box, heelY - bh * 0.06, heelY + bh * 0.06, box.x0 + bw * 0.4, box.x1 - bw * 0.4)
     const rim = colourOf(box, box.y0 + bh * 0.45, box.y0 + bh * 0.55, box.x0, box.x0 + bw * 0.15)
     if (distance(opening, rim) < 10) return null
-    // The toe is the end nearer the shoe's widest point (the ball of the foot).
-    const widths = rows(box).map(r => (r ? r[1] - r[0] : 0))
-    const widest = widths.indexOf(Math.max(...widths)) / VIEW_ROWS
-    const toeUp = widest < 0.5
+    // Which end is the toe: the end whose colour is the side photo's toe's (its top bands: the toe box) rather
+    // than its heel's (the collar); when the colours don't tell them apart (one colour all over), the end
+    // nearer the shoe's widest point (the ball of the foot; a slouched cuff can be wider, so colours first).
+    const endColour = (from, to) => colourOf(box, box.y0 + bh * from, box.y0 + bh * to, box.x0 + bw * 0.3, box.x1 - bw * 0.3)
+    const topEnd = endColour(0.03, 0.18), bottomEnd = endColour(0.82, 0.97)
+    // (Every band of each end's strip: a toe box is low, so its strip has few.)
+    const bandsOf = list => (list ?? []).filter(Boolean)
+    const nearest = (colour, bands) => bands.length && colour ? Math.min(...bands.map(b => distance(colour, b))) : Infinity
+    const toeBands = bandsOf(side.colours.toe), heelBands = bandsOf(side.colours.heel)
+    const topIsToe = nearest(topEnd, toeBands) - nearest(topEnd, heelBands), bottomIsToe = nearest(bottomEnd, toeBands) - nearest(bottomEnd, heelBands)
+    let toeUp
+    if (Number.isFinite(topIsToe) && Number.isFinite(bottomIsToe) && Math.abs(topIsToe - bottomIsToe) > 6) toeUp = topIsToe < bottomIsToe
+    else {
+      const widths = rows(box).map(r => (r ? r[1] - r[0] : 0))
+      toeUp = widths.indexOf(Math.max(...widths)) / VIEW_ROWS < 0.5
+    }
     return { kind: "top", aspect: h / w, shoes: boxes.map(b => shoeOf(b, { toeUp })) }
   }
   if (tall > 0.7 && tall < 3.2 && box.fill > 0.5 && wander < 0.04 && stands) {

@@ -46,7 +46,19 @@ export default async function (stage) {
   const world = Array.from({ length: p.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(shoe.matrixWorld))
   const box = new THREE.Box3().setFromPoints(world)
   out.debug = shoe.geometry.userData.photo?.debug ?? shoe.geometry.userData.photo?.hull
-  out.views = views.map(v => v.kind)
+  {
+    const g = shoe.geometry, nrm = g.attributes.normal, av = g.attributes.aViews, ap = g.attributes.aPlain
+    if (nrm && av) {
+      let n = 0, sx = 0, sy = 0, sz = 0, sw = 0, plain = [0, 0, 0]
+      for (let i = 0; i < nrm.count; i++) if (nrm.getZ(i) > 0.8) { n++; sx += av.getX(i); sy += av.getY(i); sz += av.getZ(i); sw += av.getW(i); if (ap) for (let c = 0; c < 3; c++) plain[c] += ap.array[3 * i + c] }
+      const cx = (box.min.x + box.max.x) / 2, prof = []
+      for (let i = 0; i < nrm.count; i++) if (nrm.getZ(i) > 0.5 && Math.abs(world[i].x - cx) < 0.004) prof.push([round(world[i].y, 3), round(world[i].z, 4), round(nrm.getY(i), 2)])
+      prof.sort((a, b) => a[0] - b[0])
+      out.profile = prof.filter((_, k) => k % 2 === 0).slice(0, 60)
+      out.frontFaces = { n, side: round(sx / n, 3), top: round(sy / n, 3), back: round(sz / n, 3), front: round(sw / n, 3), plain: plain.map(v => round(v / n, 3)) }
+    }
+  }
+  out.views = views.map(v => [v.kind, v.shoes?.[0]?.toeUp, v.shoes?.length])
   out.where = { y: [round(box.min.y), round(box.max.y)], z: [round(box.min.z), round(box.max.z)], x: [round(box.min.x), round(box.max.x)] }
 
   // A raster of a projection of the triangles: cell (mm) over the axes a (across) and b (up).

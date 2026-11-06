@@ -63,5 +63,14 @@ test("the hull is a closed, outward-wound mesh over the foot, carved by the top 
   }
   const open = [...edges.values()].filter(v => v !== 2).length
   assert.ok(open < edges.size * 0.02, `${open} of ${edges.size} edges not shared by two triangles`)
+  // Consistently wound: the two triangles on an edge run it opposite ways.
+  const directed = new Set()
+  let same = 0
+  for (let t = 0; t < index.length; t += 3) for (let e = 0; e < 3; e++) {
+    const a = index[t + e], b = index[t + (e + 1) % 3]
+    if (directed.has(`${a}-${b}`)) same++
+    directed.add(`${a}-${b}`)
+  }
+  assert.ok(same < edges.size * 0.02, `${same} edges run the same way by both triangles`)
   assert.ok(geometry.userData.photo.metres > 0)
 })

@@ -897,6 +897,12 @@ export function wrapShoePhoto(geometry, side, { views = [], foot = "L" } = {}) {
   // its right in front.
   const pick = (view, leftOnLeft) => view && (view.shoes.length < 2 ? view.shoes[0] : view.shoes[(foot === "L") === leftOnLeft ? 0 : 1])
   const shoes = { top: pick(top, true), back: pick(behind, true), front: pick(ahead, false) }
+  // No photo from in front but one from behind (or the other way round): the toe's or the heel's end
+  // takes the other's photo, as the cloth is mostly the same round the shoe, rather than the plain colour.
+  geometry.userData.frontFromBack = !shoes.front && !!shoes.back
+  geometry.userData.backFromFront = !shoes.back && !!shoes.front
+  if (geometry.userData.frontFromBack) shoes.front = shoes.back
+  if (geometry.userData.backFromFront) shoes.back = shoes.front
   let tallest = 0
   for (let i = 0; i < n; i++) tallest = Math.max(tallest, p[3 * i + 1] - floor)
   const rowsAt = (shoe, r) => {

@@ -50,7 +50,8 @@ export function hullGeometry(body, frame, side, outline, views, style) {
   // Rows of a silhouette, top to bottom: [left, right] in shares of the photo's width; the box's height in
   // shares of its height. Scale k: metres per share of height; width shares are height shares / aspect.
   const silhouette = (view, shoe, k, flipX) => {
-    const rows = shoe.silhouette, n = rows.length
+    // (The rows smoothed a little: a knit's or a fur's edge is ragged, and every jag would be a ridge.)
+    const rows = soften(shoe.silhouette), n = rows.length
     const cx = (shoe.left + shoe.right) / 2
     return (across, row) => {   // across: metres from the middle; row: 0 at the box's top to 1 at its bottom
       const r = Math.min(n - 1, Math.max(0, Math.floor(row * n)))
@@ -83,6 +84,7 @@ export function hullGeometry(body, frame, side, outline, views, style) {
   const x0 = centreX - widest - cell, y0 = floor - cell, z0 = origin - cell
   const inside = new Uint8Array(nx * ny * nz)
   const topAt = u => lerp(outline.top, u), bottomAt = u => lerp(outline.bottom, u)
+  const ends = outline.front && outline.back ? { front: soften1(outline.front), back: soften1(outline.back) } : null
   for (let k = 0; k < nz; k++) {
     const z = z0 + (k + 0.5) * cell, u = (z - origin) / span
     if (u < 0 || u > 1) continue
@@ -92,7 +94,13 @@ export function hullGeometry(body, frame, side, outline, views, style) {
     for (let j = 0; j < ny; j++) {
       const y = y0 + (j + 0.5) * cell
       if (y < yBottom || y > yTop) continue
+      // And row by row (the side outline's back and front edge at this height): where the edge is steep
+      // (the toe's front, a heel's back) the columns alone would make terraces.
       const rowUp = 1 - (y - floor) / height
+      if (ends) {
+        const zb = origin + lerp(ends.back, 1 - rowUp) * span, zf = origin + lerp(ends.front, 1 - rowUp) * span
+        if (z < zb || z > zf) continue
+      }
       for (let i = 0; i < nx; i++) {
         const x = x0 + (i + 0.5) * cell - centreX
         if (inTop && !inTop(x, rowTop)) continue
@@ -104,7 +112,7 @@ export function hullGeometry(body, frame, side, outline, views, style) {
   }
   const mesh = surfaceNets(inside, nx, ny, nz, (i, j, k) => [x0 + i * cell, y0 + j * cell, z0 + k * cell])
   if (!mesh) return null
-  smooth(mesh.positions, mesh.index, 3)
+  smooth(mesh.positions, mesh.index, 6)
   // Wound outward: a closed mesh wound the other way has a negative volume.
   if (signedVolume(mesh.positions, mesh.index) < 0) for (let t = 0; t < mesh.index.length; t += 3) { const b = mesh.index[t + 1]; mesh.index[t + 1] = mesh.index[t + 2]; mesh.index[t + 2] = b }
   // The sole's rows (group 0) up to the side photo's sole line, the upper above.
@@ -125,6 +133,20 @@ export function hullGeometry(body, frame, side, outline, views, style) {
   geometry.computeVertexNormals()
   geometry.userData.photo = { floor, back: origin, length: span, metres, hull: { views: views.map(v => v.kind), cells: [nx, ny, nz] } }
   return geometry
+}
+
+// Rows of [left, right] with a 5-row running mean over their neighbours (nulls skipped).
+function soften(rows) {
+  return rows.map((row, r) => {
+    if (!row) return null
+    let l = 0, rr = 0, n = 0
+    for (let d = -2; d <= 2; d++) { const q = rows[r + d]; if (q) { l += q[0]; rr += q[1]; n++ } }
+    return [l / n, rr / n]
+  })
+}
+
+function soften1(list) {
+  return list.map((v, r) => { let sum = 0, n = 0; for (let d = -1; d <= 1; d++) { const q = list[r + d]; if (q !== null && q !== undefined) { sum += q; n++ } } return n ? sum / n : v })
 }
 
 function signedVolume(p, index) {

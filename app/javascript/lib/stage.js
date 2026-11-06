@@ -604,18 +604,19 @@ export class FittingStage {
     // The plain colour at a point of the photo: the median over a stretch of its row either side (a
     // twentieth of the photo), the brightest quarter left out, so a highlight on polished leather, a seam
     // or a crease doesn't paint a streak on the parts of the shoe the photo can't show.
-    const reach = Math.max(2, Math.round(size * 0.05))
+    const reach = Math.max(2, Math.round(size * 0.05)), up = Math.max(2, Math.round(size * 0.08))
     const sample = (u, v, out, at) => {
       const x = Math.min(size - 1, Math.max(0, Math.round(u * (size - 1)))), y = Math.min(size - 1, Math.max(0, Math.round((1 - v) * (size - 1))))
       const picked = []
-      for (let dx = -reach; dx <= reach; dx += 2) {
-        const xx = x + dx
-        if (xx < 0 || xx >= size) continue
-        const i = 4 * (y * size + xx)
+      // (A patch, not a row: a knit's or a tread's rows would otherwise paint stripes.)
+      for (let dy = -up; dy <= up; dy++) for (let dx = -reach; dx <= reach; dx++) {
+        const xx = x + dx, yy = y + dy
+        if (xx < 0 || xx >= size || yy < 0 || yy >= size) continue
+        const i = 4 * (yy * size + xx)
         picked.push([pixels[i], pixels[i + 1], pixels[i + 2], pixels[i] + pixels[i + 1] + pixels[i + 2]])
       }
       picked.sort((a, b) => a[3] - b[3])
-      const kept = picked.slice(0, Math.max(1, Math.ceil(picked.length * 0.75)))
+      const kept = picked.slice(0, Math.max(1, Math.ceil(picked.length * 0.85)))
       const mid = kept[Math.floor(kept.length / 2)]
       colour.setRGB(mid[0] / 255, mid[1] / 255, mid[2] / 255, THREE.SRGBColorSpace)
       out[at] = colour.r; out[at + 1] = colour.g; out[at + 2] = colour.b
@@ -636,8 +637,8 @@ export class FittingStage {
         if (m.sheen) m.sheenColor.set(0x5a5a5a)
         m.onBeforeCompile = shader => {
           shader.uniforms.uTop = { value: others.top ?? blank }
-          shader.uniforms.uBack = { value: others.back ?? blank }
-          shader.uniforms.uFront = { value: others.front ?? blank }
+          shader.uniforms.uBack = { value: others.back ?? (geometry.userData.backFromFront ? others.front : null) ?? blank }
+          shader.uniforms.uFront = { value: others.front ?? (geometry.userData.frontFromBack ? others.back : null) ?? blank }
           shader.vertexShader = shader.vertexShader
             .replace("#include <common>", "#include <common>\nattribute vec3 aPlain;\nattribute vec4 aViews;\nattribute vec2 uvTop;\nattribute vec2 uvBack;\nattribute vec2 uvFront;\nvarying vec3 vPlain;\nvarying vec4 vViews;\nvarying vec2 vTop;\nvarying vec2 vBack;\nvarying vec2 vFront;")
             .replace("#include <begin_vertex>", "#include <begin_vertex>\nvPlain = aPlain;\nvViews = aViews;\nvTop = uvTop;\nvBack = uvBack;\nvFront = uvFront;")
