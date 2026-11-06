@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
+import { deltaE, linearOf } from "lib/colour"
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js"
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js"
@@ -116,6 +117,17 @@ const DRAPE_IN_WORKER = typeof location !== "undefined" && typeof Worker !== "un
 const BANK_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("bank") !== "off"
 // The store's photographs laid on a top's cloth point for point (redrape.js); ?redrape=off does without.
 const REDRAPE_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("redrape") !== "off"
+// Metering: a camera meters on its subject, and a shop photographs its garment well exposed; the stage's light
+// is fixed, so cloth given the photo's colour came out under it darker and warmer than the photo (Kith's
+// Giorgio Armani crewneck: a third of a stop under, oatmeal drawn khaki). Once a garment is draped and shown,
+// it's drawn alone (lookShot), the middle colour of its cloth read, and its material given the per-channel
+// gain (linear light) that brings that to the photo's cloth colour (item.photoCloth), a few passes over
+// (the tone curve isn't linear). ?meter=off leaves it.
+const METER_ON = typeof location === "undefined" || new URLSearchParams(location.search).get("meter") !== "off"
+const METER_GAIN = [0.5, 2.2]   // no further than this either way: a photo on a model, or a misread colour
+const METER_PASSES = 3
+const METER_FLOOR = 0.004   // linear light, about 17 in sRGB
+const METER_BALANCE = 0.08  // how far the white balance may go from the exposure, either way
 // The hanger drape in a worker unless the address says ?hang=page.
 const HANG_IN_WORKER = typeof location === "undefined" || new URLSearchParams(location.search).get("hang") !== "page"
 const OVER = { bottom: [], top: ["bottom"], outer: ["bottom", "top"] }
@@ -870,6 +882,8 @@ export class FittingStage {
     // scarf and a belt are drawn in this one, as the cloth is.)
     d.top.item.color = item.color
     d.top.setColor(item.color)
+    // The cloth as its shop photographed it, which the drawn cloth is metered to (advanceMeter).
+    d.top.item.photoCloth = item.photoCloth ?? null
     // The store's photos, for re-draping (advanceRedrape); the drape's own record doesn't carry them.
     // (A romper's or jumpsuit's halves share its photos, each its part: above the waist or below it.)
     d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null, part: item.photoPart ?? null } : null
@@ -1478,13 +1492,14 @@ export class FittingStage {
     return { position }
   }
 
-  async photoPassesNow({ width, height, guides, record = false, close = false }) {
+  // quick: one frame, the screen's shadows (a reading of the picture, not a photo: metering).
+  async photoPassesNow({ width, height, guides, record = false, close = false, quick = false }) {
     const renderer = this.renderer, camera = this.camera
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
     const { aspect, fov, near, far } = camera
     const key = this.scene.children.find(o => o.isDirectionalLight)
     const mapSize = key?.shadow.mapSize.clone()
-    if (key) {
+    if (key && !quick) {
       key.shadow.mapSize.set(4096, 4096)
       key.shadow.map?.dispose()
       key.shadow.map = null
@@ -1507,8 +1522,8 @@ export class FittingStage {
     this.effects?.composer.setPixelRatio(1)
     this.effects?.composer.setSize(width, height)
     // A photo is the still picture: frames averaged, a fraction of a pixel and the light's place apart (still.js).
-    if (!this.still?.drawAveraged(PHOTO_SAMPLES)) this.draw()
-    const grained = withGrain(renderer.domElement)
+    if (quick || !this.still?.drawAveraged(PHOTO_SAMPLES)) this.draw()
+    const grained = quick ? renderer.domElement : withGrain(renderer.domElement)
     const image = toBlob(grained)
     let depth = null, mask = null
     // Depth over the figure's own span, so its near and far ends use the whole range.
@@ -1552,7 +1567,7 @@ export class FittingStage {
     }
     camera.fov = fov
     if (close) camera.clearViewOffset()
-    if (key) {
+    if (key && !quick) {
       key.shadow.mapSize.copy(mapSize)
       key.shadow.map?.dispose()
       key.shadow.map = null
@@ -1569,7 +1584,7 @@ export class FittingStage {
   // One garment alone, close up, straight on from in front (or behind), on a plain backdrop: the mannequin,
   // the other clothes, the floor and its shadow hidden, so it can be read as a shop's photo is and held to the
   // shop's (look_check.js). Returns ImageData, or null when nothing is on in that slot.
-  async lookShot(slot = "top", { back = false, width = 480, height = 720 } = {}) {
+  async lookShot(slot = "top", { back = false, width = 480, height = 720, quick = false } = {}) {
     const d = this.slots[slot]
     if (!d?.top?.mesh) return null
     if (d.fade) this.finishFade(d)
@@ -1597,7 +1612,7 @@ export class FittingStage {
       this.faceFront()
       this.turnCamera(FRONT_ANGLE + (back ? Math.PI : 0))
       this.controls.update()
-      const { image } = await this.photoPassesNow({ width, height, guides: false, record: false, close: true })
+      const { image } = await this.photoPassesNow({ width, height, guides: false, record: false, close: true, quick })
       const bitmap = await createImageBitmap(image)
       const canvas = document.createElement("canvas")
       canvas.width = width
@@ -1973,6 +1988,117 @@ export class FittingStage {
     }
   }
 
+  // Each garment metered to its shop photo once it's draped, shown and (when its photos are laid on) re-draped,
+  // one at a time; again when the scene's light changes.
+  advanceMeter() {
+    if (!METER_ON) return
+    for (const slot of this.order) {
+      const d = this.slots[slot], item = d?.top?.item
+      if (!item?.photoCloth || !d.top.done || d.posing || !d.shown) continue
+      if (d.redrapeState && !["done", "off"].includes(d.redrapeState)) continue
+      const key = `${item.photoCloth}|${d.redrapeState ?? ""}|${this.sceneLook}`
+      if (d.metered === key || d.metering) continue
+      d.metering = true
+      this.meter(slot, item.photoCloth)
+        .then(gain => { if (this.slots[slot] === d) { d.metered = key; d.meterGain = gain; this.onMeter?.(slot, gain) } })
+        .catch(error => console.warn("[meter]", error))
+        .finally(() => { d.metering = false; this.still?.reset(); this.start() })
+      return
+    }
+  }
+
+  // The middle colour (sRGB [r, g, b]) of `slot`'s cloth as the page shows it: the whole scene drawn as on
+  // screen (its shading and contact shadows too, which a reading of the garment alone misses by half a stop),
+  // from the front, and read where a second pass shows only that garment. Null for too little cloth seen.
+  async meterShot(slot) {
+    const d = this.slots[slot]
+    if (!d?.top?.mesh) return null
+    if (d.fade) this.finishFade(d)
+    const position = this.camera.position.clone()
+    const size = { width: 240, height: 360 }
+    try {
+      this.faceFront()
+      this.turnCamera(FRONT_ANGLE)
+      this.controls.update()
+      const picture = await this.photoPassesNow({ ...size, guides: false, record: false, close: true, quick: true })
+      // The same view with only this garment, flat white on black: the camera sees one layer, the garment's
+      // (nothing hidden, so the figure is framed the same way).
+      const keep = d.top.mesh
+      keep.traverse(o => o.layers.enable(METER_LAYER))
+      const background = this.scene.background
+      this.scene.background = new THREE.Color(0x000000)
+      this.scene.overrideMaterial = METER_MASK
+      this.camera.layers.set(METER_LAYER)
+      this.plainDraw = true
+      let mask
+      try {
+        mask = await this.photoPassesNow({ ...size, guides: false, record: false, close: true, quick: true })
+      } finally {
+        this.plainDraw = false
+        this.camera.layers.set(0)
+        this.scene.overrideMaterial = null
+        this.scene.background = background
+        keep.traverse(o => o.layers.disable(METER_LAYER))
+      }
+      const pixels = async blob => {
+        const bitmap = await createImageBitmap(blob)
+        const canvas = document.createElement("canvas")
+        canvas.width = size.width; canvas.height = size.height
+        const context = canvas.getContext("2d", { willReadFrequently: true })
+        context.drawImage(bitmap, 0, 0)
+        return context.getImageData(0, 0, size.width, size.height)
+      }
+      return clothMedian(await pixels(picture.image), await pixels(mask.image))
+    } finally {
+      this.camera.position.copy(position)
+      this.controls.update()
+      this.still?.reset()
+      this.draw()
+      this.start()
+    }
+  }
+
+  // The gain that draws `slot`'s cloth the colour `hex` (sRGB) under the stage's light. Sets it as it goes.
+  async meter(slot, hex) {
+    const d = this.slots[slot]
+    const target = linearOf(hex)
+    // The exposure (one number) does the metering; the white balance (per channel, about the exposure) may
+    // move only a little: a garment whose cloth is drawn redder than its photo's (a camo's tile taken from
+    // its redder patches) mustn't have its white drawcords and zip turned blue to make up for it.
+    let exposure = 1, balance = [1, 1, 1]
+    const gainOf = () => balance.map(b => Math.min(METER_GAIN[1], Math.max(METER_GAIN[0], exposure * b)))
+    let gain = gainOf()
+    d.top.setMeter(gain)
+    const lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    for (let pass = 0; pass < METER_PASSES; pass++) {
+      const seen = await this.meterShot(slot)
+      if (this.slots[slot] !== d) break
+      if (!seen) break
+      const lin = linearOf(seen)
+      // (A little added to both: on black cloth the ratio of two near-nothings would swing the gain about.)
+      const step = (lum(target) + METER_FLOOR) / (lum(lin) + METER_FLOOR)
+      exposure *= step
+      balance = balance.map((b, c) => Math.min(1 + METER_BALANCE, Math.max(1 - METER_BALANCE, (b * (target[c] + METER_FLOOR)) / (lin[c] + METER_FLOOR) / step)))
+      const next = gainOf()
+      const moved = next.some((g, c) => Math.abs(g - gain[c]) > 0.01)
+      gain = next
+      d.top.setMeter(gain)
+      if (!moved) break
+    }
+    return gain
+  }
+
+  // How far the drawn cloth is from its photo's: { target, seen (sRGB [r, g, b]), deltaE (CIE76 Lab), gain }
+  // for a metered slot, or null. For the harness and the nightly accuracy run.
+  async meterReport(slot) {
+    const d = this.slots[slot], item = d?.top?.item
+    if (!item?.photoCloth || !d.top.done) return null
+    const seen = await this.meterShot(slot)
+    if (!seen) return null
+    const target = [1, 3, 5].map(i => parseInt(item.photoCloth.slice(i, i + 2), 16))
+    return { target, seen, deltaE: deltaE(target, seen), gain: d.meterGain ?? null }
+  }
+
   // A few milliseconds of draping per frame, so the page stays smooth while the cloth settles: the pants
   // first, then the top over them.
   advanceDrape() {
@@ -1981,6 +2107,7 @@ export class FittingStage {
       if (this.busy) { this.busy = false; this.onDrape?.("done", true) }
       if (this.revealed) { this.revealed = false; this.reveal() }
       this.advanceRedrape()
+      this.advanceMeter()
     } else this.announceBusy()
     // A tucked top waits to be shown until the pants it's tucked into are (it's cut short, to end inside them).
     for (const slot of this.order) if (this.slots[slot]?.final && !this.slots[slot].posing) this.show(this.slots[slot])
@@ -2608,3 +2735,20 @@ function addShapeKey(mesh, name, offsets) {
   mesh.morphTargetInfluences.push(0)
   return true
 }
+
+// The middle colour (sRGB, [r, g, b]) of a picture where a mask (the same size) is white, a pixel in from the
+// mask's edges, every other pixel. Null for too few.
+function clothMedian({ data, width, height }, mask) {
+  const on = (x, y) => x >= 0 && y >= 0 && x < width && y < height && mask.data[4 * (y * width + x)] > 128
+  const s = [[], [], []]
+  for (let y = 1; y < height - 1; y += 2) for (let x = 1; x < width - 1; x += 2) {
+    if (!on(x, y) || !on(x - 1, y) || !on(x + 1, y) || !on(x, y - 1) || !on(x, y + 1)) continue
+    const i = 4 * (y * width + x)
+    s[0].push(data[i]); s[1].push(data[i + 1]); s[2].push(data[i + 2])
+  }
+  if (s[0].length < 150) return null
+  return s.map(v => { v.sort((a, b) => a - b); return v[v.length >> 1] })
+}
+const METER_LAYER = 7
+const METER_MASK = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, toneMapped: false })
+

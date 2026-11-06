@@ -28,6 +28,7 @@ export default async function (stage) {
   }
   const item = {
     kind: "trousers", style: "sweatpants", fabric: "fleece", color: front?.color ?? "#111111", size: SIZE, legPrints,
+    photoCloth: params.get("meter") === "off" ? null : front?.color ?? null,
     photoMap: front ? { image: front.image, soft: front.soft, layout: front.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
   }
   if (params.get("redrape") !== "off") Object.assign(item, { photo: photos.front, back_photo: photos.back ?? null })
@@ -37,7 +38,7 @@ export default async function (stage) {
     stage.advanceDrape(); stage.advanceRedrape?.()
     await new Promise(r => setTimeout(r, 0))
     const d = Object.values(stage.slots).find(Boolean)
-    if (stage.settled && (!item.photo || ["done", "off"].includes(d?.redrapeState))) { Object.assign(details, { redrape: d?.redrapeState, rigid: d?.rigid ?? null }); break }
+    if (stage.settled && (!item.photo || ["done", "off"].includes(d?.redrapeState)) && (!item.photoCloth || (d?.metered && !d.metering))) { Object.assign(details, { redrape: d?.redrapeState, rigid: d?.rigid ?? null, meter: await stage.meterReport("bottom") }); break }
   }
   return details
 }

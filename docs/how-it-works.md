@@ -249,6 +249,13 @@ under a photo so the fabric isn't lit twice.
   photo shows again at the same seam is laid once. `script/headless/lettering_check.py` reads the word back
   by OCR (Kith's Essentials sweatpant: 0.17 before, 0.90 after; its shop photo 0.64). The cloth's shader takes
   16 vertex attributes at most, a Mac's limit (`texture_units.mjs` checks both).
+- **Metered to the photo** (stage.js#meter): a camera meters on its subject, and the stage's light is fixed,
+  so cloth given its photo's colour came out darker and warmer than the photo (Kith's Armani crewneck: a
+  third of a stop under, oatmeal drawn khaki). Once a garment is draped and shown, the scene is drawn as on
+  screen from the front, the garment's own pixels found with a second pass, and the garment's material
+  given the exposure (and a white balance of at most 8% about it) that brings their middle colour to the
+  photo's cloth colour, over three passes. `stage.meterReport(slot)` gives the remaining ΔE (CIE76; the
+  Armani: 0, the camo hoodie 4.5, its tile a little redder than the photo's commonest colour). `?meter=off`.
 - **The light**: colours go through Khronos PBR Neutral, which keeps the shops' colours. The cloth's shader
   reads at most 15 textures: a Mac or phone GPU allows 16, and one over that draws nothing
   (`script/headless/texture_units.mjs` checks it; the headless browser allows 32, so it can't see this).

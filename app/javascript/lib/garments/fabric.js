@@ -377,6 +377,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // A graphic on a leg laid as one piece (DrapedTop#setLegPrints): pants don't use uPrint, so its texture
     // goes there (the shader reads 15 textures of the 16 a GPU allows).
     uLegPrintOn: { value: 0 },
+    // Per-channel gain (linear) metering the cloth to its shop photo (DrapedTop#setMeter).
+    uMeter: { value: new THREE.Vector3(1, 1, 1) },
     // Each graphic's place in that texture: [u0, v0, du, dv].
     uLegRects: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
     uPrintHalf: { value: 26 },
@@ -522,6 +524,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform sampler2D uPrint;
         uniform float uPrintOn;
         uniform float uLegPrintOn;
+        uniform vec3 uMeter;
         uniform vec4 uLegRects[ 4 ];
         varying vec3 vLegPrint;
         uniform float uPrintHalf;
@@ -763,6 +766,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           }
         }
         diffuseColor.rgb = mix( diffuseColor.rgb, uMetal, metal );
+        // Metered to the shop's photo (DrapedTop#setMeter): the cloth drawn under this light comes out the
+        // colour the photo shows it, as a camera metered on the garment would have it.
+        diffuseColor.rgb *= uMeter;
         // Creases: where the cloth is gathered (squeezed) or tucked into a fold, its tiny folds shade each
         // other, so it's a little darker and rougher there (the photo's colour too, laid on above).
         float crease = clamp( vStrain + CREASE_FOLD * ( 1.0 - vShade ), 0.0, 1.0 ) * ( 1.0 - metal );

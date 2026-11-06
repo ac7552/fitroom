@@ -231,7 +231,7 @@ export default class extends Controller {
       if (garment.photo) {
         clothColor(garment.photo).then(color => {
           if (!color || halves.some(item => !Object.values(this.outfit).includes(item))) return
-          for (const item of halves) item.garment.color = item.garment.photoColor = asNamed(color, garment.color_name, item.garment.color)
+          for (const item of halves) { item.garment.color = item.garment.photoColor = asNamed(color, garment.color_name, item.garment.color); item.garment.photoCloth = color }
           if (halves.every(item => item.fit)) this.render()
         }).catch(() => {})
       }
@@ -249,6 +249,7 @@ export default class extends Controller {
         reading.then(read => {
           if (!read?.color || this.outfit[kind] !== item) return
           garment.color = garment.photoColor = asNamed(read.color, garment.color_name, garment.color)
+          garment.photoCloth = read.color
           if (read.sole) garment.sole = read.sole
           if (read.collar) garment.collar = read.collar
           if (read.side) garment.shoeSide = read.side
@@ -290,6 +291,9 @@ export default class extends Controller {
         const color = close ?? read?.color ?? await clothColor(garment.photo)
         if (!color || this.outfit[kind] !== item) { if (bottoms) garment.photoMap ??= null; garment.lookPending = false; this.queueLookCheck(); return }
         garment.color = garment.photoColor = asNamed(color, garment.color_name, garment.color)
+        // The cloth as the shop photographed it (the front photo's, not a close-up's), which the 3D view
+        // meters the drawn cloth to (stage.js#meter).
+        garment.photoCloth = read?.color ?? color
         // The shop's photo of the back, read the same way, goes on the back.
         const backPhoto = garment.back_photo && read ? await cleanPhoto(garment.back_photo, part) : null
         if (backPhoto) garment.backCleaned = backPhoto !== garment.back_photo
@@ -849,7 +853,7 @@ export default class extends Controller {
     this.editorErrorTarget.hidden = true
     const linked = this.outfit[kind]?.garment.link_note ? this.outfit[kind].garment : null
     const garment = linked
-      ? (({ link_note, photoColor, photoMap, print, backPrint, cuffTone, lookDone, lookChecks, ...rest }) => ({ ...rest, color: rest.listingColor ?? rest.color }))(linked)
+      ? (({ link_note, photoColor, photoCloth, photoMap, print, backPrint, cuffTone, lookDone, lookChecks, ...rest }) => ({ ...rest, color: rest.listingColor ?? rest.color }))(linked)
       : {
           name: `Your ${KINDS[kind].toLowerCase()}`, brand: null, color_name: null, color: "#2a3552",
           source_url: null, garment: kind, photo: null, fabric: kind === "top" ? "cotton" : "wool",
@@ -881,7 +885,7 @@ export default class extends Controller {
     try {
       const photo = await smallPhoto(file)
       if (this.outfit[kind] !== item) return
-      const { photoColor, photoMap, print, backPrint, cuffTone, lookDone, lookChecks, ...garment } = item.garment
+      const { photoColor, photoCloth, photoMap, print, backPrint, cuffTone, lookDone, lookChecks, ...garment } = item.garment
       this.addItem({ ...garment, photo, color: garment.listingColor ?? garment.color })
       this.update()
     } catch (error) {
@@ -1871,6 +1875,7 @@ export default class extends Controller {
       size: garment.chart.sizes.find(s => s.name === selected),
       checks: fit.sizes.find(s => s.size === selected).checks,
       color: garment.color,
+      photoCloth: garment.photoCloth ?? null,
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
       sleevePrint: garment.sleevePrint ?? null,

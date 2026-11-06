@@ -768,6 +768,19 @@ export class DrapedTop {
   // (print.js's readDressPhoto, its layout marked dress).
   // A re-draped photo (redrape.js) comes with its own texture coordinates (map.uv) and the back photo as
   // map.back.image; the front image serves for the softened copy too.
+  // The camera's metering of this garment: a per-channel gain (linear light) on everything the cloth shows,
+  // so that drawn under the stage's light it comes out the colour its shop photo shows (stage.js#meter).
+  // [1, 1, 1] for none.
+  setMeter(gain) {
+    const g = gain ?? [1, 1, 1]
+    this.meter = g
+    for (const key of ["main", "rib"]) this.materials[key].userData.uniforms.uMeter.value.set(g[0], g[1], g[2])
+    if (this.fuzz) {
+      const c = fibreColor(this.item.color)
+      this.fuzz.material.color.setRGB(c.r * g[0], c.g * g[1], c.b * g[2])
+    }
+  }
+
   // Graphics on the legs, laid as one piece each by measurement (leg_prints.js): { front: { prints, layout },
   // back: { prints, layout } | null, atlas: legPrintAtlas's }, or null for none. Pants only.
   setLegPrints(legs) {
