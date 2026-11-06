@@ -193,11 +193,15 @@ cloth's edge, and the mask's half-size steps) is taken over by the cloth just in
 leans from the cloth's colour toward the backdrop's by more than 8% of the way, as wide as it is there, at
 most 0.8% of the photo across. The side of a leg or a tee lands on that thin strip of the photo, stretched,
 and it showed as white down the seam (Kith's &Kin sweatpants: 11 px of rim, the points along the side seams
-162 bright before, 110 after, the cloth 106). The front panels and the sleeves take the photo of the front;
-the back panels the photo of the back, mirrored, when the listing has one, and the front photo otherwise. A
-shirt's folded collar (drawn over the drape) is textured with the photo's collar rows, and a cut-out the
-listing names that the photo shows covered (a drape over it) isn't cut. Until the photos are on, the garment
-shows as before (its colour, its cut-out print); `?redrape=off` keeps it that way.
+162 bright before, 110 after, the cloth 106). On a hooded garment the hood's drawcords are painted out of the
+photo of the front the same way, each row from the cloth either side (`paintCords`): thin upright runs, far
+lighter or darker than nearly all the cloth, hanging near the middle from below the hood (the zip, which runs
+on down, stays); laid on, the drape stretched them across the chest and shoulders in white bands (Kith's Daily
+Paper camo zip hoodie). The front panels and the sleeves take the photo of the front; the back panels the
+photo of the back, mirrored, when the listing has one, and the front photo otherwise. A shirt's folded collar
+(drawn over the drape) is textured with the photo's collar rows, and a cut-out the listing names that the
+photo shows covered (a drape over it) isn't cut. Until the photos are on, the garment shows as before (its
+colour, its cut-out print); `?redrape=off` keeps it that way.
 
 ### Hung or laid out
 

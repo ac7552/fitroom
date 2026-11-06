@@ -206,3 +206,30 @@ test("the light rim inside a photo's outline takes the cloth's colour from just 
   const plain = rimmed(0)
   assert.equal(cleanRim(plain.ctx, plain.mask, plain.w, plain.h, plain.bg), 0)
 })
+
+// A made-up hoodie front: blotchy two-tone cloth on a light backdrop, two cream cords hanging from below the
+// hood to halfway down, and a dark zip all the way down the middle.
+function hoodieFront() {
+  const w = 400, h = 400, data = new Uint8ClampedArray(4 * w * h), mask = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, inside = x >= 80 && x < 320 && y >= 40 && y < 380
+    let c = [235, 235, 235]
+    if (inside) {
+      c = ((x >> 4) + (y >> 4)) % 2 ? [120, 100, 80] : [90, 75, 60]
+      if (Math.abs(x - 200) <= 1) c = [30, 30, 30]   // the zip
+      if (y >= 100 && y < 210 && (Math.abs(x - 185) <= 2 || Math.abs(x - 215) <= 2)) c = [225, 215, 195]   // the cords
+    }
+    data.set([...c, 255], 4 * i)
+    mask[i] = inside ? 1 : 0
+  }
+  return { ctx: { getImageData: () => ({ data }), putImageData: () => {} }, data, mask, w, h, box: { left: 80, right: 319, top: 40, bottom: 379, w, h } }
+}
+
+test("a hood's cords are painted out of the photo of the front with the cloth beside them; the zip isn't", async () => {
+  const { paintCords } = await import("lib/garments/redrape")
+  const { ctx, data, mask, w, h, box } = hoodieFront()
+  assert.equal(paintCords(ctx, mask, w, h, box), 2)
+  const lum = (x, y) => { const i = 4 * (y * w + x); return 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2] }
+  for (const x of [185, 215]) for (const y of [110, 150, 200]) assert.ok(lum(x, y) < 130, `cord left at ${x},${y}: ${lum(x, y)}`)
+  assert.ok(lum(200, 150) < 40 && lum(200, 300) < 40, "the zip stays")
+})

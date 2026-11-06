@@ -1955,7 +1955,9 @@ export class FittingStage {
         if (!this.redrapeCache.has(key)) {
           if (this.redrapeCache.size > 6) this.redrapeCache.delete(this.redrapeCache.keys().next().value)
           const options = { labels: !d.top.bottoms, kind: d.top.bottoms ? "trousers" : "top", part: photos.part }
-          this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, options), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
+          // A hood's drawcords hang over the front (redrape.js's paintCords).
+          const cords = !d.top.bottoms && d.top.cloth.panels.some(p => /^hood/.test(p))
+          this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, { ...options, cords }), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
             .then(([front, back]) => (front ? { front, back } : null)).catch(() => null))
         }
         this.redrapeCache.get(key).then(photos => {

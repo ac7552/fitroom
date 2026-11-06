@@ -438,7 +438,9 @@ export function collarStrip(photo) {
 
 // A store photo as a canvas (at most `size` across) with its cloth mask: { canvas, mask, box } or null.
 // labels: paint over a neck label (patchLabels; not for trousers, whose drawstring would go the same way).
-export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kind = "top", part = null } = {}) {
+// cords: paint out a hood's drawcords hanging down the chest (paintCords; the photo of the front of a hooded
+// garment).
+export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kind = "top", part = null, cords = false } = {}) {
   const image = await new Promise((resolve, reject) => { const img = new Image(); img.crossOrigin = "anonymous"; img.onload = () => resolve(img); img.onerror = reject; img.src = src })
   const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.round(image.naturalWidth * scale), h = Math.round(image.naturalHeight * scale)
@@ -482,6 +484,7 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kin
   // half-size steps), taken over by the cloth just inside it: laid on, a leg's or a tee's side lands on that
   // thin strip of the photo, stretched, and it showed as white down the seam.
   const rim = cleanRim(ctx, mask, w, h, found.bg)
+  const cordCount = cords && !worn ? paintCords(ctx, mask, w, h, box) : 0
   if (labels && !worn) patchLabels(ctx, mask, box)
   const flat = flatField(ctx, mask, box)
   // Past the cloth's edge, the cloth's own colour (bleed), so the texture's filtering never draws in the backdrop.
@@ -489,8 +492,106 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kin
   const plain = ctx.getImageData(0, 0, w, h)
   bleed(plain.data, mask, w, h, BLEED)
   ctx.putImageData(plain, 0, 0)
-  return { canvas, mask, box, bg: found.bg, flat, worn, cloth: clothColourOf(plain.data, mask, w, h), rim }
+  return { canvas, mask, box, bg: found.bg, flat, worn, cloth: clothColourOf(plain.data, mask, w, h), rim, cords: cordCount }
 }
+
+// A hood's drawcords in a photo of the front, painted out with the cloth either side of them: laid on point
+// for point they aren't cloth, and the drape stretched them across the chest and shoulders in white bands
+// (Kith's Daily Paper camo zip hoodie, its cream cords). A cord: pixels far lighter or darker than nearly all
+// of the cloth (beyond its 2nd to 98th percentiles by CORD_APART, from the cloth away from the middle), in
+// one thin upright run (at least 6% of the garment long and three times as long as it's wide) near the
+// middle, from below the hood down to three-quarters of the way; one that runs on to there is the zip.
+// Each row of a cord (grown a little, for its shadow) is filled from the cloth either side (a few pixels'
+// mean, so no streaks). Changes the canvas (ctx) in place; returns how many cords it painted out.
+export function paintCords(ctx, mask, w, h, box) {
+  const image = ctx.getImageData(0, 0, w, h), d = image.data
+  const W = box.right - box.left + 1, H = box.bottom - box.top + 1
+  if (W < 40 || H < 40) return 0
+  const lum = i => 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]
+  // The middle: of the garment's top rows (a hood's crown, a collar).
+  let sum = 0, n = 0
+  for (let y = box.top; y <= box.top + Math.max(2, Math.round(H * 0.03)); y++) for (let x = box.left; x <= box.right; x++) if (mask[y * w + x]) { sum += x; n++ }
+  if (!n) return 0
+  const cx = sum / n, half = W * 0.2
+  // The cloth's lightness, away from the middle.
+  const lums = []
+  for (let y = Math.round(box.top + H * 0.2); y < box.top + H * 0.8; y += 3) for (let x = box.left; x <= box.right; x += 3) {
+    const i = y * w + x
+    if (mask[i] && Math.abs(x - cx) > half) lums.push(lum(i))
+  }
+  if (lums.length < 200) return 0
+  lums.sort((a, b) => a - b)
+  const low = lums[Math.floor(lums.length * 0.02)] - CORD_APART, high = lums[Math.floor(lums.length * 0.98)] + CORD_APART
+  // Candidates in the window, then their connected runs.
+  const x0 = Math.max(0, Math.floor(cx - half)), x1 = Math.min(w - 1, Math.ceil(cx + half))
+  const y0 = Math.round(box.top + H * 0.12), y1 = Math.min(h - 1, Math.round(box.top + H * 0.75))
+  const ww = x1 - x0 + 1, wh = y1 - y0 + 1
+  const cand = new Uint8Array(ww * wh)
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const i = y * w + x
+    if (!mask[i]) continue
+    const l = lum(i)
+    if (l > high || l < low) cand[(y - y0) * ww + x - x0] = 1
+  }
+  const seen = new Uint8Array(ww * wh), fill = new Uint8Array(w * h)
+  let cords = 0
+  for (let k = 0; k < ww * wh; k++) {
+    if (!cand[k] || seen[k]) continue
+    const run = [k]
+    seen[k] = 1
+    let minX = Infinity, maxX = -1, minY = Infinity, maxY = -1
+    for (let r = 0; r < run.length; r++) {
+      const q = run[r], qx = q % ww, qy = (q - qx) / ww
+      if (qx < minX) minX = qx; if (qx > maxX) maxX = qx; if (qy < minY) minY = qy; if (qy > maxY) maxY = qy
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = qx + dx, ny = qy + dy
+        if (nx < 0 || ny < 0 || nx >= ww || ny >= wh) continue
+        const j = ny * ww + nx
+        if (cand[j] && !seen[j]) { seen[j] = 1; run.push(j) }
+      }
+    }
+    const tall = maxY - minY + 1, wide = maxX - minX + 1
+    if (tall < H * 0.06 || tall < 3 * wide || maxY >= wh - 1) continue
+    cords++
+    for (const q of run) { const qx = q % ww, qy = (q - qx) / ww; fill[(qy + y0) * w + qx + x0] = 1 }
+  }
+  if (!cords) return 0
+  // Grown a little (the cord's shadow, its soft edge), within the cloth.
+  const grow = Math.max(2, Math.round(W * 0.006))
+  const grown = boxBlur(Float32Array.from(fill), w, h, grow)
+  for (let i = 0; i < w * h; i++) fill[i] = grown[i] > 0 && mask[i] ? 1 : 0
+  const src = Uint8ClampedArray.from(d)
+  const side = (x, y, dir, c) => {
+    let total = 0, count = 0
+    for (let dy = -3; dy <= 3; dy++) for (let k = 0; k < 4; k++) {
+      const xx = x + dir * k, yy = y + dy
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h || fill[yy * w + xx] || !mask[yy * w + xx]) continue
+      total += src[4 * (yy * w + xx) + c]; count++
+    }
+    return count ? total / count : null
+  }
+  for (let y = y0 - grow; y <= y1 + grow; y++) {
+    if (y < 0 || y >= h) continue
+    for (let x = Math.max(0, x0 - grow); x <= Math.min(w - 1, x1 + grow);) {
+      if (!fill[y * w + x]) { x++; continue }
+      let end = x
+      while (end + 1 < w && fill[y * w + end + 1]) end++
+      const a = x - 1, b = end + 1
+      for (let c = 0; c < 3; c++) {
+        const l = side(a, y, -1, c), r = side(b, y, 1, c)
+        for (let k = x; k <= end; k++) {
+          const t = (k - a) / (b - a)
+          d[4 * (y * w + k) + c] = l !== null && r !== null ? l + (r - l) * t : l ?? r ?? d[4 * (y * w + k) + c]
+        }
+      }
+      x = end + 1
+    }
+  }
+  ctx.putImageData(image, 0, 0)
+  return cords
+}
+// A cord is this much lighter than the cloth's lightest 2% (or darker than its darkest).
+const CORD_APART = 15
 
 // The cloth's rim in a photo: the band just inside its outline whose colour leans from the cloth's toward
 // the backdrop's (bg) by more than RIM_LEAN of the way (Kith's &Kin sweatpants: half the way at the
