@@ -14,12 +14,18 @@ export default async function (stage) {
   const THREE = await import("three")
   const { lastFor, measureSide } = await import("lib/garments/lasts")
   const read = photo === "none" ? null : await print.readShoe(photo)
+  // The shop's other photos (?views=url,url: from the front, behind, above), for the hull.
+  const views = []
+  for (const src of (P.get("views") ?? "").split(",").filter(Boolean)) {
+    const view = read?.side ? await print.readShoeView(src, read.side).catch(() => null) : null
+    if (view) views.push(view); else console.warn("view not read:", src)
+  }
   const words = P.get("words") ?? P.get("name") ?? ""
   const last = lastFor(words, style, read?.side)
   stage.setOutfit([
     { kind: "top", style: "tee", size: { chest: 106, shoulders: 47, sleeve: 21, length: 72 }, color: "#b33a3a", fabric: "cotton" },
     { kind: "shoes", style, fabric: P.get("fabric") ?? "leather", color: read?.color ?? "#c9a66b", sole: read?.sole ?? null, collar: read?.collar ?? null,
-      size: {}, name: P.get("name") ?? "", words, shoeSide: read?.side ?? null, shoePhoto: read?.side ? photo : null, shoeViews: [] }
+      size: {}, name: P.get("name") ?? "", words, shoeSide: read?.side ?? null, shoePhoto: read?.side ? photo : null, shoeViews: views }
   ])
   const deadline = Date.now() + 240000
   while (!stage.settled && Date.now() < deadline) { stage.advanceDrape(); await new Promise(r => setTimeout(r, 0)) }
@@ -39,7 +45,8 @@ export default async function (stage) {
   const p = shoe.geometry.attributes.position, index = shoe.geometry.index.array
   const world = Array.from({ length: p.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(shoe.matrixWorld))
   const box = new THREE.Box3().setFromPoints(world)
-  out.debug = shoe.geometry.userData.photo?.debug
+  out.debug = shoe.geometry.userData.photo?.debug ?? shoe.geometry.userData.photo?.hull
+  out.views = views.map(v => v.kind)
   out.where = { y: [round(box.min.y), round(box.max.y)], z: [round(box.min.z), round(box.max.z)], x: [round(box.min.x), round(box.max.x)] }
 
   // A raster of a projection of the triangles: cell (mm) over the axes a (across) and b (up).

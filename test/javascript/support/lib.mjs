@@ -6,5 +6,6 @@ const root = new URL("../../../app/javascript/", import.meta.url).href
 register(`data:text/javascript,${encodeURIComponent(`
   export async function resolve(specifier, context, next) {
     if (specifier.startsWith("lib/")) return next(${JSON.stringify(root)} + specifier + ".js", context)
+    if (specifier === "three") return next(${JSON.stringify(new URL("../../../vendor/javascript/three.js", import.meta.url).href)}, context)
     return next(specifier, context)
   }`)}`)

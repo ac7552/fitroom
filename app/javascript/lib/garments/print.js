@@ -1732,6 +1732,7 @@ export async function readShoeView(src, side) {
 }
 
 export const VIEW_ROWS = 48
+export const HULL_ROWS = 128
 export function shoeView(data, w, h, side) {
   // A pair lying touching (seen from above, side by side) is tried split in two when it isn't one shoe.
   return viewOf(data, w, h, side, false) ?? viewOf(data, w, h, side, true)
@@ -1785,8 +1786,8 @@ function viewOf(data, w, h, side, pair) {
     return values[0].length ? values.map(median) : null
   }
   const box = boxes[0], bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1
-  const rows = b => Array.from({ length: VIEW_ROWS }, (_, r) => {
-    const y = Math.min(h - 1, Math.round(b.y0 + ((r + 0.5) / VIEW_ROWS) * (b.y1 - b.y0)))
+  const rows = (b, n = VIEW_ROWS) => Array.from({ length: n }, (_, r) => {
+    const y = Math.min(h - 1, Math.round(b.y0 + ((r + 0.5) / n) * (b.y1 - b.y0)))
     let first = -1, last = -1
     for (let x = b.x0; x <= b.x1; x++) if (b.inside[y * w + x]) { if (first < 0) first = x; last = x }
     return first < 0 ? null : [first / w, (last + 1) / w]
@@ -1796,7 +1797,9 @@ function viewOf(data, w, h, side, pair) {
     for (let r = list.length - 2; r >= 0; r--) list[r] ??= list[r + 1]
     return list
   }
-  const shoeOf = (b, extra = {}) => ({ left: b.x0 / w, right: (b.x1 + 1) / w, top: b.y0 / h, bottom: (b.y1 + 1) / h, rows: fill(rows(b)), ...extra })
+  // (silhouette: the outline's left and right edge in HULL_ROWS rows top to bottom, for carving the shoe's
+  // shape from its views, see hull.js.)
+  const shoeOf = (b, extra = {}) => ({ left: b.x0 / w, right: (b.x1 + 1) / w, top: b.y0 / h, bottom: (b.y1 + 1) / h, rows: fill(rows(b)), silhouette: fill(rows(b, HULL_ROWS)), ...extra })
   const tall = bh / bw
   // How far its outline's middle wanders from row to row, as a share of its width: little for a shoe seen
   // square on from behind, in front or above; a lot for a pair at an angle.

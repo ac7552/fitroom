@@ -18,6 +18,7 @@ import { HangTrial, TRIALS, TRIAL_ON } from "lib/garments/silhouette"
 import { accessoryMaterial, beltGeometry, buckleGeometry, heelRise, heelStemGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
 import { lastFor, shaftShare } from "lib/garments/lasts"
+import { hullGeometry } from "lib/garments/hull"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
 import { meanRatio } from "lib/projection"
 import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
@@ -544,7 +545,11 @@ export class FittingStage {
         eyelets.roughness = 0.35
         // Built from the shop's side photo when there's one (see accessories.js), else from the style alone.
         const relief = !(shoes.shoeViews ?? []).some(v => v.kind === "top")
-        const geometry = (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, last, { laces: relief })) || shoeGeometry(body, frame, side, last)
+        // With the shop's other views (front, back, above) the shoe's shape is carved from all of them
+        // (hull.js); with the side photo alone it's lofted from that; with none, drawn from the style.
+        const views = (shoes.shoeViews ?? []).filter(v => v.shoes?.[0]?.silhouette)
+        const geometry = (shoes.shoeSide && views.length && hullGeometry(body, frame, side, shoes.shoeSide, views, last))
+          || (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, last, { laces: relief })) || shoeGeometry(body, frame, side, last)
         this.feet.shoes[side] = hang(new THREE.Mesh(geometry, [sole, upper, laces, collar, eyelets]), side, heeled)
         if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side, heeled)
       }
