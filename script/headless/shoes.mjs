@@ -1,12 +1,17 @@
 // For render.mjs --script: shoes on the mannequin from a side photo, read as the page reads it (print.js's
-// readShoe) and lofted from its last (lasts.js). ?photo=URL (default: the fixture boot), ?style=boot|sneaker|
-// loafer|sandal|hightop (photo=none: from the style and words alone), ?words=... (the listing's words, for the family), ?name=...
-// Returns the last's family and params, and the side reading's sole profile.
+// readShoe) and lofted from its last (lasts.js). ?photo=URL (default: the fixture boot; none: from the style
+// and words alone), ?style=boot|sneaker|loafer|sandal|hightop, ?words=... (the listing's words), ?name=...,
+// ?fabric=leather|suede|canvas.
+// Returns the last (family, params, what the photo measured), where the shoe stands, and two checks:
+//   iou    the shoe's side silhouette against the photo's outline, in the shoe's own frame (1 is exact);
+//   front  the shaft's width over the leg's at heights up the shaft (1 is a shaft that hugs the leg; a
+//          low shoe reports its width over the ankle's).
 export default async function (stage) {
   const P = new URL(import.meta.url).searchParams
   const photo = P.get("photo") ?? "/fixtures/photos/beige-boot-side.jpg"
   const style = P.get("style") ?? "boot"
   const print = window.print
+  const THREE = await import("three")
   const { lastFor, measureSide } = await import("lib/garments/lasts")
   const read = photo === "none" ? null : await print.readShoe(photo)
   const words = P.get("words") ?? P.get("name") ?? ""
@@ -20,22 +25,89 @@ export default async function (stage) {
   while (!stage.settled && Date.now() < deadline) { stage.advanceDrape(); await new Promise(r => setTimeout(r, 0)) }
   for (let i = 0; i < 30; i++) { stage.draw(); await new Promise(r => setTimeout(r, 50)) }
   const m = measureSide(read?.side)
-  const rise = stage.feet.rise && { angle: +stage.feet.rise.angle.toFixed(3), lift: +stage.feet.rise.lift.toFixed(4) }
-  const THREE = await import("three")
-  const box = stage.feet.shoes.L && new THREE.Box3().setFromObject(stage.feet.shoes.L)
-  const ankle = stage.model.getObjectByName("foot_l")?.getWorldPosition(new THREE.Vector3())
-  let toe = null
-  if (stage.feet.shoes.L) {
-    const m = stage.feet.shoes.L, p = m.geometry.attributes.position
-    let best = -1, bi = 0
-    for (let i = 0; i < p.count; i++) if (p.getZ(i) > best) { best = p.getZ(i); bi = i }
-    const flat = new THREE.Vector3().fromBufferAttribute(p, bi), world = flat.clone().applyMatrix4(m.matrixWorld)
-    const q = m.getWorldQuaternion(new THREE.Quaternion())
-    let lowY = Infinity, li = 0
-    for (let i = 0; i < p.count; i++) { const wy = new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld).y; if (wy < lowY) { lowY = wy; li = i } }
-    const lowFlat = new THREE.Vector3().fromBufferAttribute(p, li)
-    toe = { low: [+lowY.toFixed(4), ...lowFlat.toArray().map(v => +v.toFixed(4))], stems: stage.feet.meshes.length, flat: flat.toArray().map(v => +v.toFixed(4)), world: world.toArray().map(v => +v.toFixed(4)), pitch: +(2 * Math.atan2(q.x, q.w)).toFixed(3), qyz: [+q.y.toFixed(3), +q.z.toFixed(3)] }
+  const round = (v, d = 4) => (typeof v === "number" ? +v.toFixed(d) : v)
+  const rise = stage.feet.rise && { angle: round(stage.feet.rise.angle, 3), lift: round(stage.feet.rise.lift) }
+  const shoe = stage.feet.shoes.L
+  const out = {
+    family: last.family, rise,
+    params: Object.fromEntries(Object.entries(last.params).map(([k, v]) => [k, round(v)])),
+    measured: m && { sole: m.sole, collar: m.collar, taper: round(m.taper, 3), heelRise: round(m.heelRise, 3) }
   }
-  const where = box && { toe, shoeY: [+box.min.y.toFixed(4), +box.max.y.toFixed(4)], shoeZ: [+box.min.z.toFixed(4), +box.max.z.toFixed(4)], ankle: ankle && [+ankle.y.toFixed(4), +ankle.z.toFixed(4)], modelY: +stage.model.position.y.toFixed(4) }
-  return { family: last.family, rise, where, params: Object.fromEntries(Object.entries(last.params).map(([k, v]) => [k, typeof v === "number" ? +v.toFixed(4) : v])), measured: m && { sole: m.sole, collar: m.collar, taper: +m.taper.toFixed(3), heelRise: +m.heelRise.toFixed(3) }, profile: read?.side?.soleProfile?.map(v => +v.toFixed(2)), side: read?.side && { left: +read.side.left.toFixed(3), right: +read.side.right.toFixed(3), height: +read.side.height.toFixed(3), aspect: +read.side.aspect.toFixed(3), toeRight: read.side.toeRight, top: read.side.top.filter((_, i) => i % 8 === 0).map(v => +v.toFixed(2)), bottom: read.side.bottom.filter((_, i) => i % 8 === 0).map(v => +v.toFixed(2)) } }
+  if (!shoe) return out
+  // The shoe's triangles in the scene.
+  shoe.updateMatrixWorld(true)
+  const p = shoe.geometry.attributes.position, index = shoe.geometry.index.array
+  const world = Array.from({ length: p.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(shoe.matrixWorld))
+  const box = new THREE.Box3().setFromPoints(world)
+  out.debug = shoe.geometry.userData.photo?.debug
+  out.where = { y: [round(box.min.y), round(box.max.y)], z: [round(box.min.z), round(box.max.z)], x: [round(box.min.x), round(box.max.x)] }
+
+  // A raster of a projection of the triangles: cell (mm) over the axes a (across) and b (up).
+  const raster = (a, b, lo, hi, cell) => {
+    const w = Math.ceil((hi[0] - lo[0]) / cell) + 1, h = Math.ceil((hi[1] - lo[1]) / cell) + 1
+    const grid = new Uint8Array(w * h)
+    const fill = (pts) => {
+      const xs = pts.map(q => (q[a] - lo[0]) / cell), ys = pts.map(q => (q[b] - lo[1]) / cell)
+      const x0 = Math.max(0, Math.floor(Math.min(...xs))), x1 = Math.min(w - 1, Math.ceil(Math.max(...xs)))
+      const y0 = Math.max(0, Math.floor(Math.min(...ys))), y1 = Math.min(h - 1, Math.ceil(Math.max(...ys)))
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const cx = x + 0.5, cy = y + 0.5
+        let neg = false, pos = false
+        for (let k = 0; k < 3; k++) {
+          const d = (xs[(k + 1) % 3] - xs[k]) * (cy - ys[k]) - (ys[(k + 1) % 3] - ys[k]) * (cx - xs[k])
+          if (d < 0) neg = true; if (d > 0) pos = true
+        }
+        if (!(neg && pos)) grid[y * w + x] = 1
+      }
+    }
+    return { grid, w, h, fill }
+  }
+  const lo = [box.min.z - 0.01, box.min.y - 0.005], hi = [box.max.z + 0.01, box.max.y + 0.01]
+  const side = raster("z", "y", lo, hi, 0.002)
+  for (let t = 0; t < index.length; t += 3) side.fill([world[index[t]], world[index[t + 1]], world[index[t + 2]]])
+
+  // The photo's outline in the same frame: each column's top and bottom, in metres over the floor, along the
+  // sole's span (userData.photo: how the loft placed the photo).
+  const exact = shoe.geometry.userData.photo
+  if (read?.side && exact) {
+    const { top, bottom } = read.side, bins = top.length
+    const floorLine = Math.max(...bottom)
+    const mesh = raster("z", "y", lo, hi, 0.002)
+    for (let b = 0; b < bins; b++) {
+      const z0 = exact.back + (b / bins) * exact.length, z1 = exact.back + ((b + 1) / bins) * exact.length
+      const yb = exact.floor + (floorLine - bottom[b]) * exact.metres, yt = exact.floor + (floorLine - top[b]) * exact.metres
+      // (With a heel the shoe is pitched in the scene; the photo's outline is of it flat. Compared flat.)
+      const q = (z, y) => ({ z, y })
+      mesh.fill([q(z0, yb), q(z1, yb), q(z1, yt)]); mesh.fill([q(z0, yb), q(z1, yt), q(z0, yt)])
+    }
+    let inter = 0, union = 0
+    for (let i = 0; i < side.grid.length; i++) { const a = side.grid[i], c = mesh.grid[i]; inter += a & c; union += a | c }
+    out.iou = round(inter / (union || 1), 3)
+    out.silhouette = { shoe: side.grid.reduce((s, v) => s + v, 0), photo: mesh.grid.reduce((s, v) => s + v, 0) }
+  }
+
+  // Front flatness: the shoe's width across at heights up it, over the leg's there (the body's left leg's
+  // extent in x within 4 mm of the height).
+  const { bodySnapshot } = await import("lib/garments/dress")
+  const { bodyFrame } = await import("lib/garments/body")
+  const { legSlices } = await import("lib/garments/accessories")
+  const snap = bodySnapshot(stage.meshes.body), frame = bodyFrame(snap)
+  const slices = legSlices(snap, frame, "L", frame.floor + 0.5)
+  const legWidth = y => {
+    const k = Math.round((y - frame.floor) / 0.005)
+    if (k < 0 || k >= slices.rows) return null
+    let lo2 = Infinity, hi2 = -Infinity
+    for (let j = 0; j < slices.reach[k].length; j++) { const x = slices.centres[k][0] + slices.reach[k][j] * Math.sin((j / slices.reach[k].length) * 2 * Math.PI); lo2 = Math.min(lo2, x); hi2 = Math.max(hi2, x) }
+    return hi2 > lo2 ? hi2 - lo2 : null
+  }
+  const widthAt = (pts, y, tol) => { let lo2 = Infinity, hi2 = -Infinity; for (const [x, py] of pts) if (Math.abs(py - y) <= tol) { lo2 = Math.min(lo2, x); hi2 = Math.max(hi2, x) } return hi2 > lo2 ? hi2 - lo2 : null }
+  const shoeXY = world.map(v => [v.x, v.y])
+  out.front = {}
+  for (const h of [0.08, 0.15, 0.25, 0.35]) {
+    const y = frame.floor + h
+    if (y > box.max.y - 0.01) continue
+    const sw = widthAt(shoeXY, y, 0.01), lw = legWidth(y)
+    if (sw && lw) out.front[`${Math.round(h * 100)}cm`] = round(sw / lw, 2)
+  }
+  return out
 }

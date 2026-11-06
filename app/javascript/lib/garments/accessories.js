@@ -382,11 +382,21 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   let shaft = 0
   for (let b = 0; b < bins; b++) shaft = Math.max(shaft, (outline.bottom[b] - outline.top[b]) * metres)
   const columns = PHOTO_SHOE.columns
-  const us = Array.from({ length: columns }, (_, c) => (1 - Math.cos((Math.PI * c) / (columns - 1))) / 2)
+  // A tall shaft (over 20 cm: a rain boot, a riding boot, a combat boot) is a tube of the leg's own
+  // outlines, built below; the columns then make only the foot, over the photo's sole, capped at the ankle.
+  const tube = tallShaft && (shaft > 0.2 * s || style.shaftTo - floor > 0.2 * s)
+  const CAP = floor + 0.13 * s
+  const minTop = Math.min(...outline.top)
+  const columnU = c => { const t = (1 - Math.cos((Math.PI * c) / (columns - 1))) / 2; return tube ? uL + t * (uR - uL) : t }
+  const us = Array.from({ length: columns }, (_, c) => columnU(c))
+  // Where the leg's front is at the ankle cap (for the vamp under a tube).
+  let legFront = -Infinity, legBack = Infinity
+  { const k = Math.min(rows - 1, Math.round((CAP - 0.02 * s - floor) / STEP)); for (const [, z] of rings[k]) { legFront = Math.max(legFront, z); legBack = Math.min(legBack, z) } }
   const tall = [], wide = [], middle = [], open = [], legAt = []
   for (const u of us) {
     const z = origin + u * span
     let height = photoTall(Math.min(1, Math.max(0, u))) * metres
+    if (tube) height = Math.min(height, CAP - floor)
     let lo = Infinity, hi = -Infinity, footTop = -Infinity, low = [Infinity, -Infinity]
     for (let k = 0; k < rows; k++) {
       const y = floor + k * STEP
@@ -400,8 +410,16 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
     // There, the shaft stands its full height (the shin can come out in front of where the photo's shaft
     // ends, the mannequin's leg not standing just where the shop's did).
     const through = footTop >= height + 0.03 * s
-    if (through) { if (tallShaft) height = Math.max(height, shaft) }
+    if (through) { if (tallShaft && !tube) height = Math.max(height, shaft) }
     else if (Number.isFinite(footTop)) height = Math.max(height, footTop + thick)
+    // Under a tube, the foot's top ahead of the leg is the instep and behind it the heel counter: the
+    // foot's own top, rising to the cap over the last few centimetres to the leg, not a block up to the cap.
+    if (tube && !through) {
+      const close = Math.min(1, Math.max(0, 1 - Math.max(0, z - legFront, legBack - z) / (0.07 * s)))
+      const vamp = close * close * (3 - 2 * close)
+      const own = Number.isFinite(footTop) ? footTop + thick + 0.01 * s : 0.06 * s
+      height = Math.min(height, own * (1 - vamp) + (CAP - floor) * vamp)
+    }
     tall.push(height)
     wide.push(Number.isFinite(lo) ? (hi - lo) / 2 + thick : 0)
     middle.push(Number.isFinite(low[0]) ? (low[0] + low[1]) / 2 : Number.isFinite(lo) ? (lo + hi) / 2 : null)
@@ -434,7 +452,9 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   const RIM = 0.2
   const legHalf = (y, z) => {
     const k = Math.min(rows - 1, Math.max(0, Math.round((y - floor) / STEP)))
-    const x = across(k, z)
+    let x = across(k, z)
+    // Behind the heel or ahead of the shin the leg doesn't cross this column: as wide as the leg is there.
+    if (!x) { let lo = Infinity, hi = -Infinity; for (const [px] of rings[k]) { lo = Math.min(lo, px); hi = Math.max(hi, px) }; x = lo <= hi ? [lo, hi] : null }
     return x ? { mid: (x[0] + x[1]) / 2, half: (x[1] - x[0]) / 2 + thick } : null
   }
   for (let c = 0; c < columns; c++) {
@@ -447,9 +467,11 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
         // Straight up to the rim, then across the (open) top.
         const up = Math.min(1, Math.abs(sin) / Math.sin(Math.PI * RIM))
         y = floor + 0.0008 + (hgt - 0.0008) * up
-        const leg = y > floor + 0.09 * s ? legHalf(y, z) : null
-        // The foot's width low down, the leg's up the shaft, blended over the ankle.
-        const blend = Math.min(1, Math.max(0, (y - floor - 0.09 * s) / (0.06 * s)))
+        // The foot's width low down, the leg's up the shaft, blended over the ankle (lower under a tube,
+        // which takes over just under the cap).
+        const from = tube ? 0.05 * s : 0.09 * s, over = tube ? 0.05 * s : 0.06 * s
+        const leg = y > floor + from ? legHalf(y, z) : null
+        const blend = Math.min(1, Math.max(0, (y - floor - from) / over))
         const half = leg ? w * (1 - blend) + leg.half * blend : w
         const middle = leg ? mid[c] * (1 - blend) + leg.mid * blend : mid[c]
         const out = y - floor < soleTall[c] ? flare : 0
@@ -464,6 +486,64 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
       row.push(positions.length / 3 - 1)
     }
     grid.push(row)
+  }
+  // The shaft: strips up the leg, one per angle round it, each a stack of the leg's own slice outlines
+  // (legSlices) a thickness out, from just under the ankle cap to its own rim height, the photo's top line
+  // at that point's place along the shoe (so the rim is the photo's: high at the back, lower in front).
+  // Where the photo's shaft stands deeper front to back than the leg, the rings are stretched to it.
+  const tubeRows = 16, tubeStrips = AROUND, tubeGrid = []
+  let rimLoop = null, stretch = null
+  if (tube) {
+    const y0 = CAP - 0.03 * s
+    const photoRow = y => Math.min(1, Math.max(0, (y - floor) / (metres * (floorLine - minTop))))
+    // The rim follows the photo's top line across the shaft's own columns (where the photo stands tall);
+    // a strip in front of the shaft's front edge or behind its back takes the edge's height, not the toe's
+    // or the floor's.
+    let shaftFrom = 1, shaftTo = 0
+    for (let b = 0; b < bins; b++) if ((outline.bottom[b] - outline.top[b]) * metres > 0.2 * s) { shaftFrom = Math.min(shaftFrom, b / bins); shaftTo = Math.max(shaftTo, (b + 1) / bins) }
+    const rimY = z => {
+      const u = Math.min(shaftTo - 0.5 / bins, Math.max(shaftFrom + 0.5 / bins, (z - origin) / span))
+      return Math.max(CAP + 0.02 * s, floor + (floorLine - lerpAt(outline.top, u)) * metres)
+    }
+    const ringAt = y => {
+      const k = Math.min(rows - 1, Math.max(0, Math.round((y - floor) / STEP)))
+      const c = slices.centres[k], reach = slices.reach[k]
+      let zmin = Infinity, zmax = -Infinity
+      const pts = Array.from({ length: tubeStrips }, (_, j) => {
+        const a = angleOf(j), r = reach[j] + thick
+        const pt = [c[0] + r * Math.sin(a), c[1] + r * Math.cos(a)]
+        zmin = Math.min(zmin, pt[1]); zmax = Math.max(zmax, pt[1])
+        return pt
+      })
+      // The photo's depth at this height: its back and front edges' places along the shoe.
+      const r = photoRow(y), rr = Math.min(outline.front.length - 1, Math.round(r * (outline.front.length - 1)))
+      // The ring fitted to the photo's back and front edges at this height, never inside the leg itself
+      // (the photo's shaft leans back over the calf; the mannequin's leg may stand elsewhere).
+      const zf = Math.max(zmax, origin + (outline.front[rr] ?? 1) * span), zb = Math.min(zmin, origin + (outline.back[rr] ?? 0) * span)
+      const fit = Math.min(1.6, (zf - zb) / Math.max(1e-3, zmax - zmin))
+      return pts.map(([x, z]) => [x, zb + (z - zmin) * fit])
+    }
+    // Each strip's rim: the photo's top where the strip stands (its ring point at the cap).
+    const base = ringAt(y0)
+    let tops = base.map(([, z]) => rimY(z))
+    // The words' height, when they give one (style.shaftTo, m over the floor: stage.js): the rim scaled
+    // so its highest point comes to it, keeping the photo's slope.
+    if (style.shaftTo > y0 + 0.05 * s) {
+      const peak = Math.max(...tops), scale = (style.shaftTo - y0) / (peak - y0)
+      tops = tops.map(t => y0 + (t - y0) * scale)
+      stretch = { from: y0, scale }
+    }
+    for (let i = 0; i <= tubeRows; i++) {
+      const row = []
+      for (let j = 0; j < tubeStrips; j++) {
+        const y = y0 + (i / tubeRows) * (tops[j] - y0)
+        const [x, z] = ringAt(y)[j]
+        positions.push(x, y, z)
+        row.push(positions.length / 3 - 1)
+      }
+      tubeGrid.push(row)
+    }
+    rimLoop = tubeGrid[tubeRows]
   }
   const sole = [], upper = []
   const quad = (list, a, b, c2, d) => list.push(a, b, d, b, c2, d)
@@ -483,6 +563,12 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
     }
     // The underside: across from one side's foot to the other's.
     quad(sole, grid[c][around], grid[c + 1][around], grid[c + 1][0], grid[c][0])
+  }
+  for (let i = 0; i + 1 < tubeGrid.length; i++) {
+    for (let j = 0; j < tubeStrips; j++) {
+      const jn = (j + 1) % tubeStrips
+      quad(upper, tubeGrid[i][j], tubeGrid[i][jn], tubeGrid[i + 1][jn], tubeGrid[i + 1][j])
+    }
   }
   // The ends: closed with a fan from their middles.
   for (const [c, flip] of [[0, true], [columns - 1, false]]) {
@@ -516,7 +602,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
       for (let c = first + 1; c <= last; c++) run.push(run[run.length - 1] + Math.hypot(zOf(c) - zOf(c - 1), height[c] - height[c - 1]))
       const total = run[run.length - 1]
       const pitch = (styleName === "boot" ? 0.021 : 0.02) * s
-      const rows = Math.min(styleName === "sneaker" ? 6 : 9, Math.max(3, Math.round(total / pitch)))
+      const rows = Math.min(styleName === "sneaker" ? 6 : tube ? 5 : 9, Math.max(3, Math.round(total / pitch)))
       // Each row: the cross-section's top, across part of the shoe's width either side of its middle,
       // between two columns when it falls between them.
       const lines = []
@@ -540,6 +626,30 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
         const al = Math.hypot(...along) || 1
         const dir = along.map(v => v / al)
         lines.push({ path, dir, out: [0, dir[2], -dir[1]] })
+      }
+      // Up a tube's front (a lace-up boot's shaft): a row every pitch along the front strip, each across
+      // the front of the ring there.
+      if (tubeGrid.length) {
+        const front = tubeGrid.map(row => row[0])   // (strip 0 faces +z: the front)
+        const at3 = v => [positions[3 * v], positions[3 * v + 1], positions[3 * v + 2]]
+        let since = pitch * 0.6, prev = at3(front[0])
+        for (let i = 1; i < tubeGrid.length - 1; i++) {
+          const here = at3(front[i])
+          since += Math.hypot(here[1] - prev[1], here[2] - prev[2])
+          prev = here
+          if (since < pitch) continue
+          since = 0
+          const row = tubeGrid[i]
+          let lo = Infinity, hi = -Infinity
+          for (const v of row) { lo = Math.min(lo, positions[3 * v]); hi = Math.max(hi, positions[3 * v]) }
+          const middle = (lo + hi) / 2, reach = (hi - lo) * 0.2
+          const path = row.map(at3).filter(q => Math.abs(q[0] - middle) <= reach && q[2] > middle * 0 + (lo + hi) * 0 + here[2] - 0.03 * s).sort((a, b2) => a[0] - b2[0])
+          if (path.length < 2) continue
+          const up = at3(front[Math.min(tubeGrid.length - 1, i + 1)]), down = at3(front[Math.max(0, i - 1)])
+          const along = [0, up[1] - down[1], up[2] - down[2]], al = Math.hypot(...along) || 1
+          const dir = along.map(v => v / al)
+          lines.push({ path, dir, out: [0, dir[2], -dir[1]] })
+        }
       }
       // A point on a line, a share of the way across it.
       const across = (line, t) => {
@@ -595,12 +705,22 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   // it only edge on, and the shaft's top would otherwise be a bare ledge round the leg).
   const collar = []
   const openColumns = us.map((_, c) => c).filter(c => open[c])
-  if (tallShaft && style.pad && openColumns.length >= 2) {
+  if (tallShaft && style.pad && (rimLoop || openColumns.length >= 2)) {
     const r = Math.max(0.006 * s, thick * 0.8)
     const zOf = c => origin + us[c] * span
     const first = openColumns[0], last = openColumns[openColumns.length - 1]
     // The roll's path: along each wall's top, in from its edge, and round the front and the back.
     const loop = []
+    if (rimLoop) {
+      // (A tube's: its rim, drawn in toward the leg a little.)
+      let cx = 0, cz = 0
+      for (const v of rimLoop) { cx += positions[3 * v] / rimLoop.length; cz += positions[3 * v + 2] / rimLoop.length }
+      for (const v of rimLoop) {
+        const x = positions[3 * v], y = positions[3 * v + 1], z = positions[3 * v + 2]
+        const d = Math.hypot(x - cx, z - cz) || 1, inset = r * 0.6
+        loop.push([x - ((x - cx) / d) * inset, y - r * 0.35, z - ((z - cz) / d) * inset])
+      }
+    }
     // (The rim as built: the walls follow the leg up the shaft, so it's narrower than the foot.)
     const rimAt = c => { const a = grid[c][Math.round(around * RIM)], b = grid[c][Math.round(around * (1 - RIM))]; return { mid: (positions[3 * a] + positions[3 * b]) / 2, half: Math.abs(positions[3 * a] - positions[3 * b]) / 2 } }
     const wallAt = (c, sign) => { const rim = rimAt(c); return [rim.mid + sign * (rim.half - r * 0.6), floor + height[c] - r * 0.35, zOf(c)] }
@@ -608,10 +728,12 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
       const rim = rimAt(c), rad = rim.half - r * 0.6, y = floor + height[c] - r * 0.35
       for (let k = 1; k < 8; k++) { const a = from + ((to - from) * k) / 8; loop.push([rim.mid + rad * Math.cos(a), y, zOf(c) + rad * Math.sin(a) * 0.7]) }
     }
-    for (const c of openColumns) loop.push(wallAt(c, 1))
-    bend(last, 0, Math.PI)
-    for (const c of [...openColumns].reverse()) loop.push(wallAt(c, -1))
-    bend(first, Math.PI, 2 * Math.PI)
+    if (!rimLoop) {
+      for (const c of openColumns) loop.push(wallAt(c, 1))
+      bend(last, 0, Math.PI)
+      for (const c of [...openColumns].reverse()) loop.push(wallAt(c, -1))
+      bend(first, Math.PI, 2 * Math.PI)
+    }
     // Swept as a tube, a little flatter than it is wide.
     const segments = 10, base = positions.length / 3, n = loop.length
     const centre = loop.reduce((acc, p) => [acc[0] + p[0] / n, 0, acc[2] + p[2] / n], [0, 0, 0])
@@ -646,7 +768,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   if (eyelets.length) geometry.addGroup(at, eyelets.length, 4)
   geometry.computeVertexNormals()
   // Built to the photo's own scale: wrapShoePhoto lays it on exactly.
-  geometry.userData.photo = { floor, back: origin, length: span, metres }
+  geometry.userData.photo = { floor, back: origin, length: span, metres, stretch, debug: { tube, shaft, cap: CAP, rim: rimLoop ? [Math.min(...rimLoop.map(v => positions[3 * v + 1])), Math.max(...rimLoop.map(v => positions[3 * v + 1]))] : null } }
   return geometry
 }
 
@@ -732,11 +854,14 @@ export function wrapShoePhoto(geometry, side, { views = [], foot = "L" } = {}) {
     if (y <= soleTop) return bottom - (y / (soleTop || 1)) * (bottom - line)
     return line - Math.min(1, (y - soleTop) / Math.max(1e-4, top3d - soleTop)) * (line - top)
   }
+  // (A shaft the words made taller than the photo's: its rows read the photo's shaft stretched to it.)
+  const stretched = exact?.stretch
+  const heightOf = i => { const y = p[3 * i + 1]; return stretched && y > stretched.from ? stretched.from + (y - stretched.from) / stretched.scale : y }
   for (let i = 0; i < n; i++) {
     const u = along(p[3 * i + 2])
     {
       const k = EDGE_IN * 4 + u * (1 - 8 * EDGE_IN)
-      const y = p[3 * i + 1] - floor, top3d = at(tops, u)
+      const y = heightOf(i) - floor, top3d = at(tops, u)
       const into = sole[i] ? y : Math.min(y, soleTop + (top3d - soleTop) * 0.8)
       plain[2 * i] = side.toeRight ? side.left + k * (side.right - side.left) : side.right - k * (side.right - side.left)
       // At its own height, so the bands round the shoe (a collar, a stripe of stitching, the sole) carry on
@@ -746,7 +871,7 @@ export function wrapShoePhoto(geometry, side, { views = [], foot = "L" } = {}) {
     }
     // The heel's and the toe's last columns are mostly the photo's soft edge: kept a little in from them.
     let k = EDGE_IN + u * (1 - 2 * EDGE_IN)
-    let row = exact ? Math.max(at(side.top, k), at(side.bottom, k) - (p[3 * i + 1] - exact.floor) / exact.metres) : rowAt(k, p[3 * i + 1] - floor, at(tops, u))
+    let row = exact ? Math.max(at(side.top, k), at(side.bottom, k) - (heightOf(i) - exact.floor) / exact.metres) : rowAt(k, p[3 * i + 1] - floor, at(tops, u))
     // Rolled in from the outline: against the way the point faces, as far as it is in from the shoe's side.
     const nx = normals[3 * i], nz = normals[3 * i + 2], ny = normals[3 * i + 1], flat = Math.hypot(nz, ny)
     // Only what faces away from the side: the photo shows a side wall as it is.

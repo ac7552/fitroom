@@ -104,4 +104,15 @@ export function lastFor(words, style, side) {
   return { family, params }
 }
 
+// How high the listing says a shaft comes, as a share of the knee's height (the mannequin's, not the
+// shop model's: a knee-high boot on a short leg is still knee-high), or null when it doesn't say.
+export function shaftShare(words) {
+  const w = String(words ?? "")
+  if (/over[- ]the[- ]knee|thigh[- ]high|\botk\b/i.test(w)) return 1.3
+  if (/knee[- ]high|knee boot|riding boot|\btall boot|\bhigh\b.*boot|boot.*\bhigh\b/i.test(w)) return 0.92
+  if (/mid[- ]calf|calf[- ]high|calf boot/i.test(w)) return 0.62
+  // (An ankle boot's or a 6-inch boot's height is the photo's: those words are too loose to set it by.)
+  return null
+}
+
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)) }

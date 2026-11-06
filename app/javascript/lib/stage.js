@@ -17,7 +17,7 @@ import { hangerSpec } from "lib/garments/hanger"
 import { HangTrial, TRIALS, TRIAL_ON } from "lib/garments/silhouette"
 import { accessoryMaterial, beltGeometry, buckleGeometry, heelRise, heelStemGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
-import { lastFor } from "lib/garments/lasts"
+import { lastFor, shaftShare } from "lib/garments/lasts"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
 import { meanRatio } from "lib/projection"
 import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
@@ -504,6 +504,16 @@ export class FittingStage {
     // from the side photo, over the drawing style.
     const made = shoes && lastFor(shoes.words ?? `${shoes.name ?? ""} ${shoes.family ?? ""}`, shoes.style, shoes.shoeSide)
     const last = shoes && { style: shoes.style, family: made.family, ...made.params }
+    // A shaft's height from the listing's words ("knee-high", "mid-calf"), against this body's knee.
+    if (last) {
+      const share = shaftShare(shoes.words ?? shoes.name)
+      const knee = this.model.getObjectByName("calf_l")?.getWorldPosition(new THREE.Vector3()).y
+      if (share && knee) {
+        last.shaftTo = frame.floor + (knee - frame.floor) * share
+        last.back = Math.max(last.back ?? 0, last.shaftTo - frame.floor)
+        last.front = Math.max(last.front ?? 0, last.shaftTo - frame.floor - 0.02)
+      }
+    }
     const heeled = last?.heel > 0.012
     // Hung on the calf's bone, to move with the leg; a heeled shoe on the foot's, which the heel pitches.
     const hang = (mesh, side, onFoot = false) => {
