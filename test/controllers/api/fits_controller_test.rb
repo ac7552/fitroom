@@ -118,3 +118,40 @@ class Api::FitsControllerTest < ActionDispatch::IntegrationTest
     assert_match "not around the arms", warning["message"]
   end
 end
+
+class Api::ShoeFitsControllerTest < ActionDispatch::IntegrationTest
+  test "shoes are fitted by the foot: a 26.5 cm foot is a US 10 in a New Balance sneaker, with notes per size" do
+    post api_v1_fits_path, params: { unit: "cm", garment: "shoes", brand: "New Balance", style: "sneaker", fabric: "mesh",
+      sizes: %w[8 8.5 9 9.5 10 10.5 11].map { { name: _1 } }, measurements: { foot: 26.5, ball: 9.8 } }, as: :json
+    assert_response :success
+    json = response.parsed_body
+    assert_equal "shoes", json["garment"]
+    assert_equal "us_m", json["scale"]
+    assert_equal "10", json["best"]
+    ten = json["sizes"].find { _1["size"] == "10" }
+    assert_equal "fits", ten["verdict"]
+    assert_equal %w[toe width], ten["checks"].map { _1["part"] }
+    nine = json["sizes"].find { _1["size"] == "9" }
+    assert_equal "compromise", nine["verdict"]
+    assert_equal "tight", nine["checks"].first["status"]
+  end
+
+  test "shoes in inches, on an EU chart, with a women's foot" do
+    post api_v1_fits_path, params: { unit: "in", garment: "shoes", women: true, sizes: %w[37 38 39 40].map { { name: _1 } }, measurements: { foot: 9.45 } }, as: :json
+    assert_response :success
+    json = response.parsed_body
+    assert_equal "eu", json["scale"]
+    # 9.45 in = 24 cm; an EU 38 is a 24.3 cm last, too tight for a sneaker; 39 (25 cm) fits.
+    assert_equal "39", json["best"]
+  end
+
+  test "shoes with no foot length are refused plainly; sizes that aren't sizes are shown for the look" do
+    post api_v1_fits_path, params: { unit: "cm", garment: "shoes", sizes: [ { name: "10" } ], measurements: {} }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "is required", response.parsed_body["errors"]["foot"]
+    post api_v1_fits_path, params: { unit: "cm", garment: "shoes", sizes: [ { name: "One size" } ], measurements: { foot: 26 } }, as: :json
+    assert_response :success
+    assert_equal "One size", response.parsed_body["best"]
+    assert_empty response.parsed_body["sizes"].first["checks"]
+  end
+end

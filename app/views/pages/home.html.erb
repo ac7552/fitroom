@@ -158,9 +158,9 @@
         </div>
 
         <% body_parts.each do |part| %>
-          <div class="field<%= " field--optional" if part[:optional] %>" <%= "data-fitting-room-target=pantsOnly" if part[:optional] %> <%= "data-also-dress=true" if part[:key] == "hips" %>>
+          <div class="field<%= " field--optional" if part[:optional] %>" <%= part[:shoes] ? "data-fitting-room-target=shoesOnly" : ("data-fitting-room-target=pantsOnly" if part[:optional]) %> <%= "data-also-dress=true" if part[:key] == "hips" %>>
             <label class="field-label" for="body-<%= part[:key] %>">
-              <%= part[:label] %><% if part[:optional] %> <small><%= part[:key] == "hips" ? "for pants and dresses" : "for pants" %></small><% end %>
+              <%= part[:label] %><% if part[:optional] %> <small><%= part[:shoes] ? "for shoes" : part[:key] == "hips" ? "for pants and dresses" : "for pants" %></small><% end %>
             </label>
             <% if part[:key] == "height" %>
               <span class="height-feet" data-fitting-room-target="heightImperial">

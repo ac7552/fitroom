@@ -8,11 +8,16 @@ module PagesHelper
     "shoulders" => { label: "Shoulders", tip: "Measure across your back, from one shoulder bone to the other." },
     "arm" => { label: "Arm", tip: "Measure from your shoulder bone down to your wrist." },
     "hips" => { label: "Hips", tip: "Wrap the tape around the widest part of your bottom." },
-    "inseam" => { label: "Leg", tip: "Measure from your crotch down to the floor, on the inside of your leg." }
+    "inseam" => { label: "Leg", tip: "Measure from your crotch down to the floor, on the inside of your leg." },
+    "foot" => { label: "Foot", tip: "Stand on paper with your heel against a wall; mark your longest toe and measure to the wall." },
+    "ball" => { label: "Foot width", tip: "Standing, measure across the widest part of your foot, where the toes join it." }
   }.freeze
 
+  # The body's measurements, then the feet's (for shoes).
   def body_parts
-    PLAIN_MEASUREMENTS.map { |key, words| Fit::MEASUREMENTS.find { it[:key] == key }.merge(words) }
+    PLAIN_MEASUREMENTS.map do |key, words|
+      (Fit::MEASUREMENTS.find { |m| m[:key] == key } || Fit::Shoes::MEASUREMENTS.find { |m| m[:key] == key }.merge(optional: true, shoes: true)).merge(words)
+    end
   end
 
   # How snug clothes are cut, in the words the page uses for Fit::CUTS.

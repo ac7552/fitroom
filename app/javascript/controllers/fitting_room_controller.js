@@ -28,8 +28,8 @@ import { chartFromSizes, diagram, filled, nextSizeName, partsFor, sizesFromChart
 const LOOK_STRICT = typeof location !== "undefined" && new URLSearchParams(location.search).get("look") === "strict"
 
 const EXAMPLES_CM = {
-  men: { chest: 101.6, waist: 86.4, shoulders: 45.5, arm: 65.5, height: 178, hips: 101, inseam: 81 },
-  women: { chest: 91.5, waist: 74, shoulders: 39.5, arm: 58, height: 165, hips: 99, inseam: 76 }
+  men: { chest: 101.6, waist: 86.4, shoulders: 45.5, arm: 65.5, height: 178, hips: 101, inseam: 81, foot: 26.5, ball: 9.8 },
+  women: { chest: 91.5, waist: 74, shoulders: 39.5, arm: 58, height: 165, hips: 99, inseam: 76, foot: 24, ball: 9 }
 }
 const REQUIRED = ["chest", "waist", "shoulders", "arm", "height"]
 
@@ -54,9 +54,12 @@ const BODY_WORDS = {
   shoulders: ["shoulders", "Measure across your back, from one shoulder bone to the other."],
   arm: ["arm", "Measure from your shoulder bone down to your wrist."],
   hips: ["hips", "Wrap the tape around the widest part of your bottom."],
-  inseam: ["leg", "Measure from your crotch down to the floor, on the inside of your leg."]
+  inseam: ["leg", "Measure from your crotch down to the floor, on the inside of your leg."],
+  foot: ["foot", "Stand on paper with your heel against a wall; mark your longest toe and measure to the wall."],
+  ball: ["foot width", "Standing, measure across the widest part of your foot."]
 }
 const FIT_NAMES = { slim: "Snug", regular: "Regular", classic: "Loose" }
+const SCALE_NAMES = { us_m: "US men's", us_w: "US women's", uk: "UK", eu: "EU", cm: "cm" }
 
 // Plain words for the API's results.
 const PART_NAMES = { inseam: "Leg length", leg_opening: "Leg opening", sleeve: "Sleeves" }
@@ -68,7 +71,7 @@ export default class extends Controller {
     "ownSizes", "measuredFlat", "stagePhotos", "sizeTabs", "ownDiagram", "pasteNote", "editorError",
     "studio", "studioFrame", "studioStatus", "studioDownload", "studioSwitch", "studioLookOption", "studioCompareOption", "exact", "lookAi",
     "loading", "loadingLabel", "loadingBar", "loadingActions", "scene", "stage", "aiButton", "stageToast", "seeIn3d",
-    "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "slider", "tuck",
+    "heightFeet", "heightInches", "heightImperial", "heightMetric", "pantsOnly", "shoesOnly", "slider", "tuck",
     "bodyPhotoFront", "bodyPhotoSide", "bodyPhotoFrontLabel", "bodyPhotoSideLabel", "bodyPhotoButton", "bodyPhotoStatus", "bodyPhotoResult"
   ]
   static values = { fitsUrl: String, importUrl: String, studioUrl: String, lookUrl: String, tryOnUrl: String, warmUrl: String, garment: Object, dress: Object }
@@ -915,9 +918,12 @@ export default class extends Controller {
     // Hips matter for pants and dresses; leg length only for pants.
     const dress = this.outfit.top?.garment.style === "dress"
     this.pantsOnlyTargets.forEach(field => { field.hidden = !(this.outfit.trousers || (dress && field.dataset.alsoDress)) })
+    this.shoesOnlyTargets.forEach(field => { field.hidden = !this.outfit.shoes })
     this.outfitListTarget.innerHTML = items.length ? items.map(({ kind, garment }) => {
       const chart = garment.chart
-      const notes = ACCESSORIES.includes(kind) ? [chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`, "shown for the look, not fitted"] : [
+      const shoesFitted = kind === "shoes" && this.outfit[kind]?.fit?.sizes?.some(s => s.checks?.length)
+      const notes = kind === "shoes" ? [chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`, shoesFitted ? `fitted to your foot${garment.scale ? ` (${SCALE_NAMES[garment.scale] ?? garment.scale} sizes)` : ""}` : "add your foot length in step 2 to fit them"]
+        : ACCESSORIES.includes(kind) ? [chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`, "shown for the look, not fitted"] : [
         chart.sizes.length === 1 ? "1 size" : `${chart.sizes.length} sizes`,
         chart.kind === "body" ? "sizes guessed from the store's body chart" : null,
         chart.kind === "sizes" ? "sizes guessed from the size names" : null,
@@ -987,7 +993,8 @@ export default class extends Controller {
       const best = fit.sizes.length > 1 && selected === fit.best
       const only = fit.sizes.length === 1
       line.hidden = false
-      line.innerHTML = `<span class="rail-chip">${escape(selected)}</span>${ACCESSORIES.includes(kind) ? "" : best || only ? `<span class="rail-best">${only ? "Only size" : "★ Best size"}</span>` : `<span class="rail-other">Best: ${escape(fit.best)}</span>`}`
+      const fitted = !ACCESSORIES.includes(kind) || (kind === "shoes" && fit?.sizes?.some(s => s.checks?.length))
+      line.innerHTML = `<span class="rail-chip">${escape(selected)}</span>${!fitted ? "" : best || only ? `<span class="rail-best">${only ? "Only size" : "★ Best size"}</span>` : `<span class="rail-other">Best: ${escape(fit.best)}</span>`}`
     }
   }
 
@@ -1312,14 +1319,29 @@ export default class extends Controller {
     }
     this.requests = items.map(() => new AbortController())
     try {
-      const responses = await Promise.all(items.map(({ kind, garment }, i) => ACCESSORIES.includes(kind) ? Promise.resolve({ ok: true, data: accessoryFit(garment, this.outfit[kind]?.selected) }) : fetch(this.fitsUrlValue, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: fitDetails(garment),
-          sizes: garment.chart.sizes, measurements }),
-        signal: this.requests[i].signal,
-        cache: "no-store"
-      }).then(async r => ({ ok: r.ok, data: await r.json() }))))
+      // Shoes are fitted by the foot (Fit::Shoes) when its length is given; socks and belts, and shoes with
+      // no foot measured, are shown for the look in the size picked.
+      const responses = await Promise.all(items.map(({ kind, garment }, i) => {
+        if (kind === "shoes" && measurements.foot > 0) {
+          return fetch(this.fitsUrlValue, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ unit: this.unit, garment: "shoes", style: garment.wear ?? garment.style, scale: garment.scale, brand: garment.brand, fabric: garment.fabric, width: garment.width, women: Boolean(garment.women),
+              sizes: garment.chart.sizes, measurements: { foot: measurements.foot, ball: measurements.ball } }),
+            signal: this.requests[i].signal,
+            cache: "no-store"
+          }).then(async r => ({ ok: r.ok, data: await r.json() }))
+        }
+        if (ACCESSORIES.includes(kind)) return Promise.resolve({ ok: true, data: accessoryFit(garment, this.outfit[kind]?.selected) })
+        return fetch(this.fitsUrlValue, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ cut: this.cut, unit: this.unit, garment: kind, style: garment.style, details: fitDetails(garment),
+            sizes: garment.chart.sizes, measurements }),
+          signal: this.requests[i].signal,
+          cache: "no-store"
+        }).then(async r => ({ ok: r.ok, data: await r.json() }))
+      }))
 
       const failed = responses.find(r => !r.ok)
       if (failed) {

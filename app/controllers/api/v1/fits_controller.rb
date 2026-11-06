@@ -9,6 +9,8 @@ module Api
       MAX_SIZES = 60
 
       def create
+        return create_shoes if params[:garment].to_s == "shoes"
+
         chart = SizeChart.find(params[:size_chart_id]) if params[:size_chart_id]
         cut = params.fetch(:cut, "regular").to_s
         garment = params.fetch(:garment, "jacket").to_s
@@ -37,6 +39,45 @@ module Api
       end
 
       private
+
+      # Shoes: the foot's length (and width) against the sizes' scale (Fit::Shoes). measurements: { foot,
+      # ball }; sizes: [{ name }]; scale, brand, style, fabric, width as the listing gives them.
+      def create_shoes
+        unit = params.fetch(:unit, "cm").to_s
+        errors = {}
+        errors[:unit] = "must be cm or in" unless UNITS.key?(unit)
+        scale = UNITS.fetch(unit, 1)
+        given = params[:measurements].respond_to?(:[]) ? params[:measurements] : {}
+        foot = Fit::Shoes::MEASUREMENTS.to_h do |m|
+          value = Float(given[m[:key]], exception: false)
+          cm = value && value * scale
+          if cm.nil?
+            errors[m[:key]] = "is required" unless m[:optional]
+          elsif !m[:range].cover?(cm)
+            errors[m[:key]] = "must be between #{m[:range].min} and #{m[:range].max} cm"
+          end
+          [ m[:key], cm ]
+        end
+        sizes = params[:sizes]
+        errors[:sizes] = "must be a list of 1 to #{MAX_SIZES} sizes" unless sizes.is_a?(Array) && sizes.size.between?(1, MAX_SIZES)
+        return render(json: { error: "invalid", errors: }, status: :unprocessable_entity) if errors.any?
+
+        names = sizes.map { |size| (size.respond_to?(:[]) ? size[:name] : size).to_s.strip.first(20) }.reject(&:empty?)
+        women = ActiveModel::Type::Boolean.new.cast(params[:women])
+        size_scale = Fit::Shoes::SCALES.key?(params[:scale].to_s) ? params[:scale].to_s : Fit::Shoes.scale_for(names, women:)
+        response.headers["Cache-Control"] = "no-store"
+        results = Fit::Shoes.rank(foot, names.map { { "name" => _1 } }, scale: size_scale, brand: params[:brand].to_s.presence,
+                                  style: params[:style].to_s.presence, fabric: params[:fabric].to_s.presence, width: params[:width].to_s.presence)
+        if results.empty?
+          # No size names that are sizes ("One size"): shown for the look, as before.
+          return render(json: { garment: "shoes", units: "cm", scale: size_scale, best: names.first, warnings: [], sizes: names.map { { size: _1, verdict: "fits", penalty: 0, checks: [] } } })
+        end
+        render json: {
+          garment: "shoes", units: "cm", scale: size_scale, best: results.first.size,
+          warnings: Fit::Shoes.warnings(foot),
+          sizes: results.map { |result| result_json(result) }
+        }
+      end
 
       def read_body(scale, errors)
         given = params[:measurements].respond_to?(:[]) ? params[:measurements] : {}

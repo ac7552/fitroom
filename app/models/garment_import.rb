@@ -864,8 +864,24 @@ class GarmentImport
              else kind == "socks" ? "knit" : kind == "belt" ? "leather" : "canvas"
              end
     names = Array(product[:sizes]).map(&:to_s).reject { it.match?(/\Adefault title\z/i) }.presence || [ "One size" ]
+    # A shoe's fit (Fit::Shoes): the sizes' scale, the width the listing gives, and how it's worn (a runner's
+    # and a boot's room, a loafer's and a heel's hold), beside the style it's drawn in.
+    shoe_fit = if kind == "shoes"
+      {
+        scale: Fit::Shoes.scale_for(names, women: product[:women]),
+        width: Fit::Shoes::WIDTH_WORDS.find { |pattern, _| words.match?(pattern) && !words.match?(/\bwide[- ]leg|\bwide fit\b.*pants/i) }&.last,
+        wear: case named
+              when /running|runner|racer|trail|gel|pegasus|cloud|hoka|asics|speed/i then "runner"
+              when /heel|pump|stiletto|platform/i then "heel"
+              when /flat|ballet|ballerina/i then "flat"
+              else style
+              end
+      }.compact
+    else {}
+    end
     {
       name: product[:name].presence || kind.capitalize,
+      **shoe_fit,
       brand: product[:brand],
       color_name: product[:color],
       color: color_hex(product.values_at(:color, :description, :name)),
