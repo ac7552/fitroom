@@ -23,6 +23,7 @@ import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_
 import { HangerDrape, collarColour, collarStrip, guardForeign, loadPhotoForRedrape, registerPhoto, rigidPrints, showsCloth, trustPieces } from "lib/garments/redrape"
 import { easeInOut, framing } from "lib/framing"
 import { StillFrames } from "lib/still"
+import { softenHead, weldedNormals } from "lib/mannequin_surface"
 
 // The 3D fitting room, styled as a product shot: a white display mannequin in your shape (built by
 // script/mannequin/build.py) wearing an outfit (a top, a jacket, a coat, trousers) in the chosen sizes, in
@@ -32,6 +33,8 @@ import { StillFrames } from "lib/still"
 // to turn it.
 const MODELS = "/models"
 const MANNEQUIN_WHITE = "#f4f2ee"
+// The white mannequin's satin finish (see mannequinMaterial).
+const WHITE_FINISH = { roughness: 0.58, clearcoat: 0.35, clearcoatRoughness: 0.32 }
 // The studio: graphite, lit from above the figure, like the page round it.
 // The neck, in the body's own (rest pose) space: cut level at this height, and the egg's neck piece reaching
 // a little below the cut, about as round as the neck there.
@@ -184,7 +187,9 @@ export class FittingStage {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
     this.renderer.toneMapping = THREE.NeutralToneMapping
     this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    // PCF, whose edge the key light's shadow radius softens (PCFSoftShadowMap ignores the radius: the head's
+    // shadow came down the neck in a stepped line).
+    this.renderer.shadowMap.type = THREE.PCFShadowMap
 
     this.scene = new THREE.Scene()
     this.addLights()
@@ -249,6 +254,7 @@ export class FittingStage {
     })
     // The women's body: a shape key on the body (see mannequin.json's "women").
     this.hasWomen = Boolean(women && calibration.women) && addShapeKey(this.meshes.body, "women", new Float32Array(women))
+    refineMannequin(this.meshes.body)
     // The model's casual jacket isn't used: casual jackets are draped (see dressDraped).
     if (this.meshes.casual) this.meshes.casual.visible = false
     // A coat is the jacket again, on its own copy of the geometry (it gets its own fit-map colours),
@@ -344,9 +350,10 @@ export class FittingStage {
     const white = color.toLowerCase() === MANNEQUIN_WHITE
     for (const material of [this.meshes.body.material, this.meshes.body.material.userData.plain]) {
       material.color.set(color)
-      // The white form is matte ceramic; skin is soft, with a little sheen.
-      material.clearcoat = white ? 0 : 0.05
-      material.roughness = white ? 0.86 : 0.62
+      // The white form is satin fibreglass; skin is soft, with a little sheen.
+      material.clearcoat = white ? WHITE_FINISH.clearcoat : 0.05
+      material.clearcoatRoughness = white ? WHITE_FINISH.clearcoatRoughness : 0
+      material.roughness = white ? WHITE_FINISH.roughness : 0.62
       material.sheen = white ? 0 : 0.25
       material.sheenColor.set(color).offsetHSL(0, 0, 0.15)
     }
@@ -2442,7 +2449,27 @@ function coverHead(egg, body) {
 }
 const HEAD_ROOM = 1.04
 
-// Matte white fibreglass, like a shop's display mannequin. The body is hidden wherever a worn garment
+// The mannequin's surface refined (mannequin_surface.js): its face softened (and the women's shape key's
+// offsets there with it), its normals worked out again, smooth and in full precision.
+function refineMannequin(mesh) {
+  const geometry = mesh.geometry, position = geometry.attributes.position, normal = geometry.attributes.normal
+  if (!geometry.index || !position) return
+  const reference = new Float32Array(3 * position.count)
+  for (let i = 0; i < position.count; i++) { reference[3 * i] = normal.getX(i); reference[3 * i + 1] = normal.getY(i); reference[3 * i + 2] = normal.getZ(i) }
+  const head = geometry.attributes._head?.array
+  if (head) {
+    const women = mesh.morphTargetDictionary?.women
+    const fields = [position.array, ...(women !== undefined ? [geometry.morphAttributes.position[women].array] : [])]
+    softenHead(fields, position.array, geometry.index.array, head)
+  }
+  geometry.setAttribute("normal", new THREE.BufferAttribute(weldedNormals(position.array, geometry.index.array, reference), 3))
+  position.needsUpdate = true
+  for (const shape of geometry.morphAttributes.position ?? []) shape.needsUpdate = true
+  geometry.computeBoundingSphere()
+}
+
+// White satin fibreglass, like a good shop's display mannequin: a soft sheen in its clear coat that picks out
+// its shape, nothing glossy enough to pull the eye from the clothes. The body is hidden wherever a worn garment
 // covers it (the build marks those parts), since clothes fit too close for it not to show through, and
 // where its head is (an egg takes its place).
 function mannequinMaterial() {
@@ -2450,8 +2477,7 @@ function mannequinMaterial() {
   const hideCasual = { value: 0 }
   const hideTrousers = { value: 0 }
   // Both sides drawn, so where the neck is cut and meets the egg's neck, any sliver of the inside is white too.
-  // Matte, like a ceramic display form: nothing shiny to pull the eye from the clothes.
-  const finish = { color: 0xf4f2ee, roughness: 0.86, metalness: 0, clearcoat: 0, side: THREE.DoubleSide }
+  const finish = { color: 0xf4f2ee, ...WHITE_FINISH, metalness: 0, side: THREE.DoubleSide }
   const material = new THREE.MeshPhysicalMaterial(finish)
   material.userData = { hideJacket, hideCasual, hideTrousers, plain: new THREE.MeshPhysicalMaterial(finish) }
   material.onBeforeCompile = shader => {

@@ -67,7 +67,7 @@ export class TracedStill {
   // What the still is of: when it changes, the tracer's scene is built again.
   contentKey() {
     const stage = this.stage
-    const parts = [stage.sceneLook, stage.pose, stage.bodyType, JSON.stringify(stage.body ?? null), stage.view]
+    const parts = [stage.sceneLook, stage.pose, stage.bodyType, JSON.stringify(stage.body ?? null), stage.view, stage.tone ?? ""]
     for (const [slot, d] of Object.entries(stage.slots)) {
       if (!d?.top) continue
       parts.push(slot, d.top.cloth.points.length, d.redrapeState ?? "", JSON.stringify(d.meterGain ?? null), d.top.geometry.attributes.position.version, d.top.geometry.attributes.aPhoto.version, d.top.printImage ? 1 : 0)
@@ -99,8 +99,8 @@ export class TracedStill {
       scene.background = null
       // The mannequin as it stands: a copy of its body, posed and shaped as now (its skin and shape keys
       // applied here, into plain positions: the tracer's own handling of skinned meshes doesn't take the
-      // live skeleton), in a plain matte finish (its own material hides skin under the model's clothes
-      // with a shader of its own, which the tracer can't read). The model's tailored jacket and coat, when
+      // live skeleton), in its finish without its shader (its own material hides skin under the model's
+      // clothes with a shader of its own, which the tracer can't read). The model's tailored jacket and coat, when
       // shown, the same way, with their materials' colour and map.
       stage.model.updateMatrixWorld(true)
       for (const object of Object.values(stage.meshes ?? {})) {
@@ -108,8 +108,10 @@ export class TracedStill {
         if (object === stage.meshes.body && stage.view === "ghost") continue
         const geometry = posedGeometry(object)
         const source = object.material
+        // (The mannequin's finish as the live view has it: the white form's satin, or the skin tone picked. A
+        // fixed white here turned a skin-toned mannequin white once its traced picture came in.)
         const material = new THREE.MeshPhysicalMaterial(object === stage.meshes.body
-          ? { color: 0xf4f2ee, roughness: 0.86, metalness: 0, side: THREE.DoubleSide }
+          ? { color: source.color.clone(), roughness: source.roughness, clearcoat: source.clearcoat ?? 0, clearcoatRoughness: source.clearcoatRoughness ?? 0, sheen: source.sheen ?? 0, sheenColor: source.sheenColor?.clone(), metalness: 0, side: THREE.DoubleSide }
           : { color: source.color?.clone() ?? new THREE.Color(0x888888), map: source.map ?? null, roughness: source.roughness ?? 0.8, metalness: 0, side: THREE.DoubleSide })
         const copy = new THREE.Mesh(geometry, material)
         copy.userData.traced = true

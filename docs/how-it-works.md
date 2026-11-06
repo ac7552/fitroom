@@ -57,7 +57,7 @@ of the jacket the build exports for this.
 ## The 3D model
 
 The fitting room is styled as a product shot rather than a person: a white display mannequin in your
-shape with a plain egg head, wearing the outfit in the sizes you pick, in soft studio light on a pale
+shape, in a satin fibreglass finish, wearing the outfit in the sizes you pick, in soft studio light on a pale
 backdrop. It can stand, relax, walk or hold its arms out; the clothes are rigged to the same skeleton, so
 they follow. The mannequin is hidden just where a worn garment covers it, so nothing pokes through.
 **Ghost** hides the form to show the jacket alone; **Fit map** colours the jacket by the tailor's verdict.
@@ -74,6 +74,13 @@ two sets of shape keys:
   longer (sleeves, body), and the trousers 1 cm bigger at the waist, seat, thigh or leg opening or 1 cm
   longer in the leg. The page sets them from the difference between a size's chart measurements and
   the modelled jacket, so every size looks as big or small as it really is.
+
+As it loads, the page refines the mannequin's surface (`lib/mannequin_surface.js`): its normals are worked out
+again from the mesh, the same on both sides of a texture seam and in floats (the build's compression keeps
+them to 8 bits a component, which showed as banding down a thigh and a line down the neck), and the head is
+smoothed a little (Taubin's smoothing, which keeps its size; the women's shape key's offsets there with it),
+so lips and eyelids are softened toward a display form's. The key light's shadow is filtered with its radius
+(PCF), so the head's shadow falls on the neck with a soft edge rather than a stepped one.
 
 ### Tops and casual jackets: sewn and draped on the page
 
