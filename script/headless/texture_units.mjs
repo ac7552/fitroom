@@ -21,6 +21,7 @@ const OUTFITS = [
 ]
 const browser = await chromium.launch({ args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] })
 const page = await browser.newPage({ viewport: { width: 400, height: 500 } })
+page.on("console", m => { if (/ATTRIBS16/.test(m.text())) console.log(m.text()) })
 page.on("pageerror", e => console.error("page error:", e.message))
 await page.goto(`${base}/stage.html?bank=off&drape=page${args.query ? "&" + args.query : ""}`)
 await page.waitForFunction(() => window.stageReady, null, { timeout: 120000 })
@@ -46,6 +47,8 @@ for (const items of OUTFITS) {
       let n = 0
       for (let i = 0; i < gl.getProgramParameter(p.program, gl.ACTIVE_UNIFORMS); i++) { const u = gl.getActiveUniform(p.program, i); if (SAMPLERS.includes(u.type)) n += u.size }
       const names = []; for (let i = 0; i < gl.getProgramParameter(p.program, gl.ACTIVE_ATTRIBUTES); i++) names.push(gl.getActiveAttrib(p.program, i).name)
+      // (Which attributes, when at the limit: the next one added breaks a Mac.)
+      if (names.length >= LIMIT) console.log("ATTRIBS16 " + names.join(" "))
       return [p.cacheKey.split(",").slice(0, 2).join(","), n, names.length]
     })
   }, { items, men })

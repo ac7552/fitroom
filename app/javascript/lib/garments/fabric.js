@@ -379,6 +379,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     uLegPrintOn: { value: 0 },
     // Per-channel gain (linear) metering the cloth to its shop photo (DrapedTop#setMeter).
     uMeter: { value: new THREE.Vector3(1, 1, 1) },
+    // 0 drawing; 1 baking the colour, 2 the surface (DrapedTop#bake).
+    uBake: { value: 0 },
     // Each graphic's place in that texture: [u0, v0, du, dv].
     uLegRects: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
     uPrintHalf: { value: 26 },
@@ -473,6 +475,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         attribute vec3 aPlace;
         attribute vec3 aLegPrint;
         varying vec3 vLegPrint;
+        ${fitMap ? "" : "attribute vec2 aAtlas; uniform float uBake;"}
         uniform vec2 uQuilt;
         varying float vAcross;
         varying float vCover;
@@ -496,6 +499,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         // nothing under it shows through there), as do the pieces' edges (puffed by different amounts either side
         // of a seam, the cloth would part along it).
         if ( uQuilt.x > 0.0 ) transformed += normalize( objectNormal ) * uQuilt.x * sqrt( max( sin( 3.14159265 * fract( aPlace.x / uQuilt.y ) ), 0.0 ) ) * smoothstep( 0.0, 2.5, aEdge );`)
+      // Baking (DrapedTop#bake): each point drawn at its place in the garment's texture atlas instead of on
+      // screen, so what the shader makes of the cloth is written out as plain maps (for the path tracer).
+      .replace("#include <project_vertex>", `#include <project_vertex>
+        ${fitMap ? "" : "if ( uBake > 0.5 ) gl_Position = vec4( aAtlas * 2.0 - 1.0, 0.0, 1.0 );"}`)
     shader.fragmentShader = shader.fragmentShader
       // Squeezed cloth shows its weave deeper: fine creases where it's gathered.
       .replace("#include <normal_fragment_maps>", THREE.ShaderChunk.normal_fragment_maps.replace("mapN.xy *= normalScale;", "if ( uDetailOn > 0.5 ) mapN.z = sqrt( max( 1.0 - dot( mapN.xy, mapN.xy ), 0.0 ) ); // (a yarn-built surface keeps other things in b)\n mapN.xy *= normalScale * ( 1.0 + 3.0 * vStrain );") + `
@@ -525,6 +532,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPrintOn;
         uniform float uLegPrintOn;
         uniform vec3 uMeter;
+        uniform float uBake;
         uniform vec4 uLegRects[ 4 ];
         varying vec3 vLegPrint;
         uniform float uPrintHalf;
@@ -649,7 +657,10 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           diffuseColor.rgb *= 0.88 + 0.24 * streak;
         }
         if ( uLookOnly > 0.5 && ( vPiece > 2.5 || !gl_FrontFacing ) ) discard;
-        if ( vHide > 0.0 || vHole > 0.0 || vCover > 0.5 ) discard;
+        bool gone = vHide > 0.0 || vHole > 0.0 || vCover > 0.5;
+        if ( gone && uBake < 0.5 ) discard;
+        // (Baking: hidden cloth written with a coverage of one step above nothing, see lights_fragment_begin.)
+        if ( gone ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 / 255.0 ); return; }
         diffuseColor.a *= mix( 1.0, uSheer, clamp( vSheer, 0.0, 1.0 ) );
         // The shop's photo, as the cloth's own colour (its seams and stitching are drawn over it as on any).
         if ( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) {
@@ -773,12 +784,30 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         // other, so it's a little darker and rougher there (the photo's colour too, laid on above).
         float crease = clamp( vStrain + CREASE_FOLD * ( 1.0 - vShade ), 0.0, 1.0 ) * ( 1.0 - metal );
         diffuseColor.rgb *= 1.0 - CREASE_DARK * crease;
-        if ( !gl_FrontFacing ) diffuseColor.rgb *= 0.55;   // the inside
+        if ( !gl_FrontFacing && uBake < 0.5 ) diffuseColor.rgb *= 0.55;   // the inside (not when baking: a panel's uv winding says nothing about its outside)
         ${fitMap ? "" : PROJECTION.fragmentApply}`)
       // The inside of the cloth (a hood's, a turned-back cuff's) is in its own shade: its sheen dimmed with it,
       // or a black hood's inside catches a grey shine the outside doesn't.
       // Light through thin cloth: each light from behind it (on the far side of its surface from the camera)
       // passes through, softened and in the cloth's colour, most where it shines straight through toward the eye.
+      // Baking: the cloth's colour as made above (uBake 1), or its surface (2: the shaded normal in the
+      // atlas's tangent frame, which in uv space is the picture's own axes, and its roughness), and nothing
+      // lit. Hidden cloth is written with no coverage rather than left out, so a map's empty texels (never
+      // drawn) can be told from its hidden ones.
+      .replace("#include <lights_fragment_begin>", `
+        if ( uBake > 0.5 ) {
+          if ( uBake < 1.5 ) gl_FragColor = vec4( diffuseColor.rgb, 1.0 );
+          else {
+            vec3 n = normal * faceDirection;
+            vec3 tx = normalize( dFdx( - vViewPosition ) ), ty = normalize( dFdy( - vViewPosition ) );
+            vec3 tz = normalize( cross( tx, ty ) );
+            if ( dot( tz, normalize( vNormal ) ) < 0.0 ) tz = - tz;
+            vec3 tn = normalize( vec3( dot( n, tx ), dot( n, ty ), dot( n, tz ) ) );
+            gl_FragColor = vec4( tn * 0.5 + 0.5, roughnessFactor );
+          }
+          return;
+        }
+        #include <lights_fragment_begin>`)
       .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
         #if NUM_DIR_LIGHTS > 0
           if ( uThin > 0.0 ) {

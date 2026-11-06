@@ -24,3 +24,5 @@ end
 %w[CopyShader OutputShader SMAAShader].each do |name|
   pin "three/addons/shaders/#{name}.js", to: "three-addons/#{name}.js"
 end
+# Path-traced stills (lib/trace.js): three-gpu-pathtracer 0.0.23 with three-mesh-bvh bundled in (both MIT).
+pin "three-gpu-pathtracer", to: "three-gpu-pathtracer.js"

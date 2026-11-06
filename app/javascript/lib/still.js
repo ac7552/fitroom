@@ -14,6 +14,8 @@ export const STILL_SAMPLES = 24
 // How many frames nothing must move before the averaging starts (a camera easing to a stop moves less and
 // less: starting at once, each restart would show).
 const QUIET_FRAMES = 3
+// How many frames are averaged before the path tracer takes over (where it can).
+const TRACE_AFTER = 6
 // How far round its place the key light is moved (m, across the light's direction): the size of the studio
 // light the shadows look cast by.
 const LIGHT_RADIUS = 0.35
@@ -93,7 +95,8 @@ export class StillFrames {
       if (o.morphTargetInfluences) for (const v of o.morphTargetInfluences) add(v)
       if (o.skeleton) { const b = o.skeleton.bones; for (let i = 0; i < b.length; i += 4) for (const v of b[i].matrixWorld.elements) add(v) }
       if (o.material?.opacity !== undefined) add(o.material.opacity)
-      if (o.material?.version !== undefined) add(o.material.version)
+      // (Not a transparent double-sided material's version: three.js marks it changed twice every draw.)
+      if (o.material?.version !== undefined && !(o.material.transparent && o.material.side === THREE.DoubleSide && !o.material.forceSinglePass)) add(o.material.version)
     })
     return s
   }
@@ -173,8 +176,17 @@ export class StillFrames {
   draw() {
     if (!STILL_ON || !this.stage.effects || this.stage.plainDraw) return false
     const now = this.sign()
-    if (now !== this.signature) { this.signature = now; this.reset(); return false }
+    if (now !== this.signature) { this.signature = now; this.reset(); this.stage.trace?.reset(); return false }
     if (++this.quiet < QUIET_FRAMES) return false
+    // Where the path tracer can take the still (trace.js): a few averaged frames first (they're quick and
+    // already smoother), then its picture as soon as it has enough samples, the averaged one until then.
+    const trace = this.stage.trace
+    if (trace && trace.ready()) {
+      if (this.count < TRACE_AFTER) { this.add(this.count++); this.show(this.targets[0]); return true }
+      if (trace.step()) return true
+      this.show(this.targets[0])
+      return true
+    }
     if (this.count < STILL_SAMPLES) this.add(this.count++)
     this.show(this.targets[0])
     return true

@@ -249,6 +249,19 @@ under a photo so the fabric isn't lit twice.
   photo shows again at the same seam is laid once. `script/headless/lettering_check.py` reads the word back
   by OCR (Kith's Essentials sweatpant: 0.17 before, 0.90 after; its shop photo 0.64). The cloth's shader takes
   16 vertex attributes at most, a Mac's limit (`texture_units.mjs` checks both).
+- **The path-traced still** (trace.js, bake.js, atlas.js): once nothing moves and the clothes are on, laid
+  on and metered, the figure is drawn again by a path tracer (three-gpu-pathtracer, vendored with
+  three-mesh-bvh, MIT) on the visitor's GPU: light bouncing between sleeve and body, a jacket's colour on
+  the shirt under it, soft shadows from the studio's lights as discs, the same studio map. A few averaged
+  frames show first; the traced picture takes over at 4 samples (denoised hard, easing off as samples come
+  in, done at 128) and goes at any movement. Each garment goes in as plain maps baked by its own cloth
+  shader: every panel packed into a 1024² atlas (`aAtlas`), the shader drawn into it with `uBake` set (1:
+  the colour with photo, prints, stitches and metering; 2: the shaded normal and roughness), empty texels
+  dilated, hidden cloth at near-zero coverage so `alphaTest` cuts it. One tracer mesh per material: the
+  tracer gives each mesh one material, and a two-material mesh shifts every mesh after it onto the wrong
+  one. The mannequin goes in posed and shaped, in a plain matte finish. Needs WebGL2 float targets; a GPU
+  that takes over 1.5 s on its first sample turns it off for the session, and the averaged still stands in.
+  `?trace=off`; `script/headless/trace_still.mjs` renders it headless (slowly: a software GPU).
 - **A finer mesh, and folds** (fine.js, wrinkles.js): what's drawn is the drape's cloth subdivided once or
   twice (butterfly subdivision, interpolating: the drape's points stay put, panel edges take their midpoints
   so seams meet), about 0.5 to 0.8 cm between points, refined again each frame from the drape's positions.

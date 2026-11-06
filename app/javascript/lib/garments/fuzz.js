@@ -23,7 +23,10 @@ export const FUZZ_ON = typeof location === "undefined" || new URLSearchParams(lo
 export function fuzzFor(geometry, surface, color) {
   const look = FUZZY[surface]
   if (!FUZZ_ON || !look) return null
-  const material = new THREE.MeshLambertMaterial({ color: fibreColor(color), transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  // One pass for both sides: three.js draws a transparent double-sided material in two passes, marking it
+  // changed each time, which the still (still.js) took for movement and never settled; the shells are thin
+  // and their layers overlap anyway, so one pass draws them as well.
+  const material = new THREE.MeshLambertMaterial({ color: fibreColor(color), transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true })
   const uniforms = { uFuzz: { value: new THREE.Vector3(look.length, look.density, look.opacity) }, uLayers: { value: LAYERS } }
   material.userData.uniforms = uniforms
   material.customProgramCacheKey = () => "fuzz"

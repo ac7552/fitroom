@@ -4,6 +4,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { deltaE, linearOf } from "lib/colour"
+import { TracedStill } from "lib/trace"
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js"
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js"
@@ -199,6 +200,8 @@ export class FittingStage {
     this.effects = this.addEffects()
     // Once nothing moves, frames averaged into a smoother, softer-shadowed picture (still.js).
     this.still = this.effects ? new StillFrames(this) : null
+    // And, where the browser can, the still path traced (trace.js).
+    this.trace = this.still ? new TracedStill(this) : null
     this.setScene("studio")
 
     this.resize()
@@ -227,7 +230,8 @@ export class FittingStage {
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromEquirectangular(studio).texture
     this.scene.environmentIntensity = LOOKS[this.sceneLook].environment
-    studio.dispose()
+    // (The studio map itself stays, for the path tracer's environment.)
+    this.studioMap = studio
     pmrem.dispose()
 
     this.calibration = calibration

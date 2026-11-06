@@ -13,6 +13,8 @@ import { sheerShow } from "lib/garments/sheer"
 import { fibreColor, fuzzFor } from "lib/garments/fuzz"
 import { FineCloth } from "lib/garments/fine"
 import { foldField, wavelengthFor } from "lib/garments/wrinkles"
+import { packPanels } from "lib/garments/atlas"
+import { bakeMaps, plainTexture } from "lib/garments/bake"
 
 // How far the fabric's relief in a re-draped photo (redrape.js's flatField, the alpha channel) stands out
 // of the cloth (m, at the relief's full value): the tilt the shader gives the surface from it.
@@ -617,6 +619,9 @@ export class DrapedTop {
     // A graphic on a leg laid as one piece (setLegPrints): [u, v, on] in its texture.
     geometry.setAttribute("aLegPrint", new THREE.BufferAttribute(new Float32Array(3 * n), 3))
     geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * n).fill(0.85), 3))
+    // Each point's place in the garment's texture atlas (atlas.js), for baking its maps (bake).
+    this.atlas = packPanels(cloth)
+    geometry.setAttribute("aAtlas", new THREE.BufferAttribute(this.atlas.uv, 2))
     // The cloth's own fabric first, then rib (cuffs, collars, waistbands): one material each.
     const rib = cloth.panelFabric.map(f => f === "rib")
     const main = [], ribbed = []
@@ -779,6 +784,94 @@ export class DrapedTop {
   // (print.js's readDressPhoto, its layout marked dress).
   // A re-draped photo (redrape.js) comes with its own texture coordinates (map.uv) and the back photo as
   // map.back.image; the front image serves for the softened copy too.
+  // The garment's appearance as plain maps, for the path tracer (trace.js): its colour (with everything the
+  // shader lays on it: photo, prints, stitches, metering) and its surface (the shaded normal, roughness),
+  // each drawn into the atlas (atlas.js) by the cloth's own shader (bake.js). Baked again when anything it
+  // shows changed (the materials' uniforms are read each time; `key` says what state they're in).
+  bake(renderer, key, size) {
+    if (this.baked && this.baked.key === key) return this.baked
+    this.baked?.dispose()
+    const mesh = this.mesh, fine = this.fine
+    const maps = bakeMaps(renderer, mesh, [this.materials.main, this.materials.rib], size)
+    // As plain textures for the tracer (see plainTexture); the targets themselves can go.
+    const baked = {
+      key,
+      albedo: plainTexture(renderer, maps.albedo, THREE.SRGBColorSpace),
+      surface: plainTexture(renderer, maps.surface, THREE.LinearSRGBColorSpace),
+      roughness: plainTexture(renderer, maps.roughness, THREE.LinearSRGBColorSpace)
+    }
+    for (const t of Object.values(maps)) t.dispose()
+    baked.dispose = () => { for (const t of [baked.albedo, baked.surface, baked.roughness]) t.dispose() }
+    void fine
+    this.baked = baked
+    return baked
+  }
+
+  // Copies of the garment for the path tracer, one per material (the tracer gives each mesh one material:
+  // a mesh with two shifts every mesh after it onto the wrong one): the fine mesh's points as drawn (lifted
+  // off the body as the shader lifts them), the atlas as its uv, a physical material carrying the baked maps
+  // and the cloth's sheen and gloss. The caller disposes them.
+  tracedMeshes(baked) {
+    const source = this.fine?.geometry ?? this.geometry
+    const index = source.index.array
+    return source.groups.filter(g => g.count > 0).map(g => {
+      const geometry = this.tracedGeometry(baked, index.subarray(g.start, g.start + g.count))
+      const m = this.materials[g.materialIndex === 1 ? "rib" : "main"]
+      const material = new THREE.MeshPhysicalMaterial({
+        map: baked.albedo, normalMap: baked.surface, normalScale: new THREE.Vector2(1, 1), roughnessMap: baked.roughness, roughness: 1, metalness: 0,
+        // (A little less sheen and no clearcoat: the tracer samples each as a lobe of its own, and at the few
+        // samples a still gets they're speckle; the baked roughness carries the cloth's own finish.)
+        sheen: m.sheen * 0.5, sheenColor: m.sheenColor.clone(), sheenRoughness: Math.max(0.6, m.sheenRoughness), clearcoat: 0,
+        side: THREE.DoubleSide, alphaTest: 0.5
+      })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.matrixAutoUpdate = false
+      mesh.matrix.copy(this.mesh.matrixWorld)
+      mesh.matrixWorld.copy(this.mesh.matrixWorld)
+      return mesh
+    })
+  }
+
+  // The fine mesh's points (lifted as drawn), its atlas as uv, and the given triangles, as a geometry of its own.
+  tracedGeometry(baked, triangles) {
+    const source = this.fine?.geometry ?? this.geometry
+    const n = source.attributes.position.count
+    const geometry = new THREE.BufferGeometry()
+    const position = new Float32Array(3 * n), p = source.attributes.position.array, nn = source.attributes.normal.array
+    for (let i = 0; i < 3 * n; i++) position[i] = p[i] + nn[i] * SURFACE_LIFT
+    geometry.setAttribute("position", new THREE.BufferAttribute(position, 3))
+    geometry.setAttribute("normal", new THREE.BufferAttribute(Float32Array.from(nn), 3))
+    geometry.setAttribute("uv", new THREE.BufferAttribute(Float32Array.from(source.attributes.aAtlas.array), 2))
+    geometry.setIndex(new THREE.BufferAttribute(Uint32Array.from(triangles), 1))
+    return geometry
+  }
+
+  tracedMesh(baked) {
+    const source = this.fine?.geometry ?? this.geometry
+    const n = source.attributes.position.count
+    const geometry = new THREE.BufferGeometry()
+    const position = new Float32Array(3 * n), p = source.attributes.position.array, nn = source.attributes.normal.array
+    for (let i = 0; i < 3 * n; i++) position[i] = p[i] + nn[i] * SURFACE_LIFT
+    geometry.setAttribute("position", new THREE.BufferAttribute(position, 3))
+    geometry.setAttribute("normal", new THREE.BufferAttribute(Float32Array.from(nn), 3))
+    geometry.setAttribute("uv", new THREE.BufferAttribute(Float32Array.from(source.attributes.aAtlas.array), 2))
+    geometry.setIndex(source.index.clone())
+    for (const g of source.groups) geometry.addGroup(g.start, g.count, g.materialIndex)
+    const materials = ["main", "rib"].map(key => {
+      const m = this.materials[key]
+      return new THREE.MeshPhysicalMaterial({
+        map: baked.albedo, normalMap: baked.surface, normalScale: new THREE.Vector2(1, 1), roughnessMap: baked.roughness, roughness: 1, metalness: 0,
+        sheen: m.sheen, sheenColor: m.sheenColor.clone(), sheenRoughness: m.sheenRoughness, clearcoat: m.clearcoat, clearcoatRoughness: m.clearcoatRoughness,
+        side: THREE.DoubleSide, alphaTest: 0.5
+      })
+    })
+    const mesh = new THREE.Mesh(geometry, materials)
+    mesh.matrixAutoUpdate = false
+    mesh.matrix.copy(this.mesh.matrixWorld)
+    mesh.matrixWorld.copy(this.mesh.matrixWorld)
+    return mesh
+  }
+
   // The camera's metering of this garment: a per-channel gain (linear light) on everything the cloth shows,
   // so that drawn under the stage's light it comes out the colour its shop photo shows (stage.js#meter).
   // [1, 1, 1] for none.
@@ -1203,6 +1296,7 @@ export class DrapedTop {
     for (const texture of this.photoTextures ?? []) texture.dispose()
     this.geometry.dispose()
     this.fine?.dispose()
+    this.baked?.dispose()
     this.rim?.geometry.dispose()
     this.fuzz?.material.dispose()
     for (const material of Object.values(this.materials)) {
