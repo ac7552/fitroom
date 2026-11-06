@@ -1620,9 +1620,10 @@ export function shoeSide(data, w, h) {
   if (right - left < w * 0.15) return null
   let high = h, low = -1
   for (let y = 0; y < h; y++) for (let x = left; x <= right; x++) if (mask[y * w + x]) { high = Math.min(high, y); low = Math.max(low, y) }
-  // A side view: a shoe stands one to five times as long as it's tall (a front or top view doesn't).
+  // A side view: a shoe stands one to five times as long as it's tall (a front or top view doesn't); a
+  // knee-high boot stands taller than it's long, down to about half.
   const long = (right - left + 1) / (low - high + 1)
-  if (long < 1 || long > 5) return null
+  if (long < 0.45 || long > 5) return null
   const top = new Float64Array(SIDE_BINS).fill(Infinity), bottom = new Float64Array(SIDE_BINS).fill(-Infinity)
   for (let x = left; x <= right; x++) {
     const bin = Math.min(SIDE_BINS - 1, Math.floor(((x - left) / (right - left + 1)) * SIDE_BINS))
@@ -1639,9 +1640,13 @@ export function shoeSide(data, w, h) {
   const quarter = Math.round(SIDE_BINS / 4)
   const tall = (from, to) => { let sum = 0; for (let b = from; b < to; b++) sum += bottom[b] - top[b]; return sum / (to - from) }
   const toeRight = tall(SIDE_BINS - quarter, SIDE_BINS) < tall(0, quarter)
+  // Taller than long, it's a side view only if it's a boot with a shaft: one end (the heel's) stands well
+  // over the other (a shoe shot from an angle is a block).
+  if (long < 1 && Math.min(tall(0, quarter), tall(SIDE_BINS - quarter, SIDE_BINS)) > 0.6 * Math.max(tall(0, quarter), tall(SIDE_BINS - quarter, SIDE_BINS))) return null
   // How thick the sole is: up from the bottom, as far as the colour stays the sole's (the bottom few rows'),
   // in most columns. Sole and upper the same colour: a usual sole, a seventh of the shoe's height.
-  const soleThick = soleThickness(lab, mask, w, h, left, right, top, bottom) ?? (low - high) / 7
+  // (A tall boot's: of its length, not its shaft.)
+  const soleThick = soleThickness(lab, mask, w, h, left, right, top, bottom) ?? Math.min((low - high) / 7, (right - left) / 6)
   // And column by column (a heel, a platform): the sole line below follows it where it's read.
   const profile = soleProfile(lab, mask, w, h, left, right, top, bottom)
   // The outline's front and back at each height (shares of its length, heel 0 to toe 1), from the floor up in

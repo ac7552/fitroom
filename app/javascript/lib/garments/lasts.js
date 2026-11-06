@@ -15,14 +15,16 @@ export const FAMILIES = {
   court: { style: "sneaker", back: 0.095, front: 0.085, sole: 0.024, box: 0.044, rocker: 0.004, toeSpring: 0.008 },
   chunky: { style: "sneaker", back: 0.105, front: 0.09, sole: 0.042, box: 0.05, flare: 0.008, rocker: 0.01, toeSpring: 0.014 },
   hightop: { style: "hightop" },
-  chelsea: { style: "boot", back: 0.17, front: 0.16, dip: 0.002, lugs: 0, pad: 0, square: 2.0, box: 0.06 },
+  chelsea: { style: "boot", back: 0.17, front: 0.16, dip: 0.002, lugs: 0, pad: 0, square: 2.0, box: 0.06, laces: false },
   combat: { style: "boot" },
+  // A knee-high boot (a rain boot, a riding boot): a shaft to under the knee, pulled on, a round toe.
+  tall: { style: "boot", back: 0.4, front: 0.38, dip: 0.004, lugs: 0, pad: 0, square: 2.4, sole: 0.03, box: 0.062, laces: false },
   derby: { style: "loafer", back: 0.07, front: 0.058, sole: 0.018, box: 0.038, square: 1.9, toeSpring: 0.01 },
-  loafer: { style: "loafer" },
-  pump: { style: "loafer", back: 0.06, front: 0.04, dip: 0.02, sole: 0.008, box: 0.03, square: 1.6, heel: 0.07, toeSpring: 0.004 },
-  flat: { style: "loafer", back: 0.045, front: 0.03, dip: 0.016, sole: 0.008, box: 0.028, square: 1.7 },
-  sandal: { style: "sandal" },
-  slide: { style: "sandal", strap: [0.03, 0.07], sole: 0.028 }
+  loafer: { style: "loafer", laces: false },
+  pump: { style: "loafer", back: 0.06, front: 0.04, dip: 0.02, sole: 0.008, box: 0.03, square: 1.6, heel: 0.07, toeSpring: 0.004, laces: false },
+  flat: { style: "loafer", back: 0.045, front: 0.03, dip: 0.016, sole: 0.008, box: 0.028, square: 1.7, laces: false },
+  sandal: { style: "sandal", laces: false },
+  slide: { style: "sandal", strap: [0.03, 0.07], sole: 0.028, laces: false }
 }
 
 // The family from the listing's words (the name and category first), else from the drawing style.
@@ -33,6 +35,7 @@ export function familyFromWords(words, style = "sneaker") {
     ["sandal", /sandals?|flip[- ]?flops?|birkenstock/i],
     ["pump", /\bpumps?\b|stiletto|\bheels?\b|platform heel|kitten/i],
     ["flat", /ballet|ballerina|\bflats?\b|mary jane/i],
+    ["tall", /rain boots?|wellington|wellies?|dry boot|rubber boot|galosh|knee[- ]high|over[- ]the[- ]knee|thigh[- ]high|tall boot|riding boot|boot high\b/i],
     ["chelsea", /chelsea|zip boot|ankle boot|boot(?!ie).*(?:leather|suede)(?!.*(?:combat|hiking|lace))/i],
     ["combat", /combat|hiking|lace[- ]up boot|work boot|\bboots?\b/i],
     ["hightop", /high[- ]?tops?|\bhi\b|mid[- ]top/i],
@@ -90,12 +93,14 @@ export function lastFor(words, style, side) {
     params.heel = clamp(m.heelRise * shoeHeight, 0, 0.11)
     params.toeSole = clamp(m.sole.toe * shoeHeight, 0.004, params.sole)
     // Collar heights, back and front, where the photo shows a shaft or a low cut.
-    params.back = clamp(m.collar.back * shoeHeight, 0.03, 0.4)
+    params.back = clamp(m.collar.back * shoeHeight, 0.03, 0.55)
     params.front = clamp(m.collar.front * shoeHeight, 0.025, params.back)
     // The toe: blunter (a squarer cross-section) when its front edge is upright, pointed when it tapers.
     params.square = clamp(2.3 - m.taper * 8, 1.5, 3.0)
     params.measured = true
   }
+  // Laced, unless the family isn't or the listing says it's pulled or zipped on.
+  if (/slip[- ]?on|pull[- ]?on|\bzip|chelsea|wellington|mule|clog|elastic/i.test(String(words ?? ""))) params.laces = false
   return { family, params }
 }
 

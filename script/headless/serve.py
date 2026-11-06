@@ -20,6 +20,7 @@ MAP = {
     "/drapes/": ROOT / "public/drapes",
     "/harness/": ROOT / "script/headless",
     "/fixtures/": ROOT / "test/fixtures/files",
+    "/tmp/": ROOT / "tmp",
     "/kith/": ROOT / "tmp/kith",
 }
 

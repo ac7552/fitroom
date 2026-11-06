@@ -881,6 +881,8 @@ class GarmentImport
     end
     {
       name: product[:name].presence || kind.capitalize,
+      # (The listing's words, for a shoe's last: lasts.js reads its family, laces and heel from them.)
+      **(kind == "shoes" ? { words: words.squish.truncate(300) } : {}),
       **shoe_fit,
       brand: product[:brand],
       color_name: product[:color],

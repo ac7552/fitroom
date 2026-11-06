@@ -277,7 +277,7 @@ export function shoeGeometry(body, frame, side, styleName) {
   }
   // Laces up the front of a sneaker or a boot: bars across the instep, from above the toes to the collar.
   const indexLaces = []
-  if (["sneaker", "hightop", "boot"].includes(styleName)) {
+  if (style.laces !== false && ["sneaker", "hightop", "boot"].includes(styleName)) {
     const path = []
     for (let row = soleRows.length; row < height; row++) {
       const v = grid[row][0]
@@ -340,7 +340,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   styleName = baseName(styleName)
   const s = (frame.top - frame.floor) / BODY_HEIGHT
   const floor = frame.floor, thick = style.thick * s
-  const reachTop = floor + 0.32 * s
+  const reachTop = floor + 0.5 * s
   const slices = legSlices(body, frame, side, reachTop)
   const rows = slices.rows
   const ring = k => Array.from({ length: AROUND }, (_, j) => {
@@ -353,8 +353,17 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   for (let k = 0; k < rows && k * STEP < 0.05 * s; k++) for (const [, z] of rings[k]) { zmin = Math.min(zmin, z); zmax = Math.max(zmax, z) }
   const back = zmin - thick - 0.003 * s, front = zmax + thick + style.toe * s
   const length = front - back
-  const metres = length * outline.aspect / (outline.right - outline.left)
   const bins = outline.top.length
+  // The photo's sole is the foot's length: the columns whose bottom is on the floor. A tall boot's shaft
+  // leans back past the heel and a toe can spring up, so the outline is wider than the sole; those columns
+  // go on behind the heel and beyond the toe, by the same scale.
+  const floorLine = Math.max(...outline.bottom)
+  let firstSole = -1, lastSole = -1
+  for (let b = 0; b < bins; b++) if (outline.bottom[b] >= floorLine - 0.06 * (floorLine - Math.min(...outline.top))) { if (firstSole < 0) firstSole = b; lastSole = b }
+  const uL = firstSole >= 0 ? firstSole / bins : 0, uR = lastSole >= 0 ? (lastSole + 1) / bins : 1
+  const span = length / Math.max(0.4, uR - uL)
+  const origin = back - uL * span
+  const metres = span * outline.aspect / (outline.right - outline.left)
   const photoTall = u => lerpAt(outline.bottom, u) - lerpAt(outline.top, u)
   // Where the body crosses a level line across the foot at z, at slice k: its x from and to, or null.
   const across = (k, z) => {
@@ -376,7 +385,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   const us = Array.from({ length: columns }, (_, c) => (1 - Math.cos((Math.PI * c) / (columns - 1))) / 2)
   const tall = [], wide = [], middle = [], open = [], legAt = []
   for (const u of us) {
-    const z = back + u * length
+    const z = origin + u * span
     let height = photoTall(Math.min(1, Math.max(0, u))) * metres
     let lo = Infinity, hi = -Infinity, footTop = -Infinity, low = [Infinity, -Infinity]
     for (let k = 0; k < rows; k++) {
@@ -419,15 +428,38 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   const round = PHOTO_SHOE.round[styleName] ?? 2.6, around = PHOTO_SHOE.around
   const positions = [], grid = []
   const flare = style.flare * s
+  // Up a shaft the walls follow the leg: at each height, as wide as the leg is there (and across the
+  // ankle, the foot), a thickness out; the rim at the photo's own top line. The open top is the rows
+  // between RIM and 1 - RIM of the way round, left out below.
+  const RIM = 0.2
+  const legHalf = (y, z) => {
+    const k = Math.min(rows - 1, Math.max(0, Math.round((y - floor) / STEP)))
+    const x = across(k, z)
+    return x ? { mid: (x[0] + x[1]) / 2, half: (x[1] - x[0]) / 2 + thick } : null
+  }
   for (let c = 0; c < columns; c++) {
-    const z = back + us[c] * length, w = width[c], hgt = height[c], row = []
+    const z = origin + us[c] * span, w = width[c], hgt = height[c], row = []
+    const shaft = open[c] && tallShaft
     for (let r = 0; r <= around; r++) {
       const phi = (Math.PI * r) / around, cos = Math.cos(phi), sin = Math.sin(phi)
-      // Up the shaft, where the leg comes out of the top, its walls stand straight to the top.
-      const e = open[c] && tallShaft ? 10 : round
-      const y = floor + 0.0008 + (hgt - 0.0008) * Math.abs(sin) ** (2 / e)
-      const out = y - floor < soleTall[c] ? flare : 0
-      const x = mid[c] + Math.sign(cos) * (w + out) * Math.abs(cos) ** (2 / e)
+      let x, y
+      if (shaft) {
+        // Straight up to the rim, then across the (open) top.
+        const up = Math.min(1, Math.abs(sin) / Math.sin(Math.PI * RIM))
+        y = floor + 0.0008 + (hgt - 0.0008) * up
+        const leg = y > floor + 0.09 * s ? legHalf(y, z) : null
+        // The foot's width low down, the leg's up the shaft, blended over the ankle.
+        const blend = Math.min(1, Math.max(0, (y - floor - 0.09 * s) / (0.06 * s)))
+        const half = leg ? w * (1 - blend) + leg.half * blend : w
+        const middle = leg ? mid[c] * (1 - blend) + leg.mid * blend : mid[c]
+        const out = y - floor < soleTall[c] ? flare : 0
+        x = middle + Math.sign(cos) * (half + out) * Math.min(1, Math.abs(cos) / Math.cos(Math.PI * RIM)) ** 0.3
+      } else {
+        const e = round
+        y = floor + 0.0008 + (hgt - 0.0008) * Math.abs(sin) ** (2 / e)
+        const out = y - floor < soleTall[c] ? flare : 0
+        x = mid[c] + Math.sign(cos) * (w + out) * Math.abs(cos) ** (2 / e)
+      }
       positions.push(x, y, z)
       row.push(positions.length / 3 - 1)
     }
@@ -439,9 +471,13 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   for (let c = 0; c + 1 < columns; c++) {
     for (let r = 0; r < around; r++) {
       const a = grid[c][r], b = grid[c + 1][r], c2 = grid[c + 1][r + 1], d = grid[c][r + 1]
-      // Open over the leg where it comes out of the top.
-      const leg = open[c] && open[c + 1] ? (legAt[c] ?? legAt[c + 1]) : null
-      if (leg && r > around * 0.25 && r < around * 0.75 && [a, b, c2, d].every(v => xOf(v) > leg[0] - 0.004 * s && xOf(v) < leg[1] + 0.004 * s)) continue
+      // Open over the leg where it comes out of the top (a tall shaft's rim; a low shoe's top over the
+      // leg's bounds).
+      if (open[c] && open[c + 1] && tallShaft) { if (r >= around * RIM && r < around * (1 - RIM)) continue }
+      else {
+        const leg = open[c] && open[c + 1] ? (legAt[c] ?? legAt[c + 1]) : null
+        if (leg && r > around * 0.25 && r < around * 0.75 && [a, b, c2, d].every(v => xOf(v) > leg[0] - 0.004 * s && xOf(v) < leg[1] + 0.004 * s)) continue
+      }
       const lowest = Math.min(yOf(a), yOf(b), yOf(c2), yOf(d)) - floor
       quad(lowest < Math.min(soleTall[c], soleTall[c + 1]) - 1e-4 ? sole : upper, a, b, c2, d)
     }
@@ -450,7 +486,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   }
   // The ends: closed with a fan from their middles.
   for (const [c, flip] of [[0, true], [columns - 1, false]]) {
-    const x = mid[c], y = floor + height[c] / 2, z = back + us[c] * length
+    const x = mid[c], y = floor + height[c] / 2, z = origin + us[c] * span
     positions.push(x, y, z)
     const centre = positions.length / 3 - 1
     for (let r = 0; r <= around; r++) {
@@ -463,7 +499,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   // above, when there is one, shows them itself): bars across the top of the instep, following its curve,
   // with an eyelet at each end of a boot's.
   const strings = [], eyelets = []
-  if (laces && ["sneaker", "hightop", "boot"].includes(styleName)) {
+  if (laces && style.laces !== false && ["sneaker", "hightop", "boot"].includes(styleName)) {
     const toeTop = Math.min(...height.slice(Math.round(columns * 0.8), Math.round(columns * 0.92)))
     const throat = []
     for (let c = 0; c < columns; c++) {
@@ -475,7 +511,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
       const first = throat[0], last = throat[throat.length - 1]
       // The rows of eyelets are spaced evenly along the throat as it runs (up the steep front of a boot's
       // shaft as well as along the instep), one every couple of centimetres, so a boot laces up its shaft.
-      const zOf = c => back + us[c] * length
+      const zOf = c => origin + us[c] * span
       const run = [0]
       for (let c = first + 1; c <= last; c++) run.push(run[run.length - 1] + Math.hypot(zOf(c) - zOf(c - 1), height[c] - height[c - 1]))
       const total = run[run.length - 1]
@@ -561,14 +597,16 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   const openColumns = us.map((_, c) => c).filter(c => open[c])
   if (tallShaft && style.pad && openColumns.length >= 2) {
     const r = Math.max(0.006 * s, thick * 0.8)
-    const zOf = c => back + us[c] * length
+    const zOf = c => origin + us[c] * span
     const first = openColumns[0], last = openColumns[openColumns.length - 1]
     // The roll's path: along each wall's top, in from its edge, and round the front and the back.
     const loop = []
-    const wallAt = (c, sign) => [mid[c] + sign * (width[c] - r * 0.6), floor + height[c] - r * 0.35, zOf(c)]
+    // (The rim as built: the walls follow the leg up the shaft, so it's narrower than the foot.)
+    const rimAt = c => { const a = grid[c][Math.round(around * RIM)], b = grid[c][Math.round(around * (1 - RIM))]; return { mid: (positions[3 * a] + positions[3 * b]) / 2, half: Math.abs(positions[3 * a] - positions[3 * b]) / 2 } }
+    const wallAt = (c, sign) => { const rim = rimAt(c); return [rim.mid + sign * (rim.half - r * 0.6), floor + height[c] - r * 0.35, zOf(c)] }
     const bend = (c, from, to) => {
-      const rad = width[c] - r * 0.6, y = floor + height[c] - r * 0.35
-      for (let k = 1; k < 8; k++) { const a = from + ((to - from) * k) / 8; loop.push([mid[c] + rad * Math.cos(a), y, zOf(c) + rad * Math.sin(a) * 0.7]) }
+      const rim = rimAt(c), rad = rim.half - r * 0.6, y = floor + height[c] - r * 0.35
+      for (let k = 1; k < 8; k++) { const a = from + ((to - from) * k) / 8; loop.push([rim.mid + rad * Math.cos(a), y, zOf(c) + rad * Math.sin(a) * 0.7]) }
     }
     for (const c of openColumns) loop.push(wallAt(c, 1))
     bend(last, 0, Math.PI)
@@ -608,7 +646,7 @@ export function photoShoeGeometry(body, frame, side, outline, styleName, { laces
   if (eyelets.length) geometry.addGroup(at, eyelets.length, 4)
   geometry.computeVertexNormals()
   // Built to the photo's own scale: wrapShoePhoto lays it on exactly.
-  geometry.userData.photo = { floor, back, length, metres }
+  geometry.userData.photo = { floor, back: origin, length: span, metres }
   return geometry
 }
 

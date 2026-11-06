@@ -1913,7 +1913,7 @@ export default class extends Controller {
       closeup: garment.closeup ?? null,
       // (A shoe's listing words, for its last: lasts.js.)
       name: garment.name ?? null,
-      words: kind === "shoes" ? `${garment.name ?? ""} ${garment.wear ?? ""} ${garment.description ?? ""}` : undefined,
+      words: kind === "shoes" ? `${garment.name ?? ""} ${garment.words ?? garment.description ?? ""} ${garment.wear ?? ""}` : undefined,
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
       sleevePrint: garment.sleevePrint ?? null,
