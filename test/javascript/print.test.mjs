@@ -41,6 +41,41 @@ test("a plain garment has no print", () => {
   assert.equal(findPrint(data, w, h).print, null)
 })
 
+// A made-up oatmeal sweatshirt with grey embroidery on its chest (three bars, like an eagle's wings), as
+// Kith's Armani crewneck: off the cloth by about 9 to 11 in lightness and in chroma, under the ordinary
+// thresholds, so it's found only by the cloth beside it. strip: a thin grey line down the middle instead (a
+// placket), which isn't a graphic.
+function tonalPhoto({ graphic = true, strip = false } = {}) {
+  const w = 200, h = 200, data = new Uint8ClampedArray(4 * w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let c = [242, 242, 242]
+      const body = x > 50 && x < 150 && y > 30 && y < 160, sleeves = y > 30 && y < 70 && x > 20 && x < 180
+      if (body || sleeves) c = [212, 203, 185]
+      if (graphic && x > 72 && x < 128 && [60, 69, 78].some(top => y >= top && y < top + 5)) c = [178, 178, 180]
+      if (strip && x >= 99 && x <= 101 && y > 40 && y < 150) c = [178, 178, 180]
+      data.set([...c, 255], 4 * (y * w + x))
+    }
+  }
+  return { data, w, h }
+}
+
+test("a tonal graphic, too near the cloth's colour for the ordinary reading, is found by the cloth beside it", () => {
+  const { data, w, h } = tonalPhoto()
+  const found = findPrint(data, w, h)
+  assert.ok(found.print, "a print")
+  assert.equal(found.print.tonal, true)
+  assert.ok(found.print.coverage > 0.03 && found.print.coverage < 0.15, `coverage ${found.print.coverage}`)
+  assert.ok(found.print.solidBox.x1 - found.print.solidBox.x0 > 40, "the bars joined into one graphic")
+})
+
+test("a plain oatmeal front, or one with a thin line down it (a placket), has no tonal graphic", () => {
+  for (const options of [{ graphic: false }, { graphic: false, strip: true }]) {
+    const { data, w, h } = tonalPhoto(options)
+    assert.equal(findPrint(data, w, h).print, null, JSON.stringify(options))
+  }
+})
+
 // A black hoodie with a big chest graphic (a row of bold red letters over a line of yellow text), as wide as
 // most of the front, down to about halfway; plain below it, round the pocket, and at the sides.
 function bigChestGraphic() {

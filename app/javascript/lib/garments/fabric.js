@@ -392,6 +392,13 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // piece at its size on the garment (uTile: across and down, cm, and how far below the shoulders it starts).
     uPrintTile: { value: BLANK },
     uAllOver: { value: 0 },
+    // The shop's close-up of the cloth laid on as the fabric (texture.js), through uPrintTile when no
+    // all-over print has it: x on (1), y its width on the cloth (cm), and its mean colour, which it's
+    // divided by (so it modulates the cloth's own colour, metered and photographed, rather than replacing it).
+    uCloseup: { value: new THREE.Vector2(0, 10) },
+    uCloseupMean: { value: new THREE.Vector3(1, 1, 1) },
+    // Tiling without a visible repeat for uPrintTile (an all-over print's piece, the close-up): on (1) or off.
+    uBlendTile: { value: 1 },
     uTile: { value: new THREE.Vector3(20, 20, 0) },
     // A striped front (see print.js's stripeStrip): the cloth's colour at each height down the garment, laid
     // on every piece by aDown, so the stripes meet at the seams.
@@ -540,6 +547,36 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform float uPrintTop;
         uniform float uBackTop;
         uniform sampler2D uPrintTile;
+        uniform vec2 uCloseup;
+        uniform vec3 uCloseupMean;
+        uniform float uBlendTile;
+        // A texture tiled without a visible repeat (Burley 2019): the point's triangle on a lattice of
+        // tilings, the texture taken at each of its three corners shifted by a hash of that corner, blended
+        // with weights whose squares sum to one about the mean, which keeps the contrast an average loses.
+        vec2 tileHash( vec2 p ) { return fract( sin( vec2( dot( p, vec2( 127.1, 311.7 ) ), dot( p, vec2( 269.5, 183.3 ) ) ) ) * 43758.5453 ); }
+        vec3 blendedTile( sampler2D tex, vec2 uv, vec3 mean ) {
+          // Skewed so the lattice is of equilateral triangles.
+          const mat2 skew = mat2( 1.0, 0.0, -0.57735027, 1.15470054 );
+          // (Triangles about half a texture across: wider, and the places where three taps meet and the
+          // contrast is restored are too far apart to read as a pattern; narrower, they read as a honeycomb.)
+          vec2 lattice = skew * uv * 1.732;
+          vec2 base = floor( lattice ), f = fract( lattice );
+          vec3 bary; vec2 v1, v2, v3;
+          if ( f.x + f.y < 1.0 ) { bary = vec3( 1.0 - f.x - f.y, f.x, f.y ); v1 = base; v2 = base + vec2( 1.0, 0.0 ); v3 = base + vec2( 0.0, 1.0 ); }
+          else { bary = vec3( f.x + f.y - 1.0, 1.0 - f.y, 1.0 - f.x ); v1 = base + vec2( 1.0, 1.0 ); v2 = base + vec2( 1.0, 0.0 ); v3 = base + vec2( 0.0, 1.0 ); }
+          vec2 dx = dFdx( uv ), dy = dFdy( uv );
+          vec3 c1 = textureGrad( tex, uv + tileHash( v1 ), dx, dy ).rgb;
+          vec3 c2 = textureGrad( tex, uv + tileHash( v2 ), dx, dy ).rgb;
+          vec3 c3 = textureGrad( tex, uv + tileHash( v3 ), dx, dy ).rgb;
+          // Linear weights (sharper ones showed the lattice as a honeycomb), the blend's deviation from the
+          // mean scaled back by the root of the sum of their squares, which keeps the contrast.
+          vec3 w = bary;
+          vec3 blend = w.x * c1 + w.y * c2 + w.z * c3;
+          // (Restored only part of the way: the full correction makes the lattice's centres grainier than its
+          // corners, which shows as cells; half of it keeps most of the contrast without them.)
+          float keep = mix( 1.0, inversesqrt( max( dot( w, w ), 1e-4 ) ), 0.5 );
+          return clamp( mean + ( blend - mean ) * keep, 0.0, 1.0 );
+        }
         uniform float uAllOver;
         uniform vec3 uTile;
         uniform sampler2D uStripe;
@@ -732,7 +769,14 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         if ( uPrintOn > 0.5 && uAllOver > 0.5 && !backPhoto && gl_FrontFacing ) {
           // Started half a repeat off the middle, so the back isn't mirrored about its centre seam.
           vec2 st = vec2( vPattern.x / uTile.x + 0.5, ( -vPattern.y - uTile.z ) / uTile.y );
-          diffuseColor.rgb = texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
+          diffuseColor.rgb = uBlendTile > 0.5 ? blendedTile( uPrintTile, vec2( st.x, 1.0 - st.y ), uCloseupMean ) : texture2D( uPrintTile, vec2( st.x, 1.0 - st.y ) ).rgb;
+        }
+        // The cloth's close-up as its fabric: the photo's texture about its mean, over the cloth's colour (the
+        // photo laid on point for point, when there is one, carries the real cloth already).
+        if ( uCloseup.x > 0.5 && !( uPhotoOn > 0.5 && vPhoto.z > 0.5 ) ) {
+          vec2 st = vPattern / uCloseup.y;
+          vec3 cloth = uBlendTile > 0.5 ? blendedTile( uPrintTile, st, uCloseupMean ) : texture2D( uPrintTile, st ).rgb;
+          diffuseColor.rgb *= cloth / max( uCloseupMean, vec3( 0.02 ) );
         }
         // Stripes: the front's colour at this height, on every piece (the front's own photo goes on over it).
         // A striped knit is striped on its inside too, a little duller: where a long sleeve gathers and a fold

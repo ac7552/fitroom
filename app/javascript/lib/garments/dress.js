@@ -15,6 +15,7 @@ import { FineCloth } from "lib/garments/fine"
 import { foldField, wavelengthFor } from "lib/garments/wrinkles"
 import { packPanels } from "lib/garments/atlas"
 import { bakeMaps, plainTexture } from "lib/garments/bake"
+import { prepareCloseup } from "lib/garments/texture"
 
 // How far the fabric's relief in a re-draped photo (redrape.js's flatField, the alpha channel) stands out
 // of the cloth (m, at the relief's full value): the tilt the shader gives the surface from it.
@@ -711,6 +712,12 @@ export class DrapedTop {
         this.tileTexture = uniforms.uPrintTile.value = texture(print.tile.image, true)
         const front = shown.chest / 2   // the front's width (cm), which the photo's front spans
         uniforms.uTile.value.set(print.tile.across * front, print.tile.down * front, print.tile.from * front)
+        // The piece's mean colour, about which blendedTile keeps its contrast; the close-up (if any) gives
+        // way to the print, which carries the cloth. Blended only for a low-contrast print (a camo's blotches):
+        // a bold one's shapes, three copies of them blended, show doubled and washed out, so it's mirrored.
+        uniforms.uCloseupMean.value.set(...meanOf(print.tile.image))
+        uniforms.uCloseup.value.x = 0
+        uniforms.uBlendTile.value = print.mottled ? 1 : 0
       }
       // Stripes go on every piece (the cuffs and hem too) by height down the garment, so they run on round
       // the body and meet the sleeves' at the shoulder seams (see heightsDown); vertical ones by how far
@@ -870,6 +877,30 @@ export class DrapedTop {
     mesh.matrix.copy(this.mesh.matrixWorld)
     mesh.matrixWorld.copy(this.mesh.matrixWorld)
     return mesh
+  }
+
+  // The shop's close-up of the cloth as the fabric itself (texture.js): src (a URL or data URL) or null for
+  // none. Loaded once per source; laid on unless an all-over print or the photo point for point has the
+  // cloth already.
+  setCloseup(src) {
+    if (src === this.closeupSrc) return
+    this.closeupSrc = src
+    this.closeupTexture?.dispose()
+    this.closeupTexture = null
+    const uniforms = this.materials.main.userData.uniforms
+    uniforms.uCloseup.value.x = 0
+    if (!src) return
+    const token = (this.closeupToken = {})
+    prepareCloseup(src, this.surface).then(prepared => {
+      if (!prepared || this.closeupToken !== token) { prepared?.texture.dispose(); return }
+      if (uniforms.uAllOver.value > 0.5 && this.tileTexture) { prepared.texture.dispose(); return }
+      this.closeupTexture = prepared.texture
+      uniforms.uPrintTile.value = prepared.texture
+      uniforms.uBlendTile.value = 1
+      uniforms.uCloseupMean.value.set(...prepared.mean)
+      uniforms.uCloseup.value.set(1, prepared.widthCm)
+      this.onCloseup?.(prepared)
+    })
   }
 
   // The camera's metering of this garment: a per-channel gain (linear light) on everything the cloth shows,
@@ -1297,6 +1328,7 @@ export class DrapedTop {
     this.geometry.dispose()
     this.fine?.dispose()
     this.baked?.dispose()
+    this.closeupTexture?.dispose()
     this.rim?.geometry.dispose()
     this.fuzz?.material.dispose()
     for (const material of Object.values(this.materials)) {
@@ -1409,4 +1441,15 @@ export function garmentWeights(points, pieces, body, frame, { still = null, fall
     else for (let k = 0; k < 4; k++) skinWeight[4 * j + k] /= total
   }
   return { skinIndex, skinWeight }
+}
+
+// A canvas's mean colour in linear light (as the shader samples an sRGB texture), 0 to 1, sampled.
+function meanOf(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+  const sum = [0, 0, 0]
+  let n = 0
+  for (let i = 0; i < data.length; i += 16) { sum[0] += lin(data[i]); sum[1] += lin(data[i + 1]); sum[2] += lin(data[i + 2]); n++ }
+  return sum.map(v => v / n)
 }

@@ -894,10 +894,15 @@ export class FittingStage {
     // Its photos taken away (the page decided they're better not laid on): back to its colour and print.
     if (!d.top.photos && d.redrapeState) { d.redrape = null; d.redrapeState = "off" }
     // With the photographs re-draped onto it (d.redrape), the cloth shows them and nothing else is laid on.
-    d.top.setPrint(d.redrape ? null : item.print ?? null, d.redrape ? null : item.backPrint ?? null)
+    // (A placed print stays on over the re-draped photo when the photo it was laid from had it painted out:
+    // item.printPlaced, see fitting_room_controller.js.)
+    d.top.setPrint(d.redrape && !item.printPlaced ? null : item.print ?? null, d.redrape ? null : item.backPrint ?? null)
     d.top.setSleeves(d.redrape ? null : item.sleevePrint ?? null)
     d.top.setCuffTone(d.redrape ? null : item.cuffTone ?? null)
     d.top.setPhotoMap(d.redrape ?? item.photoMap ?? null)
+    d.top.setCloseup(item.closeup ?? null)
+    // (The close-up arrives later: the still starts over and the garment is metered again with it on.)
+    d.top.onCloseup = () => { this.still?.reset(); this.start() }
     d.top.setLegPrints(item.legPrints ?? null)
     d.top.mesh.visible = d.shown
     if (this.view === "fit") d.top.paintFit(item.checks ?? [], STATUS_COLORS)
@@ -2000,7 +2005,7 @@ export class FittingStage {
       const d = this.slots[slot], item = d?.top?.item
       if (!item?.photoCloth || !d.top.done || d.posing || !d.shown) continue
       if (d.redrapeState && !["done", "off"].includes(d.redrapeState)) continue
-      const key = `${item.photoCloth}|${d.redrapeState ?? ""}|${this.sceneLook}`
+      const key = `${item.photoCloth}|${d.redrapeState ?? ""}|${this.sceneLook}|${d.top.closeupTexture ? "closeup" : ""}`
       if (d.metered === key || d.metering) continue
       d.metering = true
       this.meter(slot, item.photoCloth)

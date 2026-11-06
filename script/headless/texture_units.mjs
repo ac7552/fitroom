@@ -27,7 +27,7 @@ await page.goto(`${base}/stage.html?bank=off&drape=page${args.query ? "&" + args
 await page.waitForFunction(() => window.stageReady, null, { timeout: 120000 })
 let worst = 0, worstAttributes = 0
 for (const items of OUTFITS) {
-  const found = await page.evaluate(async ({ items, men }) => {
+  const found = await page.evaluate(async ({ items, men, LIMIT }) => {
     const stage = window.stage
     stage.drapeBudget = 1000
     stage.setOutfit([]); stage.setBodyType("men"); stage.setBody(men); stage.setOutfit(items)
@@ -51,7 +51,7 @@ for (const items of OUTFITS) {
       if (names.length >= LIMIT) console.log("ATTRIBS16 " + names.join(" "))
       return [p.cacheKey.split(",").slice(0, 2).join(","), n, names.length]
     })
-  }, { items, men })
+  }, { items, men, LIMIT })
   const most = Math.max(...found.map(f => f[1])), attributes = Math.max(...found.map(f => f[2]))
   worst = Math.max(worst, most)
   worstAttributes = Math.max(worstAttributes, attributes)

@@ -40,6 +40,16 @@ test("each kind of photo reads as itself", () => {
   assert.equal(read(worn), "worn")
 })
 
+test("a close-up of plain cloth is nearly all its own colour; one of a graphic on it, and a full shot, aren't", () => {
+  // Grey bars on oatmeal knit filling the frame (an embroidered eagle, close up), and the knit alone.
+  const oatmeal = [212, 203, 185], knit = (x, y) => (x + y) % 6 < 3 ? oatmeal : [204, 195, 178]
+  const graphic = picture(160, 160, (x, y) => y % 30 < 12 && x > 20 && x < 140 ? [178, 178, 180] : knit(x, y))
+  assert.ok(photoTraits(closeup.data, closeup.w, closeup.h).plain > 0.95)
+  assert.ok(photoTraits(...Object.values(picture(160, 160, knit))).plain > 0.95)
+  assert.ok(photoTraits(graphic.data, graphic.w, graphic.h).plain < 0.9)
+  assert.ok(photoTraits(flat.data, flat.w, flat.h).plain < 0.6)
+})
+
 test("the first full shot is the front and the next the back; a role set by hand stays", () => {
   const shot = { traits: { garment: true, fills: 0.4, touches: 0, dark: 0, light: 0, busy: 0.01, skin: 0 } }
   const cloth = { traits: { garment: false, fills: 0, touches: 4, dark: 0, light: 0, busy: 0.01, skin: 0 } }

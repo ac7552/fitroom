@@ -282,6 +282,24 @@ under a photo so the fabric isn't lit twice.
   given the exposure (and a white balance of at most 8% about it) that brings their middle colour to the
   photo's cloth colour, over three passes. `stage.meterReport(slot)` gives the remaining ΔE (CIE76; the
   Armani: 0, the camo hoodie 4.5, its tile a little redder than the photo's commonest colour). `?meter=off`.
+- **The close-up as the fabric** (texture.js, yarn.js): a listing's close-up of its cloth (found by its alt
+  text or file name, or by its traits: cloth filling the frame) is laid on as the fabric itself, its yarn,
+  heather or wash. The middle square at 512², its lighting and its folds evened out (divided by a blur of a
+  thirty-second of it; a twelfth left Kith's Armani close-up's soft folds in as bands), its scale from its
+  yarn pitch (autocorrelation) and the fabric's, else 10 cm across. Tiled without a repeat (Burley 2019: a
+  triangle lattice, three hashed taps, half the contrast an average loses put back), about its mean in
+  linear light, so it modulates the metered colour rather than replacing it; a low-contrast all-over
+  print's tile (camo) is laid the same way (a bold one's shapes blended show doubled, so it's mirrored as
+  before). Not under a photo laid on point for point, which carries the real cloth.
+- **A tonal graphic** (print.js's findPrint and tonalPatch): grey embroidery on oatmeal (Kith's Armani
+  crewneck: about 9 darker and 9 off in chroma) is under the print thresholds, so the photo laid on point
+  for point tore it. A front with no print the ordinary way is read again against the cloth beside each
+  point (its Lab blurred over plain cloth): off it in chroma or lighter (darker is a fold's shadow). One solid
+  block or nothing (not most of the front, a knit's texture; not a thin strip, a placket or the neck band).
+  At the photo's full size, lines of lettering next to it (rows marked over more of its width than the
+  cloth's speckle) join it, and the block goes on as a patch of the photo, rectangles round the graphic and
+  each line, feathered, laid as one piece; the photo the re-draping lays on has it painted out under the
+  patch. Of Kith's 169 audit photos only the Armani changes among tops. `?tonal=off`.
 - **The light**: colours go through Khronos PBR Neutral, which keeps the shops' colours. The cloth's shader
   reads at most 15 textures: a Mac or phone GPU allows 16, and one over that draws nothing
   (`script/headless/texture_units.mjs` checks it; the headless browser allows 32, so it can't see this).

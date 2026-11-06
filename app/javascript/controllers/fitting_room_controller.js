@@ -400,6 +400,7 @@ export default class extends Controller {
     // printed gets the photo's print, and none goes over a dress with its photo laid on.
     const printed = !(garment.style === "dress" && (garment.photoMap?.layout?.dress || (garment.cut && !garment.cut.printed)))
     garment.print = printed ? read?.print ?? null : null
+    garment.printCleaned = printed && garment.print && read?.cleaned ? read.cleaned : null
     garment.backPrint = printed && back?.print ? { image: back.print.image } : null
     // The sleeves' graphics, by the wearer's side: the front photo shows the right sleeve on its left,
     // the back photo the left one; the front photo shows each sleeve's front half, the back its back.
@@ -1876,6 +1877,8 @@ export default class extends Controller {
       checks: fit.sizes.find(s => s.size === selected).checks,
       color: garment.color,
       photoCloth: garment.photoCloth ?? null,
+      // The shop's close-up of the cloth, laid on as the fabric (texture.js).
+      closeup: garment.closeup ?? null,
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
       sleevePrint: garment.sleevePrint ?? null,
@@ -1887,7 +1890,9 @@ export default class extends Controller {
       // and its drawcords land across the shoulders; its cloth repeated over every piece (print.js's tile),
       // with the back's own photo on the back, is truer.
       // Pants with graphics laid as one piece (legPrints) take their photos with the graphics painted out.
-      photo: kind === "shoes" || garment.print?.mottled ? null : garment.legPhotos?.front ?? garment.lookPhotos?.front ?? garment.photo ?? null,
+      // (A top's placed print painted out of the photo the re-draping lays on, and the print kept on over it.)
+      photo: kind === "shoes" || garment.print?.mottled ? null : garment.legPhotos?.front ?? garment.printCleaned ?? garment.lookPhotos?.front ?? garment.photo ?? null,
+      printPlaced: Boolean(garment.printCleaned),
       photoPart: garment.photoPart ?? null,
       back_photo: kind === "shoes" || garment.print?.mottled ? null : garment.legPhotos?.back ?? garment.lookPhotos?.back ?? garment.back_photo ?? null,
       legPrints: garment.legPrints ?? null,
@@ -2323,8 +2328,11 @@ async function readShop(link) {
   const words = `${product_type} ${title} ${tags}`
   const dressShape = photo && DRESS_WORDS.test(words) && !/\bskirts?\b|\bskort/i.test(`${product_type} ${title}`) ? await readDressShape(photo).catch(() => null) : null
   const backPhoto = photo ? await readBackPhoto(images, { shape, bottomShape, front }) : null
+  // The shop's close-up of the cloth, when it has one (its weave, its heather, its wash): the 3D view lays
+  // it on as the fabric itself (texture.js).
+  const closeup = photo ? await readCloseupPhoto(images, front) : null
   return { product: { id, handle: name, title, vendor, product_type, tags, body_html, images: (images ?? []).slice(front, front + 1), options, variants }, shop, sizing,
-    photo, back_photo: backPhoto, shape, bottom_shape: bottomShape, dress_shape: dressShape, shoeViews }
+    photo, back_photo: backPhoto, closeup, shape, bottom_shape: bottomShape, dress_shape: dressShape, shoeViews }
 }
 
 const SHOE_WORDS = /sneakers?|\bshoes?\b|\bboots?\b|footwear|loafers?|sandals?|slides?\b|mules?\b|clogs?|trainers?|derby|oxfords?\b|runners?|low top|high top/i
@@ -2417,6 +2425,30 @@ async function readBackPhoto(images, { shape, bottomShape, front = 0 }) {
       const other = await readBottomShape(photo).catch(() => null)
       if (other && near(other.length, bottomShape.length) && near(other.hips, bottomShape.hips)) return photo
     }
+  }
+  return null
+}
+
+// The shop's close-up of the cloth: the first of the other photos that is cloth filling the frame (no garment
+// standing clear of a backdrop, not a size tag's words, photo_roles.js's kinds) and nearly all the cloth's
+// own colour (traits.plain: not a close-up of a graphic, which would be laid on as the fabric; Kith's Armani
+// crewneck's of its embroidery is 0.92), or one its name calls a close-up of the cloth that's mostly its
+// colour and no full shot (Kith's Armani close-up's bright fold ridges read as backdrop round a piece of
+// its cloth, beige in shadow as skin: 0.84 its colour, the piece 0.16 of the frame).
+const CLOSEUP_PLAIN = 0.95, NAMED_CLOSEUP_PLAIN = 0.8
+const CLOSEUP_WORDS = /\b(?:close[- ]?ups?|fabrics?|textures?|swatch(?:es)?|material)\b/i
+async function readCloseupPhoto(images, front = 0) {
+  const rest = (images ?? []).filter((_, i) => i !== front).slice(0, 8)
+  const named = rest.find(image => /\b(?:close[- ]?up|detail|fabric|texture|swatch)\b/i.test(photoWords(image)) && !photoOfBack(image))
+  const candidates = named ? [named, ...rest.filter(i => i !== named)] : rest
+  for (const image of candidates) {
+    const small = await readShopPhoto(image.src, 400).catch(() => null)
+    const traits = small ? await readPhotoTraits(small).catch(() => null) : null
+    if (!traits) continue
+    const kind = photoKind(traits)
+    const cloth = kind === "closeup" && traits.plain >= CLOSEUP_PLAIN
+    const called = CLOSEUP_WORDS.test(photoWords(image)) && !photoOfBack(image) && kind !== "tag" && traits.plain >= NAMED_CLOSEUP_PLAIN && (!traits.garment || traits.fills < 0.3)
+    if (cloth || called) return readShopPhoto(image.src, 1024)
   }
   return null
 }

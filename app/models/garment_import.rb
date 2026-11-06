@@ -151,7 +151,11 @@ class GarmentImport
       garment = browser_photo?(photo) ? garment.except(:image_url).merge(photo:) : with_photo(garment)
       # The shop's photo of the back, which the browser found and read.
       back = shop_data["back_photo"].to_s
-      return garment[:photo] && browser_photo?(back) ? garment.merge(back_photo: back) : garment
+      garment = garment.merge(back_photo: back) if garment[:photo] && browser_photo?(back)
+      # And its close-up of the cloth, laid on as the fabric itself.
+      closeup = shop_data["closeup"].to_s
+      garment = garment.merge(closeup: closeup) if garment[:photo] && browser_photo?(closeup)
+      return garment
     end
     Rails.cache.fetch([ "garment_import", FORMAT, Digest::SHA256.hexdigest(url) ], expires_in: 1.hour) do
       import = new
