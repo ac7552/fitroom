@@ -1642,6 +1642,8 @@ export function shoeSide(data, w, h) {
   // How thick the sole is: up from the bottom, as far as the colour stays the sole's (the bottom few rows'),
   // in most columns. Sole and upper the same colour: a usual sole, a seventh of the shoe's height.
   const soleThick = soleThickness(lab, mask, w, h, left, right, top, bottom) ?? (low - high) / 7
+  // And column by column (a heel, a platform): the sole line below follows it where it's read.
+  const profile = soleProfile(lab, mask, w, h, left, right, top, bottom)
   // The outline's front and back at each height (shares of its length, heel 0 to toe 1), from the floor up in
   // SIDE_BINS steps to its top: how blunt the toe is, how the heel curves, how wide the shaft stands.
   const ends = { front: new Array(SIDE_BINS).fill(null), back: new Array(SIDE_BINS).fill(null) }
@@ -1665,7 +1667,10 @@ export function shoeSide(data, w, h) {
     left: left / w, right: (right + 1) / w, toeRight, aspect: h / w,
     top: Array.from({ length: SIDE_BINS }, (_, b) => (top[order(b)] + inset) / h),
     bottom: Array.from({ length: SIDE_BINS }, (_, b) => (bottom[order(b)] - inset) / h),
-    sole: Array.from({ length: SIDE_BINS }, (_, b) => Math.max(top[order(b)] + inset, bottom[order(b)] - soleThick) / h),
+    sole: Array.from({ length: SIDE_BINS }, (_, b) => Math.max(top[order(b)] + inset, bottom[order(b)] - (profile ? profile[order(b)] : soleThick)) / h),
+    // The sole's thickness heel to toe as a share of the shoe's height (for the last: a heel's height, a
+    // platform), when the sole's colour could be read.
+    soleProfile: profile ? Array.from({ length: SIDE_BINS }, (_, b) => profile[order(b)] / (low - high + 1)) : null,
     front: ends.front, back: ends.back, height: (low - high + 1) / h,
     // Its colours, for telling the shop's other photos apart (see shoeView): the upper's and the sole's,
     // and up its heel's and its toe's ends (Lab, in VIEW_BANDS from the floor up).
@@ -1855,6 +1860,53 @@ function soleThickness(lab, mask, w, h, left, right, top, bottom) {
   }
   const t = median(thick), tall = median(middle.map(b => bottom[b] - top[b]))
   return t > tall * 0.05 && t < tall * 0.45 ? t : null
+}
+
+// The sole's thickness column by column (pixels, heel to toe in the outline's bins), for a sole that isn't
+// level: a heel, a platform, a rocker. As soleThickness reads one column, for every bin, held to a smooth
+// line (each bin the median of its neighbours) and to the band the shoe's own sole colour runs in. Null
+// when the sole and the upper are one colour (then the sole is a constant share, as before).
+export function soleProfile(lab, mask, w, h, left, right, top, bottom) {
+  const bins = top.length
+  const columnsOf = b => [Math.round(left + ((b + 0.5) / bins) * (right - left + 1))]
+  const middle = []
+  for (let b = Math.round(bins * 0.15); b < Math.round(bins * 0.85); b++) middle.push(b)
+  const near = (rowOf) => {
+    const values = [[], [], []]
+    for (const b of middle) for (const x of columnsOf(b)) {
+      const y = Math.round(rowOf(b)), i = y * w + x
+      if (y >= 0 && y < h && mask[i]) for (let c = 0; c < 3; c++) values[c].push(lab[3 * i + c])
+    }
+    return values[0].length ? values.map(median) : null
+  }
+  const sole = near(b => bottom[b] - 2 - (bottom[b] - top[b]) * 0.02), upper = near(b => (top[b] + bottom[b]) / 2)
+  if (!sole || !upper) return null
+  const gap = Math.hypot(sole[0] - upper[0], sole[1] - upper[1], sole[2] - upper[2])
+  if (gap < 8) return null
+  const raw = new Float64Array(bins)
+  for (let b = 0; b < bins; b++) {
+    const [x] = columnsOf(b)
+    let run = 0, y = bottom[b] - 1
+    for (; y > top[b]; y--) {
+      const i = y * w + x
+      if (x < 0 || x >= w || !mask[i]) { run++; if (run >= 3) break; continue }
+      const d = Math.hypot(lab[3 * i] - sole[0], lab[3 * i + 1] - sole[1], lab[3 * i + 2] - sole[2])
+      run = d > gap / 2 ? run + 1 : 0
+      if (run >= 3) break
+    }
+    raw[b] = Math.max(0, bottom[b] - (y + 3))
+  }
+  // Smoothed: each bin the median of five, twice; held under 70 % of the shoe's height there.
+  let out = Float64Array.from(raw)
+  for (let pass = 0; pass < 2; pass++) {
+    const prev = Float64Array.from(out)
+    for (let b = 0; b < bins; b++) {
+      const window = []
+      for (let d = -2; d <= 2; d++) window.push(prev[Math.min(bins - 1, Math.max(0, b + d))])
+      out[b] = Math.min(median(window), (bottom[b] - top[b]) * 0.7)
+    }
+  }
+  return out
 }
 
 // Fills the photo's pixels outside the shoe (mask, sw x sh) with the nearest shoe pixel's colour, a ring at a time.

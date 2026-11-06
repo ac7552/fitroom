@@ -1911,6 +1911,9 @@ export default class extends Controller {
       photoCloth: garment.photoCloth ?? null,
       // The shop's close-up of the cloth, laid on as the fabric (texture.js).
       closeup: garment.closeup ?? null,
+      // (A shoe's listing words, for its last: lasts.js.)
+      name: garment.name ?? null,
+      words: kind === "shoes" ? `${garment.name ?? ""} ${garment.wear ?? ""} ${garment.description ?? ""}` : undefined,
       print: garment.print ?? null,
       backPrint: garment.backPrint ?? null,
       sleevePrint: garment.sleevePrint ?? null,

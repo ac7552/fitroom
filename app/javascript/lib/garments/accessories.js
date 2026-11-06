@@ -13,6 +13,13 @@
 import * as THREE from "three"
 import { convexHull } from "lib/garments/body"
 
+// A style by name, or a last (lasts.js: { style: a SHOES name, ...its own numbers }) laid over its style.
+function baseName(styleName) { return styleName && typeof styleName === "object" ? styleName.style ?? "sneaker" : styleName }
+function resolveStyle(styleName) {
+  if (styleName && typeof styleName === "object") return { ...(SHOES[styleName.style] ?? SHOES.sneaker), ...styleName }
+  return SHOES[styleName] ?? SHOES.sneaker
+}
+
 const STEP = 0.005        // m between slices
 const AROUND = 64         // points round each outline
 const BODY_HEIGHT = 1.76  // the heights below are for a body this tall (m); they scale with the body
@@ -130,10 +137,13 @@ function ray(hull, from, a) {
 
 // One shoe's geometry (side "L" or "R"): groups 0 the sole (and its underside), 1 the upper, 2 laces, 3 a
 // boot's padded collar, 4 its eyelets.
+// styleName: a SHOES name, or a last ({ style, ...params }: lasts.js's, the family's and the photo's numbers
+// over the style's).
 export function shoeGeometry(body, frame, side, styleName) {
-  const style = SHOES[styleName] ?? SHOES.sneaker
+  const style = resolveStyle(styleName)
+  styleName = baseName(styleName)
   const s = (frame.top - frame.floor) / BODY_HEIGHT
-  const h = key => style[key] * s
+  const h = key => (style[key] ?? 0) * s
   const floor = frame.floor
   const slices = legSlices(body, frame, side, floor + h("back") + 0.02)
   // Rounded off round the foot (a shoe's toe is round, not the point of the big toe).
@@ -186,20 +196,23 @@ export function shoeGeometry(body, frame, side, styleName) {
     if ((sx - slice.centre[0]) * dx + (sz - slice.centre[1]) * dz > (x - slice.centre[0]) * dx + (z - slice.centre[1]) * dz) { x = sx; z = sz }
     const forward = Math.max(0, dz) ** 1.6
     let out = h("thick") + h("toe") * forward * (1 - lift * 0.6)
-    if (y < floor + h("sole") + 1e-6) out += h("flare")
+    if (y < soleTopAt(j) + 1e-6) out += h("flare")
     // A boot's lugs: blocks of tread standing out round the bottom of the sole.
     if (style.lugs && y < floor + h("sole") * 0.62) out += h("lug") * (0.5 + 0.5 * Math.sin(style.lugs * a)) ** 2
     return { x: x + out * dx, z: z + out * dz, centre: slice.centre }
   }
-  // Rows up each column: the sole's (level, so its top edge is straight), then the upper's up to the collar.
-  const soleRows = (style.lugs ? [0, 0.3, 0.55, 0.62, 1] : [0, 0.5, 1]).map(t => floor + 0.0008 + t * (h("sole") - 0.0008))
+  // Rows up each column: the sole's (its top edge level: a heel is the foot pitched toes down with a stem
+  // under the heel, see heelStemGeometry and stage.js, not a thicker sole), then the upper's up to the collar.
+  const soleTopAt = () => floor + h("sole")
+  const soleRowsAt = j => (style.lugs ? [0, 0.3, 0.55, 0.62, 1] : [0, 0.5, 1]).map(t => floor + 0.0008 + t * (soleTopAt(j) - floor - 0.0008))
+  const soleRows = soleRowsAt(0)
   const upperRows = 14
   const sandal = styleName === "sandal"
   const positions = [], colors = [], indexSole = [], indexUpper = [], indexCollar = [], indexEyelets = []
   const columns = AROUND
   const grid = []   // grid[row][j]: vertex index
   const put = (x, y, z) => { positions.push(x, y, z); return positions.length / 3 - 1 }
-  const rowsY = j => sandal ? soleRows : [...soleRows, ...Array.from({ length: upperRows }, (_, k) => soleRows[2] + ((k + 1) / upperRows) * (collar[j] - soleRows[2]))]
+  const rowsY = j => { const sr = soleRowsAt(j), top = sr[sr.length - 1]; return sandal ? sr : [...sr, ...Array.from({ length: upperRows }, (_, k) => top + ((k + 1) / upperRows) * (collar[j] - top))] }
   const height = sandal ? soleRows.length : soleRows.length + upperRows
   for (let row = 0; row < height; row++) grid.push(new Array(columns))
   for (let j = 0; j < columns; j++) {
@@ -323,7 +336,8 @@ export function shoeGeometry(body, frame, side, styleName) {
 // and its underside, 1 the upper. The photo is then wrapped on (wrapShoePhoto), which it fits exactly.
 const PHOTO_SHOE = { columns: 56, around: 28, round: { boot: 3.2, hightop: 3, sneaker: 2.6, loafer: 2.4, sandal: 2.4 } }
 export function photoShoeGeometry(body, frame, side, outline, styleName, { laces = true } = {}) {
-  const style = SHOES[styleName] ?? SHOES.sneaker
+  const style = resolveStyle(styleName)
+  styleName = baseName(styleName)
   const s = (frame.top - frame.floor) / BODY_HEIGHT
   const floor = frame.floor, thick = style.thick * s
   const reachTop = floor + 0.32 * s
@@ -953,4 +967,77 @@ export function accessoryMaterial(fabric, color) {
   const material = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(color), side: THREE.DoubleSide, ...finish })
   if (finish.sheen) material.sheenColor = new THREE.Color(color).offsetHSL(0, 0, 0.15)
   return material
+}
+
+// A heel. The shoe is built round the foot flat on the floor (above); a heel pitches the foot toes down
+// about the ankle by the angle that lifts the sole's heel end by the heel's height, and the body is raised so
+// the toe stays on the floor (stage.js turns the foot's bone and lifts the model by these). Then a stem is
+// built under the heel, from the pitched sole down to the floor (heelStemGeometry).
+//
+// heelRise: the angle and the lift for a shoe mesh as built (flat, in the scene), its ankle (the foot bone's
+// world position) and the heel's height (m, the sole's heel end over the floor).
+export function heelRise(mesh, ankle, heel, floor) {
+  if (!(heel > 0)) return null
+  const { zmin, zmax } = soleRing(mesh)
+  const length = zmax - zmin
+  if (!(length > 0.05)) return null
+  const angle = Math.asin(Math.min(heel, length * 0.62) / length)
+  // The toe tip drops by its reach in front of the ankle times the sine; the ankle itself, turning about
+  // itself, moves nothing: the lift is what puts the toe back on the floor.
+  const toe = zmax - ankle.z, ankleUp = ankle.y - floor
+  const lift = toe * Math.sin(angle) - ankleUp * (1 - Math.cos(angle))
+  return { angle, lift: Math.max(0, lift) }
+}
+
+// The stem under a heeled shoe's heel, from the shoe as it's posed (pitched, in the scene) straight down to
+// the floor, in world space: the heel end of the sole's underside, drawn in toward its middle by `stem` (1 a
+// block heel the width of the heel, 0.35 a stiletto), walls down to the floor and a cap. reach: how much of
+// the sole's length, from the back, the heel takes; taper: the foot's width over the top's.
+export function heelStemGeometry(mesh, floor, { stem = 0.65, reach = 0.24, taper = 0.8 } = {}) {
+  const { ring, zmin, zmax } = soleRing(mesh)
+  const back = ring.filter(v => v.flat.z < zmin + reach * (zmax - zmin)).map(v => v.world)
+  if (back.length < 4) return null
+  // Round the heel's outline in order, about its middle, drawn in.
+  const centre = back.reduce((s, v) => s.add(v), new THREE.Vector3()).multiplyScalar(1 / back.length)
+  back.sort((a, b) => Math.atan2(a.x - centre.x, a.z - centre.z) - Math.atan2(b.x - centre.x, b.z - centre.z))
+  const top = back.map(v => new THREE.Vector3(centre.x + (v.x - centre.x) * stem, v.y, centre.z + (v.z - centre.z) * stem))
+  // A stem stands straight down to the floor, its foot drawn in by `taper` (a pump's heel narrows).
+  const ground = floor + 0.0008
+  const positions = [], index = []
+  const put = v => { positions.push(v.x, v.y, v.z); return positions.length / 3 - 1 }
+  const n = top.length
+  const upper = top.map(put), lower = top.map(v => put(new THREE.Vector3(centre.x + (v.x - centre.x) * taper, ground, centre.z + (v.z - centre.z) * taper)))
+  for (let j = 0; j < n; j++) {
+    const jn = (j + 1) % n
+    index.push(upper[j], lower[j], lower[jn], upper[j], lower[jn], upper[jn])
+  }
+  const capBottom = put(new THREE.Vector3(centre.x, ground, centre.z)), capTop = put(centre)
+  for (let j = 0; j < n; j++) { const jn = (j + 1) % n; index.push(capBottom, lower[jn], lower[j]); index.push(capTop, upper[j], upper[jn]) }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(index)
+  geometry.addGroup(0, index.length, 0)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+// The sole's underside ring of a shoe mesh: the sole group's lowest vertices in the shoe's own frame (the
+// one it was built in, flat on the floor: hanging it on a bone moves the mesh, not its points), each as
+// { flat, world } (where it is in the scene now), and the sole's reach heel to toe (flat).
+function soleRing(mesh) {
+  mesh.updateMatrixWorld(true)
+  const geometry = mesh.geometry, p = geometry.attributes.position, index = geometry.index.array
+  const group = geometry.groups.find(g => g.materialIndex === 0) ?? { start: 0, count: index.length }
+  const on = new Set()
+  for (let k = group.start; k < group.start + group.count; k++) on.add(index[k])
+  const flat = [...on].map(i => new THREE.Vector3().fromBufferAttribute(p, i))
+  let minY = Infinity, zmin = Infinity, zmax = -Infinity
+  for (const v of flat) { minY = Math.min(minY, v.y); zmin = Math.min(zmin, v.z); zmax = Math.max(zmax, v.z) }
+  const rim = flat.filter(v => v.y < minY + 0.0015)
+  // (The underside's fan centre lies on the rim's level too: left out.)
+  let cx = 0, cz = 0
+  for (const v of rim) { cx += v.x; cz += v.z }
+  cx /= rim.length || 1; cz /= rim.length || 1
+  const ring = rim.filter(v => Math.hypot(v.x - cx, v.z - cz) > 0.004).map(v => ({ flat: v, world: v.clone().applyMatrix4(mesh.matrixWorld) }))
+  return { ring, zmin, zmax }
 }

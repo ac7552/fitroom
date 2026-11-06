@@ -15,8 +15,9 @@ import { bodyFrame } from "lib/garments/body"
 import { RemoteDrape } from "lib/garments/remote_drape"
 import { hangerSpec } from "lib/garments/hanger"
 import { HangTrial, TRIALS, TRIAL_ON } from "lib/garments/silhouette"
-import { accessoryMaterial, beltGeometry, buckleGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
+import { accessoryMaterial, beltGeometry, buckleGeometry, heelRise, heelStemGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
+import { lastFor } from "lib/garments/lasts"
 import { BLANK_TEXTURE, PROJECTION, projectionUniforms, withProjection } from "lib/garments/fabric"
 import { meanRatio } from "lib/projection"
 import { DrapeBank, exportEntry, skinWith, warmStart } from "lib/garments/drape_bank"
@@ -168,7 +169,7 @@ export class FittingStage {
     // Garments draped before, to start the next of the same kind from (drape_bank.js); ?bank=off does without.
     this.bank = BANK_ON ? new DrapeBank() : null
     // Shoes and socks (on the calves' bones, so they follow the pose) and a belt (round the pants' waistband).
-    this.feet = { key: null, meshes: [], shoes: {} }
+    this.feet = { key: null, meshes: [], shoes: {}, rise: null }
     this.belt = { stamp: null, mesh: null, buckle: null }
     this.dressBelt = { stamp: null, mesh: null, buckle: null }
     this.scarf = { stamp: null, mesh: null }
@@ -480,7 +481,7 @@ export class FittingStage {
   // Shoes and socks, lofted round the mannequin's feet and legs as they stand (see accessories.js), then hung
   // on the calves' bones so they move with the legs. Rebuilt when the body or what's worn changes.
   dressFeet(shoes, socks) {
-    const key = JSON.stringify([shoes && [shoes.style, shoes.color, shoes.sole, shoes.fabric, shoes.shoeSide, (shoes.shoeViews ?? []).map(v => v.kind)], socks && [socks.style, socks.color],
+    const key = JSON.stringify([shoes && [shoes.style, shoes.name, shoes.words, shoes.color, shoes.sole, shoes.fabric, shoes.shoeSide, (shoes.shoeViews ?? []).map(v => v.kind)], socks && [socks.style, socks.color],
       this.fitted.scale, this.fitted.influences, this.bodyType])
     if (key === this.feet.key) return
     this.feet.key = key
@@ -491,17 +492,24 @@ export class FittingStage {
     }
     this.feet.meshes = []
     this.feet.shoes = {}
-    if (!shoes && !socks) return
-    // Built on the mannequin as it stands, whatever the pose shown.
+    this.feet.rise = null
+    if (!shoes && !socks) { this.applyPose(); return }
+    // Built on the mannequin as it stands, flat on the floor, whatever the pose shown.
     const pose = this.pose
     this.pose = "standing"
     this.applyPose()
     const body = bodySnapshot(this.meshes.body)
     const frame = bodyFrame(body)
-    const hang = (mesh, side) => {
+    // The shoe's last (lasts.js): its family from the listing's words, its sole, heel, collar and toe
+    // from the side photo, over the drawing style.
+    const made = shoes && lastFor(shoes.words ?? `${shoes.name ?? ""} ${shoes.family ?? ""}`, shoes.style, shoes.shoeSide)
+    const last = shoes && { style: shoes.style, family: made.family, ...made.params }
+    const heeled = last?.heel > 0.012
+    // Hung on the calf's bone, to move with the leg; a heeled shoe on the foot's, which the heel pitches.
+    const hang = (mesh, side, onFoot = false) => {
       mesh.castShadow = mesh.receiveShadow = true
       mesh.frustumCulled = false
-      const bone = this.model.getObjectByName(`calf_${side.toLowerCase()}`) ?? this.model
+      const bone = this.model.getObjectByName(`${onFoot ? "foot" : "calf"}_${side.toLowerCase()}`) ?? this.model
       bone.attach(mesh)
       this.feet.meshes.push(mesh)
       return mesh
@@ -526,9 +534,26 @@ export class FittingStage {
         eyelets.roughness = 0.35
         // Built from the shop's side photo when there's one (see accessories.js), else from the style alone.
         const relief = !(shoes.shoeViews ?? []).some(v => v.kind === "top")
-        const geometry = (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, shoes.style, { laces: relief })) || shoeGeometry(body, frame, side, shoes.style)
-        this.feet.shoes[side] = hang(new THREE.Mesh(geometry, [sole, upper, laces, collar, eyelets]), side)
-        if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side)
+        const geometry = (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, last, { laces: relief })) || shoeGeometry(body, frame, side, last)
+        this.feet.shoes[side] = hang(new THREE.Mesh(geometry, [sole, upper, laces, collar, eyelets]), side, heeled)
+        if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side, heeled)
+      }
+    }
+    // A heel: the foot pitched toes down by the heel's height (see accessories.js's heelRise), the body
+    // lifted to keep the toe on the floor, and a stem built under each heel as it then stands.
+    if (heeled) {
+      const ankle = this.model.getObjectByName("foot_l")?.getWorldPosition(new THREE.Vector3())
+      this.feet.rise = ankle && heelRise(this.feet.shoes.L, ankle, last.heel * (frame.top - frame.floor) / 1.76, frame.floor)
+      if (this.feet.rise) {
+        this.applyPose()
+        const words = shoes.words ?? ""
+        const blocky = /block|chunky|platform|wedge/i.test(words) || last.family !== "pump"
+        const stemWidth = /stiletto/i.test(words) ? 0.35 : /kitten/i.test(words) ? 0.45 : blocky ? 0.9 : 0.6
+        for (const side of ["L", "R"]) {
+          const stem = heelStemGeometry(this.feet.shoes[side], frame.floor, { stem: stemWidth, taper: blocky ? 1 : 0.7 })
+          // A pump's heel is wrapped in its own leather; a boot's or a wedge's is its sole.
+          if (stem) hang(new THREE.Mesh(stem, (last.family === "pump" || last.family === "flat" ? this.feet.shoes[side].material[1] : this.feet.shoes[side].material[0]).clone()), side, true)
+        }
       }
     }
     this.pose = pose
@@ -1376,6 +1401,10 @@ export class FittingStage {
     // Part of the way (while a garment moves into the pose): from the pose it was sewn in.
     if (amount < 1) this.turnBones(SEWING_POSE, 1 - amount)
     this.turnBones(pose.turns, amount)
+    // Heels (see dressFeet): the feet pitched toes down, and the body lifted so the toes stay on the floor.
+    const rise = this.feet?.rise
+    if (rise) this.turnBones([["foot_l", "x", rise.angle], ["foot_r", "x", rise.angle]], amount)
+    this.model.position.y = rise ? rise.lift * amount : 0
     // Relaxed hands: fingers gently curled, as on a display mannequin.
     const { bones, curl, thumb_02: thumb } = this.poses.fingers
     for (const side of ["l", "r"]) {
