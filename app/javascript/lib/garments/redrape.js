@@ -478,6 +478,10 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kin
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) mask[y * w + x] = found.mask[Math.min(sh - 1, y >> 1) * sw + Math.min(sw - 1, x >> 1)]
   const b = found.box
   const box = { left: b.left * 2, right: Math.min(w - 1, b.right * 2 + 1), top: b.top * 2, bottom: Math.min(h - 1, b.bottom * 2 + 1), w, h }
+  // The light rim just inside the outline (the backdrop blended into the cloth's edge, the cut-out's
+  // half-size steps), taken over by the cloth just inside it: laid on, a leg's or a tee's side lands on that
+  // thin strip of the photo, stretched, and it showed as white down the seam.
+  const rim = cleanRim(ctx, mask, w, h, found.bg)
   if (labels && !worn) patchLabels(ctx, mask, box)
   const flat = flatField(ctx, mask, box)
   // Past the cloth's edge, the cloth's own colour (bleed), so the texture's filtering never draws in the backdrop.
@@ -485,8 +489,85 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kin
   const plain = ctx.getImageData(0, 0, w, h)
   bleed(plain.data, mask, w, h, BLEED)
   ctx.putImageData(plain, 0, 0)
-  return { canvas, mask, box, bg: found.bg, flat, worn, cloth: clothColourOf(plain.data, mask, w, h) }
+  return { canvas, mask, box, bg: found.bg, flat, worn, cloth: clothColourOf(plain.data, mask, w, h), rim }
 }
+
+// The cloth's rim in a photo: the band just inside its outline whose colour leans from the cloth's toward
+// the backdrop's (bg) by more than RIM_LEAN of the way (Kith's &Kin sweatpants: half the way at the
+// outline, still a tenth ten pixels in, more down the side the light came from and at the hem; a black
+// tee's, a quarter at the outline, nothing a pixel in), as wide as it is there, at most RIM_MOST of the
+// photo across: a pixel is in it when its lean (over the pixels round it, so a light thread of a
+// herringbone isn't) is past that and the pixel outside it is in it too. Its pixels take the colour of the
+// nearest cloth pixel inside it (a breadth-first spread in from there); the alpha is left. Changes the
+// canvas (ctx) in place; returns how many pixels in it reaches at most (0 for none).
+export function cleanRim(ctx, mask, w, h, bg) {
+  const image = ctx.getImageData(0, 0, w, h), d = image.data
+  const most = Math.max(1, Math.round(Math.max(w, h) * RIM_MOST))
+  // Each cloth pixel's ring in from the outline (1 on it), up to one past the most.
+  const ring = new Uint8Array(w * h)
+  let frontier = []
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x
+    if (!mask[i]) continue
+    if (x === 0 || y === 0 || x === w - 1 || y === h - 1 || !mask[i - 1] || !mask[i + 1] || !mask[i - w] || !mask[i + w]) { ring[i] = 1; frontier.push(i) }
+  }
+  const band = []
+  for (let r = 2; frontier.length; r++) {
+    for (const i of frontier) band.push(i)
+    if (r > most + 1) break
+    const next = []
+    for (const i of frontier) for (const j of [i - 1, i + 1, i - w, i + w]) if (j >= 0 && j < w * h && mask[j] && !ring[j]) { ring[j] = r; next.push(j) }
+    frontier = next
+  }
+  // The cloth's colour, from deeper in than the rim could be.
+  const samples = [[], [], []]
+  for (let i = 0; i < w * h; i += 5) if (mask[i] && !ring[i]) for (let c = 0; c < 3; c++) samples[c].push(d[4 * i + c])
+  if (samples[0].length < 100) return 0
+  const cloth = samples.map(v => { v.sort((a, b) => a - b); return v[v.length >> 1] })
+  const toward = [0, 1, 2].map(c => bg[c] - cloth[c]), span = toward.reduce((sum, v) => sum + v * v, 0)
+  if (span < 20 * 20) return 0   // the cloth about the backdrop's colour: no rim to tell
+  // Each band pixel's lean, then its mean over the band's pixels within a few of it.
+  const lean = new Float32Array(w * h), on = new Float32Array(w * h)
+  for (const i of band) {
+    let t = 0
+    for (let c = 0; c < 3; c++) t += (d[4 * i + c] - cloth[c]) * toward[c]
+    lean[i] = t / span; on[i] = 1
+  }
+  const near = Math.max(1, Math.round(most / 4))
+  const sum = boxBlur(lean, w, h, near), weight = boxBlur(on, w, h, near)
+  const leans = i => weight[i] > 1e-6 && sum[i] / weight[i] > RIM_LEAN
+  // The rim: from the outline in, while it leans.
+  const rim = new Uint8Array(w * h)
+  frontier = band.filter(i => ring[i] === 1 && leans(i))
+  for (const i of frontier) rim[i] = 1
+  let width = frontier.length ? 1 : 0
+  for (let r = 2; r <= most && frontier.length; r++) {
+    const next = []
+    for (const i of frontier) for (const j of [i - 1, i + 1, i - w, i + w]) if (j >= 0 && j < w * h && ring[j] === r && !rim[j] && leans(j)) { rim[j] = 1; next.push(j) }
+    if (next.length) width = r
+    frontier = next
+  }
+  if (!width) return 0
+  // Filled from the cloth just inside it, ring by ring outward.
+  frontier = []
+  for (const i of band) if (!rim[i] && [i - 1, i + 1, i - w, i + w].some(j => j >= 0 && j < w * h && rim[j])) frontier.push(i)
+  while (frontier.length) {
+    const next = []
+    for (const i of frontier) for (const j of [i - 1, i + 1, i - w, i + w]) {
+      if (j < 0 || j >= w * h || rim[j] !== 1) continue
+      rim[j] = 2   // (filled)
+      d[4 * j] = d[4 * i]; d[4 * j + 1] = d[4 * i + 1]; d[4 * j + 2] = d[4 * i + 2]
+      next.push(j)
+    }
+    frontier = next
+  }
+  ctx.putImageData(image, 0, 0)
+  return width
+}
+// A rim pixel leans from the cloth's colour toward the backdrop's by more than this share of the way.
+const RIM_LEAN = 0.08
+// The widest rim taken over: this share of the photo across (13 pixels at its 1600).
+const RIM_MOST = 0.008
 
 // The share of a photo that's skin above which it's taken to be on someone (photoTraits' skin, which leaves
 // out skin-coloured cloth).

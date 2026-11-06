@@ -329,6 +329,9 @@ export function dressDetails(item, pattern, cloth) {
 const EDGE_MARGIN = 0.008
 // How far to one side of the nearest outer cloth (m) a point may be and still count as poking through it.
 const SIDEWAYS = 0.012
+// Room under an outer garment (m, from the outer cloth in) below which an inner one's folds fade out, all
+// gone at FOLD_CLEAR: a fold stands out up to about a centimetre (fine.js), the outer's own dip in a little.
+const FOLD_ROOM = 0.02, FOLD_CLEAR = 0.004
 
 function freeDistance(outer, b) {
   const n = b.length / 3, out = new Float32Array(n).fill(Infinity)
@@ -345,7 +348,10 @@ function freeDistance(outer, b) {
 }
 
 const SLEEVE_TOP = 16   // cm down a sleeve from the top of its cap
-export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {}) {
+// keep: a Float32Array (1 per inner point, 1 to start) the inner garment's folds are kept by, lowered here
+// where the outer cloth lies close over a point (FOLD_ROOM): folds, laid on outward from the drape (fine.js),
+// pushed the cloth under a top's hem out through it (grey spots on a black tee over grey sweatpants).
+export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003, keep = null } = {}) {
   const field = outer.drape.field
   const a = inner.geometry.attributes.position.array
   const b = outer.geometry.attributes.position.array, normals = outer.geometry.attributes.normal.array
@@ -387,11 +393,6 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
       }
     }
     if (near < 0 || nearest > reach * reach) continue
-    // Only where the outer cloth carries on past this point: the nearest of it may be up to `reach` away,
-    // and just under a hem that's cloth above it, not over it (hidden there, the pants show the body).
-    // The further the outer cloth is from the point, the further in from its edge it must be: under a hem
-    // that lifts away (a hoodie's front, over its pocket), the cloth seen beneath it is meant to show.
-    if (free[near] < 2 * Math.sqrt(nearest) + EDGE_MARGIN) continue
     // The outer cloth's normal, turned to face away from the body (a piece's normals may face either way).
     let nx = normals[3 * near], ny = normals[3 * near + 1], nz = normals[3 * near + 2]
     if (field) {
@@ -402,6 +403,14 @@ export function coveredPoints(inner, outer, { reach = 0.035, gap = 0.003 } = {})
     const out = (x - b[3 * near]) * nx + (y - b[3 * near + 1]) * ny + (z - b[3 * near + 2]) * nz
     // Straight out through the outer cloth, not off past it to one side (below a hem that ends there).
     const aside = Math.sqrt(Math.max(0, nearest - out * out))
+    // Under the outer cloth with less room than a fold stands out: no folds there (and none at all once
+    // it's as close as FOLD_CLEAR), whether or not the point is near the outer's edge.
+    if (keep && aside < SIDEWAYS && out > -FOLD_ROOM) keep[i] = Math.min(keep[i], Math.max(0, Math.min(1, (-out - FOLD_CLEAR) / (FOLD_ROOM - FOLD_CLEAR))))
+    // Only where the outer cloth carries on past this point: the nearest of it may be up to `reach` away,
+    // and just under a hem that's cloth above it, not over it (hidden there, the pants show the body).
+    // The further the outer cloth is from the point, the further in from its edge it must be: under a hem
+    // that lifts away (a hoodie's front, over its pocket), the cloth seen beneath it is meant to show.
+    if (free[near] < 2 * Math.sqrt(nearest) + EDGE_MARGIN) continue
     if (out > -gap && aside < SIDEWAYS) covered[i] = 1
   }
   return covered
@@ -660,6 +669,14 @@ export class DrapedTop {
     else attribute.array.fill(0)
     attribute.needsUpdate = true
     if (this.rim) this.updateRim(this.geometry.attributes.position.array, this.geometry.attributes.normal.array)
+  }
+
+  // How much of its folds each point keeps (coveredPoints' keep: less under a garment worn close over it),
+  // or null for all of them; the fine mesh laid out again with them.
+  setFoldKeep(keep) {
+    if (!this.fine) return
+    this.fine.setKeep(keep)
+    this.fine.update()
   }
 
   setColor(color) {

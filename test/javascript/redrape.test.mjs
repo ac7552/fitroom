@@ -175,3 +175,34 @@ test("a hood standing up above the shoulders is kept, not cut off as a hanger's 
   const found = clothMask(data, w, h)
   assert.equal(found.box.top, 20)
 })
+
+// A grey cloth square on a light backdrop with a light rim inside its outline (rim: how many pixels; the
+// backdrop blended in, from half of it at the outline down to a tenth), as a canvas context would hold it.
+function rimmed(rim) {
+  const w = 800, h = 800, data = new Uint8ClampedArray(4 * w * h), mask = new Uint8Array(w * h)
+  const bg = [235, 235, 235], cloth = [106, 102, 97]
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, inside = x >= 200 && x < 600 && y >= 200 && y < 600
+    const depth = Math.min(x - 200, 599 - x, y - 200, 599 - y) + 1   // 1 on the outline
+    const t = inside && depth <= rim ? 0.5 - 0.4 * (depth - 1) / Math.max(1, rim - 1) : 0
+    const c = inside ? cloth.map((v, k) => Math.round(v + (bg[k] - v) * t)) : bg
+    data.set([...c, 255], 4 * i)
+    mask[i] = inside ? 1 : 0
+  }
+  return { ctx: { getImageData: () => ({ data }), putImageData: () => {} }, data, mask, w, h, bg }
+}
+
+test("the light rim inside a photo's outline takes the cloth's colour from just inside it", async () => {
+  const { cleanRim } = await import("lib/garments/redrape")
+  const { ctx, data, mask, w, h, bg } = rimmed(6)
+  assert.equal(cleanRim(ctx, mask, w, h, bg), 6)
+  // The outline's pixel now the cloth's, and the cloth deeper in untouched.
+  const at = (x, y) => Array.from(data.slice(4 * (y * w + x), 4 * (y * w + x) + 3))
+  assert.deepEqual(at(200, 400), [106, 102, 97])
+  assert.deepEqual(at(400, 400), [106, 102, 97])
+  // The backdrop outside isn't touched.
+  assert.deepEqual(at(150, 400), [235, 235, 235])
+  // No rim, nothing to clean.
+  const plain = rimmed(0)
+  assert.equal(cleanRim(plain.ctx, plain.mask, plain.w, plain.h, plain.bg), 0)
+})

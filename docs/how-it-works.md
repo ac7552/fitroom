@@ -185,14 +185,19 @@ up into the merged rows to split them; where it never hangs apart (a sleeve laid
 shared out by the hanging groups' widths. Row edges are smoothed down the photo and the silhouette so a
 weave's edge or a fold doesn't put a ripple in one row.
 
-The photo's cloth mask (`clothMask`) leaves out the backdrop's soft shadow at the garment's edges and a
-hanger (its hook, then the rows below that are mostly the hook's colour), and on a dark garment the neck
-opening is painted over with the cloth beside it (the backdrop seen through it and the label inside the back
-of the neck would otherwise land on the chest). The front panels and the sleeves take the photo of the
-front; the back panels the photo of the back, mirrored, when the listing has one, and the front photo
-otherwise. A shirt's folded collar (drawn over the drape) is textured with the photo's collar rows, and a
-cut-out the listing names that the photo shows covered (a drape over it) isn't cut. Until the photos are
-on, the garment shows as before (its colour, its cut-out print); `?redrape=off` keeps it that way.
+The photo's cloth mask (`clothMask`) leaves out the backdrop's soft shadow at the garment's edges and a hanger
+(its hook, then the rows below that are mostly the hook's colour), and on a dark garment the neck opening is
+painted over with the cloth beside it (the backdrop seen through it and the label inside the back of the neck
+would otherwise land on the chest). The light rim just inside the outline (the backdrop blended into the
+cloth's edge, and the mask's half-size steps) is taken over by the cloth just inside it (`cleanRim`): where it
+leans from the cloth's colour toward the backdrop's by more than 8% of the way, as wide as it is there, at
+most 0.8% of the photo across. The side of a leg or a tee lands on that thin strip of the photo, stretched,
+and it showed as white down the seam (Kith's &Kin sweatpants: 11 px of rim, the points along the side seams
+162 bright before, 110 after, the cloth 106). The front panels and the sleeves take the photo of the front;
+the back panels the photo of the back, mirrored, when the listing has one, and the front photo otherwise. A
+shirt's folded collar (drawn over the drape) is textured with the photo's collar rows, and a cut-out the
+listing names that the photo shows covered (a drape over it) isn't cut. Until the photos are on, the garment
+shows as before (its colour, its cut-out print); `?redrape=off` keeps it that way.
 
 ### Hung or laid out
 
@@ -272,8 +277,10 @@ under a photo so the fabric isn't lit twice.
   quarter wavelength, faded out within 4 cm of any panel edge, none on hoods and bands. The wavelength is
   the fabric's: 3.5 cm for jersey, longer as thickness^(3/4) and stiffer bending (fleece 5.4, denim 8.6,
   silk 2.2). Each fine point moves along its normal by A times a ridge profile (narrow ridge, broad
-  valley, mostly outward). `?fine=off`, `?folds=off`, `?foldgain=3` (to see where they lie),
-  `?squeeze=N` (the drape's compression softness, for experiments). Cost: 4 to 9 ms a frame per garment
+  valley, mostly outward). Under a garment worn over it, an inner one keeps its folds only where there's
+  room (dress.js's coveredPoints keep: none within 4 mm of the outer cloth, all from 2 cm): standing out,
+  they pushed sweatpants out through a tee's hem in grey spots. `?fine=off`, `?folds=off`, `?foldgain=3`
+  (to see where they lie), `?squeeze=N` (the drape's compression softness, for experiments). Cost: 4 to 9 ms a frame per garment
   for the refinement, 10 to 20 ms every 400 ms for the fold field.
 - **Metered to the photo** (stage.js#meter): a camera meters on its subject, and the stage's light is fixed,
   so cloth given its photo's colour came out darker and warmer than the photo (Kith's Armani crewneck: a
@@ -282,6 +289,10 @@ under a photo so the fabric isn't lit twice.
   given the exposure (and a white balance of at most 8% about it) that brings their middle colour to the
   photo's cloth colour, over three passes. `stage.meterReport(slot)` gives the remaining ΔE (CIE76; the
   Armani: 0, the camo hoodie 4.5, its tile a little redder than the photo's commonest colour). `?meter=off`.
+  Its pictures, and the photo check's (lookShot), are drawn on the screen's canvas with the scene changed
+  for them (the mannequin hidden, the camera turned, a mask drawn): all of it is drawn and put back before
+  anything is awaited (photoPassesSync), so the screen never shows it (it did, for a frame or a few at a
+  time, while a garment was checked or metered: the mannequin flickered out).
 - **The close-up as the fabric** (texture.js, yarn.js): a listing's close-up of its cloth (found by its alt
   text or file name, or by its traits: cloth filling the frame) is laid on as the fabric itself, its yarn,
   heather or wash. The middle square at 512², its lighting and its folds evened out (divided by a blur of a

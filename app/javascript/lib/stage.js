@@ -754,13 +754,16 @@ export class FittingStage {
     for (const slot of LAYERS) {
       const inner = this.slots[slot]
       if (!ready(inner)) continue
-      let covered = null
+      let covered = null, keep = null
       for (const [i, o] of pairs) {
         if (i !== slot || !ready(this.slots[o])) continue
-        const c = coveredPoints(inner.top, this.slots[o].top)
+        // (And where its folds would stand out through what's over it: coveredPoints' keep.)
+        keep ??= new Float32Array(inner.top.cloth.points.length).fill(1)
+        const c = coveredPoints(inner.top, this.slots[o].top, { keep })
         covered = covered ? covered.map((v, k) => Math.max(v, c[k])) : c
       }
       inner.top.setCovered(covered)
+      inner.top.setFoldKeep(keep)
     }
   }
 
@@ -1472,7 +1475,7 @@ export class FittingStage {
   // painted from this photo can be laid back onto the clothes (see wearPhoto); a picture already worn comes
   // off first, so the photo is the page's own.
   // `close`: framed on the figure (a portrait close-up of it, width by height) rather than the stage as the
-  // screen shows it: the same camera, the rest cropped away (see photoPassesNow).
+  // screen shows it: the same camera, the rest cropped away (see photoPassesSync).
   async photoPasses({ width = 1600, height = 2000, guides = true, front = false, record = true, close = false } = {}) {
     if (record) this.wearPhoto(null)
     this.wearBelt()
@@ -1483,11 +1486,14 @@ export class FittingStage {
     // `front`: from in front, whichever way the figure is turned on screen (an image model wants the
     // zip, the print and the hood where a shop photo shows them). The camera goes back after.
     const facing = front ? this.faceFront() : null
+    let pending
     try {
-      return await this.photoPassesNow({ width, height, guides, record, close })
+      pending = this.photoPassesSync({ width, height, guides, record, close })
     } finally {
       if (facing) { this.camera.position.copy(facing.position); this.controls.update() }
+      this.redrawNow()
     }
+    return { image: await pending.image, depth: await pending.depth, mask: await pending.mask }
   }
 
   // Turns the camera to just off straight in front of the figure (a lookbook's slight angle), at the
@@ -1501,8 +1507,14 @@ export class FittingStage {
     return { position }
   }
 
+  // The pictures of photoPasses, drawn before this returns: each is taken from the canvas as it's drawn, and
+  // only its encoding is left, as a promise ({ image, depth, mask }: PNG Blob promises, depth and mask null
+  // without guides); the canvas is back at its size. The caller puts back anything it changed for the
+  // picture (the mannequin hidden, the camera turned, a mask drawn) and draws the screen's view again
+  // (redrawNow) before it awaits them, so the screen never shows any of it: it did, for a frame or a few
+  // (the mannequin flickered out, or the view jumped to the front, while a garment was checked or metered).
   // quick: one frame, the screen's shadows (a reading of the picture, not a photo: metering).
-  async photoPassesNow({ width, height, guides, record = false, close = false, quick = false }) {
+  photoPassesSync({ width, height, guides, record = false, close = false, quick = false }) {
     const renderer = this.renderer, camera = this.camera
     const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio()
     const { aspect, fov, near, far } = camera
@@ -1587,7 +1599,13 @@ export class FittingStage {
     this.effects?.composer.setSize(size.x, size.y)
     camera.aspect = aspect
     camera.updateProjectionMatrix()
-    return { image: await image, depth: await depth, mask: await mask }
+    return { image, depth, mask }
+  }
+
+  // The screen's picture drawn again now, as the next frame would draw it (the still or the traced picture
+  // when it's showing): after a picture was drawn on the canvas, before anything is awaited.
+  redrawNow() {
+    if (!this.still?.draw()) this.draw()
   }
 
   // One garment alone, close up, straight on from in front (or behind), on a plain backdrop: the mannequin,
@@ -1617,19 +1635,14 @@ export class FittingStage {
     const lookOnly = Object.values(d.top.materials ?? {}).map(m => m.userData?.uniforms?.uLookOnly).filter(Boolean)
     for (const u of lookOnly) u.value = 1
     this.plainDraw = true
+    let pending
     try {
       this.faceFront()
       this.turnCamera(FRONT_ANGLE + (back ? Math.PI : 0))
       this.controls.update()
-      const { image } = await this.photoPassesNow({ width, height, guides: false, record: false, close: true, quick })
-      const bitmap = await createImageBitmap(image)
-      const canvas = document.createElement("canvas")
-      canvas.width = width
-      canvas.height = height
-      const context = canvas.getContext("2d", { willReadFrequently: true })
-      context.drawImage(bitmap, 0, 0)
-      return context.getImageData(0, 0, width, height)
+      pending = this.photoPassesSync({ width, height, guides: false, record: false, close: true, quick })
     } finally {
+      // (All put back before anything's awaited: see photoPassesSync.)
       for (const o of hidden) o.visible = true
       keep.visible = shown
       if (sleeves) sleeves.value = sleevesOn
@@ -1638,8 +1651,15 @@ export class FittingStage {
       this.scene.background = background
       this.camera.position.copy(position)
       this.controls.update()
-      this.draw()
+      this.redrawNow()
     }
+    const bitmap = await createImageBitmap(await pending.image)
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext("2d", { willReadFrequently: true })
+    context.drawImage(bitmap, 0, 0)
+    return context.getImageData(0, 0, width, height)
   }
 
   // Where the figure (the mannequin and everything it wears; not the floor, its shadow or the lights) sits in
@@ -2025,11 +2045,12 @@ export class FittingStage {
     if (d.fade) this.finishFade(d)
     const position = this.camera.position.clone()
     const size = { width: 240, height: 360 }
+    let picture, mask
     try {
       this.faceFront()
       this.turnCamera(FRONT_ANGLE)
       this.controls.update()
-      const picture = await this.photoPassesNow({ ...size, guides: false, record: false, close: true, quick: true })
+      picture = this.photoPassesSync({ ...size, guides: false, record: false, close: true, quick: true })
       // The same view with only this garment, flat white on black: the camera sees one layer, the garment's
       // (nothing hidden, so the figure is framed the same way).
       const keep = d.top.mesh
@@ -2039,9 +2060,8 @@ export class FittingStage {
       this.scene.overrideMaterial = METER_MASK
       this.camera.layers.set(METER_LAYER)
       this.plainDraw = true
-      let mask
       try {
-        mask = await this.photoPassesNow({ ...size, guides: false, record: false, close: true, quick: true })
+        mask = this.photoPassesSync({ ...size, guides: false, record: false, close: true, quick: true })
       } finally {
         this.plainDraw = false
         this.camera.layers.set(0)
@@ -2049,22 +2069,23 @@ export class FittingStage {
         this.scene.background = background
         keep.traverse(o => o.layers.disable(METER_LAYER))
       }
-      const pixels = async blob => {
-        const bitmap = await createImageBitmap(blob)
-        const canvas = document.createElement("canvas")
-        canvas.width = size.width; canvas.height = size.height
-        const context = canvas.getContext("2d", { willReadFrequently: true })
-        context.drawImage(bitmap, 0, 0)
-        return context.getImageData(0, 0, size.width, size.height)
-      }
-      return clothMedian(await pixels(picture.image), await pixels(mask.image))
     } finally {
+      // (All put back before anything's awaited: see photoPassesSync.)
       this.camera.position.copy(position)
       this.controls.update()
       this.still?.reset()
       this.draw()
       this.start()
     }
+    const pixels = async blob => {
+      const bitmap = await createImageBitmap(blob)
+      const canvas = document.createElement("canvas")
+      canvas.width = size.width; canvas.height = size.height
+      const context = canvas.getContext("2d", { willReadFrequently: true })
+      context.drawImage(bitmap, 0, 0)
+      return context.getImageData(0, 0, size.width, size.height)
+    }
+    return clothMedian(await pixels(await picture.image), await pixels(await mask.image))
   }
 
   // The gain that draws `slot`'s cloth the colour `hex` (sRGB) under the stage's light. Sets it as it goes.

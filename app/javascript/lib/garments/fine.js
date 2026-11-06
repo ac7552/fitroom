@@ -61,6 +61,9 @@ export class FineCloth {
     // The folds (wrinkles.js): a phase and an amplitude per coarse point, refined like any amount.
     this.phase = null
     this.amp = null
+    // How much of its folds each coarse point keeps (dress.js's setFoldKeep), or null for all.
+    this.keep = null
+    this.kept = null
     this.finePhase = new Float32Array(count)
     this.fineAmp = new Float32Array(count)
     this.sync(true)
@@ -111,7 +114,13 @@ export class FineCloth {
       // Along the surface's own normal before the folds, so a fold lifts the cloth, not slides it.
       this.normals(position.array, normal.array)
       this.refine(this.phase, this.finePhase, 1, "mean")
-      this.refine(this.amp, this.fineAmp, 1, "mean")
+      let amp = this.amp
+      if (this.keep && this.keep.length === amp.length) {
+        if (this.kept?.length !== amp.length) this.kept = new Float32Array(amp.length)
+        for (let i = 0; i < amp.length; i++) this.kept[i] = amp[i] * this.keep[i]
+        amp = this.kept
+      }
+      this.refine(amp, this.fineAmp, 1, "mean")
       const p = position.array, nn = normal.array
       for (let i = 0; i < this.count; i++) {
         const a = this.fineAmp[i]
@@ -134,6 +143,11 @@ export class FineCloth {
   setWrinkles(phase, amp) {
     this.phase = phase
     this.amp = amp
+  }
+
+  // How much of its folds each coarse point keeps (0 to 1), or null for all; laid on at the next update.
+  setKeep(keep) {
+    this.keep = keep
   }
 
   normals(p, out) {
