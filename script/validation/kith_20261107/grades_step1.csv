@@ -1,0 +1,352 @@
+key,grade,tags,note
+fm_sneaker:asi1203b048-020,minor,S-back;S-front,shape ok; heel/back smeared
+fm_sneaker:cna19930c,fail,S-blob;S-parts;S-collar,converse: bulbous; no rubber toe cap/foxing; grey bits at collar
+fm_sneaker:dm42692001,minor,S-back;S-streak,loafer shape ok; texture streaked; back smeared
+fm_sneaker:new-balance-993-grey-white,fail,S-front;S-back;S-blob,toe a smeared sock; back blotchy
+fm_sneaker:nikiq7128-003,fail,S-front;S-blob,step 1: a shoe now (was read as a garment): heel view laid on the back; front still a blob
+fm_sneaker:sl47363200,ok,S-back,mary-jane reads; strap visible
+fm_sneaker:sll47878600,ok,,good
+m_hoodie:acnci0211-ack,fail,P-lost;SHADE;CORD;HEM,logo missing; dark streaks; cord loop on chest
+m_hoodie:awafw26-hd003-blk,fail,CORD;P-lost;HEM;LEN,white cord loops; label missing
+m_hoodie:brdp26t09004824br14,fail,KIND;HOOD;SHADE,zip hoodie drawn as jacket without hood; streaky
+m_hoodie:esss26ho02012-6236,fail,P-hood;SHADE;COLOR;LEN,hood outline printed on chest; brown cast; too long
+m_hoodie:h011-99-yel,fail,P-stretch;LEN;HEM,VOWELS stretched over shoulders onto sleeves
+m_hoodie:rhss26ho090123159,minor,HEM;SEAM,ok front
+m_hoodie:wos-nt02-02b,fail,P-stretch;P-lost,step 1: control: as before
+m_tee:26ss-04-03-grn,minor,STRIPE,step 1: back from its back photo; stripes warped
+m_tee:awafw26-ts004-blk,ok,,good
+m_tee:casm-aw26-jts-102-01,minor,HEM,step 1: front now the printed front (was the back photo); back plain from its own photo
+m_tee:cdhhq-t015-051-1,fail,COLLAR;KIND,polo collar missing
+m_tee:cohbu-m26388-tiq,ok,,good
+m_tee:ee125bt232002f-silv,fail,COLOR;LEN;SHADE,"step 1: back from its back photo, warped; peach; dress length"
+m_tee:es125ho254191f,ok,SEAM,good
+m_tee:khm035074-101,minor,COLLAR;HANGER;SHADE,polo collar faint; hanger ring at neck
+m_tee:khm035141-906,minor,SHADE,"step 1: 3-pack: the white tee in front, alone; reads as one tee"
+m_tee:khta030070-001,ok,,good
+m_tee:kw9-t49l24-106,minor,SHADE,good overall
+m_tee:pa55465,minor,SHADE,grey smears on shoulders
+m_tee:rhupf26tt01012-6498,ok,SHADE,good
+m_tee:t011-01,minor,SHADE,grey smears
+m_tee:y5-t23l27-007,ok,,good
+user:avf261k71-gry,minor,HOOD;COLOR;SHADE,hood dark grey; yellowish side
+user:bsbella-cdoch,fail,S-heel;S-toe;S-back;S-nofoot,heel a block from behind; toe spikes
+user:bsjazz100-brzph,fail,S-heel;S-toe;S-back;S-nofoot,same
+user:fealesandal-nde,fail,S-open;S-heel;S-nofoot,solid bootie; white block heel
+user:khmg030334-104,fail,P-hood;HOOD;P-stretch,red hood lining on chest; hood missing
+user:rhufw26ho03012-8611,fail,P-stretch;P-hood,print stretched shoulder to shoulder
+user:sto7100002s0a26v005g,minor,SHADE;COLOR,badge ok now; tonal smears
+fm_boot:amfw26fo01391-c701,minor,S-front;S-hole,shape ok; toe rounded sock
+fm_boot:ck26327513,minor,S-front;S-back,wallabee ok side; front smeared
+fm_boot:di25fwamm-f01l011blk,fail,S-front;S-blob;S-hole,lace-up reads as slipper from front
+fm_boot:dm02f1813300109,minor,S-front,laces wrapped ok; good
+fm_boot:lrs-583-d,minor,S-front;S-hole,ok
+fm_boot:ricru02f4853lvs841,minor,S-front,sole band smeared at front
+fm_boot:ru01f2890-lco-5311,minor,S-front;S-back,toe cap ok; back smeared
+fm_boot:s57wr0150p7554t8013,minor,S-front;S-hole,loafer ok
+fm_boot:sll47795900,minor,S-front;S-hole,ok side
+fm_boot:slvs0-157-bk-g,minor,S-front;S-hole,buckles smeared
+fm_boot:tb0a418geeq,fail,S-blob;S-front;S-hole,lumpy; laces lost
+fm_boot:ugg1183372-bkmp,ok,S-front,good
+fm_sandal:aalb1339,ok,,slide with foot
+fm_sandal:br1030879,minor,S-hole,clog ok
+fm_sandal:ck26183619,fail,S-open;S-blob,cut-outs filled; lumpy
+fm_sandal:hav4150694-2711,ok,,flip flop with foot
+fm_sandal:lefo0271ll0217-bk999,fail,S-open;S-blob,fisherman cut-outs filled
+fm_sandal:pb123312,fail,S-open;S-hole,fisherman cut-outs filled
+fm_sandal:pnn2606-s01-pht,ok,,good
+fm_sandal:ybuw112fa02-blk0001,minor,S-open;S-hole,side cut-out filled
+fm_sandal:yk6113-1-ss26,minor,S-hole,woven reads
+fm_sneaker:aaih6818,fail,S-front;S-back;S-blob;S-hole,samba toe a blob; back see-through
+fm_sneaker:dm31816001,minor,S-front;S-streak,step 1: as before
+fm_sneaker:lwm816282xcb-7812,minor,S-front;S-back;S-streak,pattern smeared front/back
+fm_sneaker:nbuffbb3yl,minor,S-front;S-back,ok side
+fm_sneaker:nwbmsnb130n,minor,S-front;S-back,step 1: control: as before
+m_hoodie:arcx000010726-black,minor,HOOD;SEAM;HEM,hood lost; panel lines missing
+m_hoodie:casm-aw26-jtp-292-02,minor,HOOD;SHADE;CORD,hood dark; streaks on sleeve
+m_hoodie:ess192as266991f-103,fail,P-stretch;P-hood,FOG lettering stretched up over shoulders
+m_hoodie:feafg9m12-9939bhfbrn,fail,SWIRL;SHADE,marbled swirl texture all over
+m_hoodie:khma030112-002,fail,SWIRL;HANGER;KNIT;HOOD,rib knit drawn as marble swirls; hood lost
+m_hoodie:lweh526y14kok-3110,minor,CORD;HOOD,cords drawn as loops
+m_hoodie:vis0126205010028-blu,minor,CORD;SEAM;HOOD;HEM,cord loops; dark seam lines; hood dark
+m_hoodie:y27-h24l39-802,fail,SHADE;SWIRL;HOOD;SEAM,orange streaks and swirls; dark hood
+m_shirt:brdp26t05004865wh02,fail,COLLAR;LEN;SHADE,collar lost; drawn cropped
+m_shirt:casm-ss26-sh-085-01,minor,COLLAR;SHADE,camp collar lost; piping wobbly
+m_shirt:engtx038-es076,minor,HEM;LEN,plaid good; white patches at hem; short
+m_shirt:lev004tl-0000,minor,COLLAR,step 1: imports; western yoke reads; collar band only
+m_shirt:m206t711ast,minor,COLLAR,step 1: imports; camp collar lost
+m_sweat:55100038s01ff-v002e,minor,HEM;COLLAR,step 1: control: as before
+m_sweat:56200012s0060-v0029,ok,,sweatpant good
+m_sweat:cs020-50,minor,SHADE;HEM,ok
+m_sweat:dai2610117-gry,ok,,camo tiled well
+m_sweat:entfw26ho07012-0015,minor,KIND;HEM;LEN,zip hoodie drawn as pullover; too long
+m_sweat:ess192nb256401f-blk,fail,P-stretch,NBA print stretched huge
+m_sweat:feafg9m12-9938bhf,minor,P-stretch;HEM;SHADE,step 1: control: as before
+m_sweat:h081-99,fail,P-hood;P-stretch;SHADE,hood outline white streaks on chest; tonal print smeared
+m_sweat:khm032865-001,fail,P-stretch;P-lost;HEM,chest print moved and smeared
+m_sweat:khm034249-413,minor,SHADE,step 1: flat front; oval Knicks logo on the back from the hanger back photo
+m_sweat:khma030297-001,minor,NECK,"step 1: imports now (turtleneck); black knit, neck reads as a mock neck"
+m_sweat:khma030358-432,minor,HANGER;HEM,ok
+m_sweat:prm2918-t-005-lss,fail,SWIRL;P-stretch,diagonal colour block swirled
+m_sweat:sto6100030s0444v0062,minor,HEM,good; badge ok
+fm_sandal:aw30221s059-001,minor,S-hole;S-front,slide ok; strap smeared over toes
+fm_sandal:ug1152813k-ssal,fail,S-open;S-blob,sport sandal filled solid
+fw_sneaker:aajr6730,ok,S-front,good
+fw_sneaker:aakj5249,minor,S-front;S-hole,step 1: as before
+fw_sneaker:asi1203a609-117,minor,S-front;S-washout,light shoe ghostly
+fw_sneaker:asi1203b048-001,minor,S-front,ok
+fw_sneaker:dm43402001,minor,S-front,step 1: as before
+fw_sneaker:jbfd2596-107,fail,S-front;S-washout;S-back,AJ1 translucent and smeared
+fw_sneaker:jbhv0823-101,fail,S-front;S-washout;S-back,"AJ4 smeared, ghostly"
+fw_sneaker:nbu991nv2,minor,S-front,ok side
+fw_sneaker:s58wz0109p1895t6253,fail,S-tilt,photo shot at an angle read as a heel: foot on tiptoe
+fw_sneaker:sas71004-4,minor,S-front;S-washout,ok
+fw_boot:bl2440,ok,S-front,good
+fw_boot:ck26155522,ok,,good
+fw_boot:cmk400840-001,minor,S-front;S-heel,kitten heel lost; toe ok
+fw_boot:didc25fwrvw-kle,minor,S-front;S-hole,laces smeared on front
+fw_boot:htrw-t1001rma-lbl01,fail,S-washout;S-blob;P-lost,tall rain boot lumpy white; toile lost
+fw_boot:lrs-729-bbs-vws-hs,ok,S-hole,good
+fw_boot:mb80d1470010-n001,ok,S-hole,good
+fw_boot:prtpx1749-xltob-roug,fail,S-streak;S-heel,horizontal banding; stem smeared
+fw_boot:ran70310-01,ok,,good
+fw_boot:rp01f6832-loo-09,ok,,good
+fw_boot:tb0a5m5n01n1,ok,S-hole,good
+fw_boot:ug1116109-prtbl,ok,S-hole,good
+fw_heel:at227wsx000-v015-462,minor,S-tear;S-back,shape reads; white tears at vamp
+fw_heel:aw30326s013-008,ok,S-back,good
+fw_heel:bsbrea-leel,fail,S-tear;S-toe;S-nofoot,ragged vamp; toe spikes
+fw_heel:cmk201998-003,ok,,step 1: as before
+fw_heel:diy03366pr617h1940,minor,S-back;S-streak,step 1: as before
+fw_heel:febond-taupe,fail,S-blob;S-tear;S-back,step 1: as before
+fw_heel:femaeve-mocha,minor,S-tear,step 1: slightly cleaner straps
+fw_heel:repv511ve-410,minor,S-front;S-streak,step 1: as before
+m_jacket:avf261023-brn,minor,HEM;SHADE,croc reads; collar dark
+m_jacket:khm011206-307,fail,SWIRL;HANGER;SEAM,swirl texture on plain nylon
+m_jacket:khma010168-151,fail,SWIRL;KIND;HOOD,colour blocks swirled; hood added that isn't there
+m_jacket:khma030266-211,minor,SHADE,step 1: flat front now: corduroy jacket reads; light streaks
+m_knit:156100023s0a20-v0029,fail,KIND;HOOD,pullover drawn with zip; hood lost
+m_knit:cdhhr-n001-051,fail,COLOR;KNIT;HEM,sleeves green/dark; rib lost
+m_knit:cpc20cmkn117a-yellow,minor,NECK;HEM,crew drawn as mock neck
+m_knit:cpc20cmkn131a-006056,fail,KIND;COLLAR,zip funnel-neck cardigan drawn as button cardigan with scoop neck
+m_knit:khm032736-4014,minor,NECK;HANGER,graphic good; mock neck
+m_knit:khm033366-002,fail,COLLAR;SWIRL;KNIT,polo collar lost; cable knit swirled
+m_knit:khma030310-620,fail,KIND;NECK,"step 1: flat front now; crossover V lost, drawn round-necked"
+m_knit:mrncvmg0157q0-mxv66,minor,NECK,pattern good; v-neck drawn as mock neck
+m_knit:ourm4263pc,minor,NECK,mock neck
+m_shirt:261cwdt-shm02-bl,fail,COLLAR;SHADE,step 1: back from its back photo now; collar lost; streaks
+m_shirt:khma030081-4042,minor,COLLAR,step 1: flat front now: plaid reads; collar lost
+m_shirt:lev006uu-0000,minor,COLLAR;SHADE,step 1: imports
+m_shirt:ourm2262erc,minor,COLLAR,collar lost; plaid good
+fw_flat:aakj5248,minor,S-front;S-back,step 1: as before
+fw_flat:abass26ff03-460,fail,S-open;S-tear;S-blob,caged flat ragged; foot shows wrong
+fw_flat:fp122511303235-222,minor,S-front;S-back,ok side
+fw_flat:mngwf23f010mh,minor,S-front,step 1: as before
+fw_flat:s58wz0127p3753t4091,minor,S-front;S-tabi,step 1: as before
+fw_flat:s59wz0092p7561t8013,minor,S-front;S-heel,step 1: as before
+fw_flat:tab240-blk,ok,,step 1: as before
+fw_flat:ug1178111-san,minor,S-washout,"step 1: its side photo now (was the sole): shearling collar, no tread on the upper"
+fw_flat:ug1178450-blk,minor,S-back;S-washout,step 1: as before
+fw_heel:at227wsx000-v015-207,minor,S-tear,shape reads; vamp ragged
+fw_heel:jchj000183901,fail,S-open;S-tear;S-heel;S-washout,step 1: as before
+fw_heel:ptpx1854-xptac-black,minor,S-tear;S-front;S-back,step 1: heel view now laid on the back: red sole shows through the heel
+fw_heel:saf868ssn-chi,fail,S-open;S-tear;S-heel,step 1: zebra print reads better; still lumpy
+fw_sandal:aalb1341,ok,,slide good
+fw_sandal:aw30221s059-273a,fail,S-washout;S-tear,light slide ghostly patchy
+fw_sandal:bir1032876,ok,S-front,good
+fw_sandal:br1031731,minor,S-front,good (was a crash in the old code)
+fw_sandal:bscrystal-blk,minor,S-washout,clear strap read as smear
+fw_sandal:bsjeli-bupi,fail,S-blob;S-open,step 1: no wrong photo now (the crop is refused); its side too thin to outline: generic shoe
+fw_sandal:hav4150807-3180,ok,,good
+fw_sandal:hav4150808-2703,ok,,good
+fw_sandal:s66wp0126p7706hb495,minor,S-open;S-tear,step 1: its side photo now (was the three-quarter pair): reads as the slingback
+fw_flat:repv4210gmesh-410,minor,S-front,step 1: as before
+m_coat:154100032s00f6-v0020,fail,LEN;HOOD;HEM;KIND,short parka drawn knee length; hood dropped behind; white slits
+m_coat:154100122s00j2-vj201,fail,LEN;HOOD;HEM,short parka drawn long; hood off
+m_coat:apcwoasj-h01560,fail,LEN;COLLAR;KIND,peacoat: lapels/collar lost; funnel neck; too long
+m_coat:cdhhr-j019-051,fail,LEN;SWIRL;HOOD,pinstripe swirled; short jacket drawn long
+m_coat:jkaglw0800-034,minor,LEN;HEM,too long; white slits
+m_coat:khma010074-416,minor,SHADE,"step 1: flat front now: no red shirt or hands, no hood"
+m_coat:khma010120-413,minor,SHADE,step 1: flat front now: no hands
+m_coat:khma010229-001,fail,SWIRL;KIND;HOOD,shearling piping swirled; hood lost
+m_coat:lemco1151lf1022bk999,fail,COLLAR;KIND;HEM,DB lapels lost; funnel neck
+m_coat:sto7100002s0a26v005g,minor,COLLAR;SHADE,collar shows lining; badge ok
+m_denim:acnb00363-900,ok,,good
+m_denim:acnb00403-863,ok,,good wash
+m_denim:apcwvbek-h09248,ok,,step 1: flat front now: no enlarged rivets
+m_denim:j21sw0136-102,fail,SHADE;COLLAR;COLOR,white denim jacket streaked grey/blue; collar lost
+m_denim:jilj22ka0380-420,ok,,good
+m_denim:johg648e1311578v,ok,,good; cord drawn
+m_denim:khma010146-2024,minor,SHADE,"step 1: flat front now: no skin, no hood"
+m_denim:khma010173-416,fail,HOOD,step 1: flat front now; a hood drawn that the jacket hasn't (from the words)
+m_denim:khma030089-416,minor,SHADE,step 1: flat front now: no hood
+m_denim:khma060140-001,minor,HANGER;B-shape,hanger bar at waist; cargo pockets faint
+m_denim:ksumpf26wa005-098,ok,,good
+m_denim:lev0033v-0006,minor,SHADE,step 1: no back photo used (the detail crop was): back plain denim
+m_pants:bapau54330478-297,ok,,good
+m_pants:engtx356-bk006,ok,,cargo flaps good
+m_pants:esss26pa01012-0497,minor,SHADE;COLOR,grey sweatpant shiny blue-white
+m_pants:g6fm-p030-ind,minor,B-shape,drawn wider than straight leg
+m_pants:gm002967e19944i,minor,HANGER;B-shape,hanger at waist; slim drawn wide
+m_pants:khma060146-199,minor,HANGER;B-shape,step 1: back from its back photo: red stripes gone; hanger mark at the waist
+m_pants:ksumfa26dj110-005,ok,,good
+m_pants:ksumpf26pa006-001,ok,,patches placed well
+m_pants:ricru01f2340-cdu-9,minor,B-shape,cargo pockets faint
+m_pants:rorr02e1335-09,fail,B-shape,flare drawn straight
+m_pants:wos-sp-03a,minor,HANGER;COLOR,knee darts good; side lighter/greener
+m_shorts:5l100010s0x26-v0093,minor,B-len;COLOR,shorter than photo; side orange
+m_shorts:amss26sh01112c926,ok,,step 1: control: as before
+m_shorts:apccoeug-h10026-aac,minor,B-len;COLOR,bermuda drawn short; side orange
+m_shorts:essrw00288-0032,minor,B-len,cargo pockets lost; short
+m_shorts:khm061300-5098,minor,HANGER;SWIRL,stripes wavy; hanger at waist
+m_shorts:lweh526y1aw52-2140,minor,B-len,short
+m_shorts:rhupf26sh01491-0043,minor,B-len,good print; short
+m_shorts:tt-004sr-aq-blk,ok,B-len,good
+w_dress:bucbucir27-kn4,fail,LEN;NECK;KIND,knit mini dress drawn as hip-length top; fold-over neckline lost
+w_dress:ks2026ss-08,minor,SWIRL;SLEEVE,ruffle texture warped; cap sleeves lost
+w_dress:sir226-1035,minor,NECK;SHADE,v-neck slip drawn scoop; lace placement off
+w_hoodie:aw1cc4262803-011,minor,HOOD;P-lost,fur hood lost
+w_hoodie:esfw26ho03012-sun,fail,SWIRL;SHADE;HOOD,orange swirl streaks; hood dark
+w_hoodie:khwa030102-2023,fail,SWIRL;P-hood;P-lost,hood outline swirled on chest; embossed logo lost
+w_hoodie:tnfa8jjs-i3x,minor,LEN;HOOD,drawn cropped; hood plain
+w_tee:aw1cc2261286-348,minor,LEN;HEM,layered hem lost; drawn cropped
+w_tee:aw1kc2261037bla,fail,LEN,regular tee drawn cropped
+w_tee:khw031333-001,fail,SLEEVE;NECK,long sleeves drawn short; boat neck drawn crew
+w_tee:nikiv6646-125,minor,NECK;SHADE,cut-out neckline lost
+m_coat:barcsu5614-0444-170,fail,LEN;KIND;COLLAR,short zip jacket drawn knee-length coat; collar lost
+m_coat:engsw245-ct300,fail,LEN;SWIRL;P-stretch,step 1: control: as before (back now has the print)
+m_coat:khma010126-104,fail,P-lost;COLOR,"step 1: back from the hanger back photo now (Kith script, stars); sleeve colours off"
+m_coat:khma010173-416,fail,HOOD,step 1: flat front now; a hood drawn that the jacket hasn't (from the words)
+m_coat:ricru02f4986-49,minor,SLEEVE;COLLAR,step 1: control: as before
+m_denim:khma010084-6024,minor,COLLAR,step 1: control: as before
+m_denim:khma030129-001,fail,SWIRL;KIND,quilting warped into swirls; denim hem lost
+m_denim:khma060177-001,minor,HANGER,hanger at waist
+m_jacket:44100002s0j20-v0020,minor,COLLAR;KIND,zip drawn as buttons
+m_jacket:j21sw0136-102,fail,SHADE;COLLAR,white denim streaked grey
+m_jacket:jk21529-nyyblwh,fail,COLOR;P-lost,white sleeves drawn navy; patches scattered
+m_jacket:khma010118-350,minor,COLLAR,step 1: flat front now: cropped trench reads; lapels flat
+m_jacket:khma010134-185,minor,SHADE,good
+m_jacket:khma010181-042,minor,KIND;HEM,puffer baffles ok; high neck lost
+m_jacket:khma010253-001,fail,KIND,"step 1: flat front now, no hood; vest still drawn with sleeves"
+m_jacket:mrnjumy0216qu-00n99,minor,COLOR;COLLAR,contrast sleeves ok; collar lost
+m_jacket:ssstkta22-211,minor,HANGER,good
+m_jacket:sto4100003s0532v005e,fail,LEN;SWIRL;HOOD,short parka drawn long; gloss swirls
+m_jacket:wiwmk0003511dbc,fail,TAILOR;COLOR;KIND,MakeHuman suit model: shirt and tie under a soft blazer; patent-shiny; sleeves split
+m_knit:dai2610166-blk,minor,NECK,mock neck instead of crew
+m_knit:jilj21gp0244-401,minor,NECK;HEM,mock neck; hem rides up
+m_knit:khma030157-001,fail,COLLAR;STRIPE,polo collar lost; stripe warped wavy
+m_knit:kw071-99,minor,COLLAR;NECK,shirt collar drawn as funnel
+m_knit:ricru02f4631-21,minor,SHADE;NECK,mock neck; side streaks
+m_pants:gra-g105-ogt-dn,ok,,good
+m_pants:kikkkaw26t10-21,ok,,step 1: flat front now
+m_pants:lweh526y11x97-5320,ok,,good; jacquard knees
+m_pants:sto3100050s0451v0094,ok,,cargo + badge good
+m_shirt:acnbb0707-ao0,minor,COLLAR,step 1: back from its back photo (horse print is real); camp collar lost
+m_shirt:apcviamm-h12682-iak,minor,COLLAR;STRIPE,placket smear; camp collar lost
+m_shirt:crgaw26cwoshi82-nvy,minor,COLLAR;HEM,collar band only; hem slits
+m_shirt:orl282469-wht,minor,COLLAR;SHADE;COLOR,border print good; white drawn mint; collar lost
+m_shirt:ricru02f4291-09,minor,COLLAR;HEM,collar band only
+m_shirt:sun1293-1-210,minor,COLLAR;SWIRL,plaid wavy
+m_shorts:awk-su26-sh002gre,minor,B-len;COLOR,gradient good; short
+m_shorts:cdhhq-p034-051-1,fail,KIND;B-len,shorts drawn as full-length trousers
+m_shorts:essrw00261-0131,ok,,step 1: control: as before
+m_shorts:esss26sh06012-6248,minor,HEM,good length
+m_shorts:feafg9m45-9905cnv,minor,B-len,drawn shorter
+m_shorts:khm061397-5140,ok,HANGER,patchwork good
+m_shorts:ksumsp26wa113-098,ok,,good
+m_sweat:khm034263-413,fail,SWIRL;HOOD;P-stretch,step 1: flat front now; NY print smeared; hood drawn on a crewneck
+w_dress:amfw2608,ok,,good
+w_dress:arfw25mlmds,minor,SHADE;NECK,flared sleeves lost
+w_dress:arpf261049k1064107,minor,NECK,keyhole lost; good
+w_dress:at260wca00418,fail,P-lost;SHADE;KIND,step 1: single photo; sash lost; back plain black
+w_dress:aw1cc3266080-001,minor,SWIRL;SHADE,step 1: single photo; crystals swirled; back plain
+w_dress:khw080141-244,fail,P-stretch;NECK,halter keyhole drawn as a huge buckle print; ruched
+w_dress:khw320006-265,fail,KIND;P-lost,romper's plunge filled with pale cloth and cross straps as print
+w_dress:khwa080073-624,minor,NECK;B-shape,step 1: control: as before
+w_dress:mimc25sg04-sm9x2,fail,KIND;SHADE,step 1: single photo; jumpsuit as dress over trousers; back pale
+w_dress:nkkk2263plu50889,fail,NECK;SLEEVE,off-shoulder drawn with sleeves; shirring ok
+w_dress:pdch-su26-5032-0156,ok,,good
+w_hoodie:aw1cc4262803-041f,minor,HOOD;SHADE,step 1: single photo; fur hood lost; back blotchy
+w_hoodie:dgs26612s068bla,fail,SLEEVE;HOOD;LEN,puff short sleeves drawn 3/4; hood lost; cropped
+w_hoodie:esfw26ho03012-nav,minor,SWIRL;HOOD,cord drawn as squiggle; hood dark
+w_hoodie:esfw26ho03012-plu,minor,SWIRL;HOOD,squiggle cords
+w_hoodie:hsss26-jk6mn,minor,LEN;HOOD,ok-ish; cropped
+w_hoodie:iu2211-054,fail,LEN;HOOD;P-lost,cropped; hood lost; sheer panels lost
+w_hoodie:khwa030083-338,fail,SWIRL;HOOD;LEN,brown swirls; cropped; hood lost
+w_hoodie:khwa030125-950,fail,SWIRL;SHADE;HOOD,grey swirls on cream; hood smudge on back
+w_hoodie:khwa030159-001,minor,HOOD;P-stretch,hood lost; label enlarged
+w_hoodie:khwa030170-211,fail,P-hood;P-stretch,KITH print moved to shoulder and smeared
+w_hoodie:tnfa8jjs-t7x,minor,HOOD;LEN,hood plain; short
+w_outer:at261wcb00126-177,minor,SHADE;COLLAR,denim wash streaky; funnel ok
+w_outer:dia221540webj,fail,LEN;COLLAR;P-lost,aviator drawn knee length; shearling collar lost; belt lost
+w_outer:ebw6706dalshgre,fail,KIND;NECK,off-shoulder shrug drawn as zip jacket with funnel
+w_outer:khw010358-601,minor,SHADE,step 1: flat front now: no jeans or skin; cropped length right
+w_outer:khw031374-001,minor,HOOD;LEN,hood lost on front
+w_outer:khwa010076-338,fail,COLOR;P-lost;KIND,grey duster drawn black; fur placket smeared
+w_outer:khwa370081-001,minor,COLLAR,step 1: flat front now; shearling collar lost
+w_outer:mck20939b00034m1282,minor,SWIRL;HOOD,knit swirled; hood ok-ish
+w_outer:nf0a3xeo-gof,ok,,nuptse baffles + logo good
+w_outer:nikiv6641-080,minor,LEN,cropped jacket drawn hip length
+w_outer:ss66746-9467,fail,FUR;COLLAR,faux fur drawn as flat cloth; collar lost
+w_pants:aga310-1183,minor,SHADE;HEM,good shape; hems pool
+w_pants:aw1wc3264046-380,ok,,cargo + boxer band good
+w_pants:bebound708pm,fail,B-shape;SHEER,sheer flare drawn opaque wide with smears
+w_pants:khw060626-413,ok,,good
+w_shorts:sht056,minor,SWIRL,satin swirled; lace ok
+w_skirt:ks2026fw-07,minor,B-len,mini drawn knee length
+w_skirt:nkst326steq80184,minor,B-len,pleats ok; longer
+w_skirt:r13wr636-r838a,ok,,pleats + ruffle good
+w_skirt:slr26s076-f198,ok,,step 1: control: as before
+w_tee:aga7424-1611-bdna,fail,KIND;LEN,layered crop tee drawn as long sleeve sweatshirt
+w_tee:aga7427-1521-wht,minor,LEN,boxy tee drawn cropped
+w_tee:at261wct00364-100,minor,COLOR,black drawn navy; underwire seam lost
+w_tee:dia257560qjcg,ok,,rhinestone print good
+w_tee:khwa030136-001,minor,COLLAR,collar faint; good
+w_tee:khwg030002-001,ok,,good
+w_tee:kswex26te001,minor,NECK;LEN,v-neck layered collar lost; cropped
+w_tee:lbk-690-bkv,minor,LEN,layered trim good; cropped
+w_tee:ms-tee-ja,ok,,good
+w_tee:rd024-02wcgt428,fail,P-lost;COLOR,photo graphic missing entirely; cream cast
+w_tee:vw1504000a-j001m-wht,minor,NECK;LEN,asymmetric drape lost; cropped
+w_dress:esfw26dr01604-red,fail,KIND;SHADE,draped asymmetric dress drawn as plain tee dress
+w_outer:dia2381909p28,minor,SHADE;COLLAR,ok; collar dark
+w_outer:khwa030076-001,fail,TAILOR;LEN,step 1: flat front chosen; still drawn from the suit model with shirt and tie
+w_outer:siwfw26tp08,minor,COLLAR;P-lost,stand collar lost; studs smeared
+w_outer:tnfa82z5-t8q,minor,SHADE;SEAM,baffles ok; zip line wavy
+w_pants:amfw2648-wht,ok,,good
+w_pants:at261wcp00319-13,minor,B-shape,barrel leg drawn straight
+w_pants:aw4dc4264908-427e,ok,,good
+w_pants:ch-au26-6022-0156,minor,B-shape,wide leg drawn tapered
+w_pants:dia2378309p23,ok,,good
+w_pants:ebw1700lrbcrblu,ok,,capri length good
+w_pants:khwa060093-001,minor,B-shape;P-lost,step 1: as before
+w_pants:kk4297pl016001,minor,SHADE;B-shape,flare ok; smears at hem
+w_pants:kswfa26dj015,minor,COLOR,back lighter grey than front
+w_pants:lbk-510p-by,ok,,good
+w_pants:slf25p051-f119-blk,ok,,side stripe good
+w_shorts:aga9255-1183-mmelo,minor,B-len,bermuda drawn long
+w_shorts:bebound830vsk,minor,STRIPE;SHADE,step 1: single photo; back plain
+w_shorts:belss26-sh2-6,minor,B-len,long short drawn short
+w_shorts:bucir25-bt9,ok,,step 1: control: as before
+w_shorts:ccw444961-vtmdw,ok,,good
+w_shorts:ebw4403camks-bps,ok,,step 1: flat front now; back from its back photo
+w_shorts:ir8652-445,ok,,good
+w_shorts:kswpf26wa002,minor,B-len,cut-offs drawn longer with cuff
+w_shorts:nwbms41517-sru,ok,,good
+w_shorts:ro02f5696-ribwse-86,minor,B-len;KNIT,rib faint; short
+w_shorts:siwpf26sr02,ok,,print good
+w_shorts:toccs742-ban,ok,,good
+w_shorts:vw32020007-c009x-blu,minor,KIND,wrap skirt-short read as shorts; plaid ok
+w_shorts:wiwwk0017511gns,ok,,good
+w_skirt:amfw2643-blk,ok,,good
+w_skirt:arpf263033k10151004,minor,SHADE,step 1: single photo; back blurred
+w_skirt:aw4dc3265127,fail,B-len;KIND,mini skort drawn as midi
+w_skirt:bebound616pm-man,minor,SHEER;KIND,mesh tank in skirts collection; sheer drawn opaque-ish
+w_skirt:dgp26324w159-100,minor,SWIRL;HEM,step 1: as before (its second photo no longer laid on the back: outline didn't match)
+w_skirt:khw060517-001,minor,B-len;KNIT,pleats faint; longer
+w_skirt:kswfa26sk004,minor,HEM,raw hem drawn as smear
+w_skirt:mck20932d00038597z8,fail,B-len;B-shape,A-line midi drawn floor length tube
+w_skirt:mi4074trwblk,ok,,studs good
+w_skirt:osldgf268-lilorg,ok,SHADE,"step 1: single photo; good front, back mottled"
+w_skirt:zut-308903-blk,ok,,pony hair reads
+fw_sneaker:s58ws0109p1895t6253,fail,S-blob;S-parts,step 1: no side photo taken (its only side is tilted on its toe): plain generic shoe
+m_knit:khm034249-413,minor,SHADE,"step 1: as m_sweat: flat front, right back"

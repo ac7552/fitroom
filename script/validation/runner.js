@@ -140,6 +140,10 @@ async function check(item, kind, slot) {
     name: g.name, chart: g.chart ? { kind: g.chart.kind, sizes: g.chart.sizes.length, missing: g.chart.missing ?? [] } : null,
     cut: g.cut ? Object.fromEntries(Object.entries(g.cut).filter(([k]) => k !== "shape")) : null, shaped: Boolean(g.cut?.shape),
     best: slot.fit?.best ?? null, verdict: slot.fit?.sizes?.find(x => x.size === slot.fit?.best)?.verdict ?? null,
+    // The listing photos' roles (photo_roles.js), which one is the front (or a shoe's side), and how long that took.
+    photoRoles: g.photoRoles ?? null, photoIndex: g.photoIndex ?? null, photoRole: g.photoRole ?? null, rolesMs: g.photoRolesMs ?? null, rolesBy: g.photoRolesBy ?? null,
+    backIndex: g.photoBackIndex ?? null, closeupIndex: g.photoCloseupIndex ?? null,
+    backUsed: Boolean(g.back_photo), closeupUsed: Boolean(g.closeup),
     colorRead: Boolean(g.photoColor), print: Boolean(g.print), allOver: Boolean(g.print?.tile), stripes: Boolean(g.print?.strip), backPrint: Boolean(g.backPrint),
     sleevePrint: Boolean(g.sleevePrint && Object.values(g.sleevePrint).some(s => s.front || s.back)), photoMap: g.photoMap ? true : g.photoMap === null ? false : null,
     look: g.lookChecks ? { ok: g.lookChecks.ok, failed: g.lookChecks.failed, stuck: c.lookStuckOn === g, shape: g.lookChecks.checks?.shape?.score ?? null } : null,

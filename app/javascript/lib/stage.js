@@ -1021,7 +1021,7 @@ export class FittingStage {
     d.top.item.photoCloth = item.photoCloth ?? null
     // The store's photos, for re-draping (advanceRedrape); the drape's own record doesn't carry them.
     // (A romper's or jumpsuit's halves share its photos, each its part: above the waist or below it.)
-    d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null, part: item.photoPart ?? null } : null
+    d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null, part: item.photoPart ?? null, worn: Boolean(item.photoWorn) } : null
     // Its photos taken away (the page decided they're better not laid on): back to its colour and print.
     if (!d.top.photos && d.redrapeState) { d.redrape = null; d.redrapeState = "off" }
     // With the photographs re-draped onto it (d.redrape), the cloth shows them and nothing else is laid on.
@@ -2102,13 +2102,13 @@ export class FittingStage {
         d.redrapeTimes = { asked: performance.now() }
         // The photos, read once per garment (its sizes share them; the cache holds the last few).
         this.redrapeCache ??= new Map()
-        const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}|${photos.part ?? ""}`
+        const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}|${photos.part ?? ""}|${photos.worn ? "worn" : ""}`
         if (!this.redrapeCache.has(key)) {
           if (this.redrapeCache.size > 6) this.redrapeCache.delete(this.redrapeCache.keys().next().value)
           const options = { labels: !d.top.bottoms, kind: d.top.bottoms ? "trousers" : "top", part: photos.part }
           // A hood's drawcords hang over the front (redrape.js's paintCords).
           const cords = !d.top.bottoms && d.top.cloth.panels.some(p => /^hood/.test(p))
-          this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, { ...options, cords }), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
+          this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, { ...options, cords, worn: photos.worn }), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
             .then(([front, back]) => (front ? { front, back } : null)).catch(() => null))
         }
         this.redrapeCache.get(key).then(photos => {

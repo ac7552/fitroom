@@ -1490,7 +1490,7 @@ export async function readShoe(src) {
 }
 
 export function shoeColors(data, w, h) {
-  const cut = cutOut(data, w, h)
+  const cut = cutOut(data, w, h, SHOE_LEAST)
   if (!cut) return null
   const { mask } = cut.garment
   const { lab } = cut
@@ -1605,8 +1605,10 @@ export async function viewTexture(src, size = 1024) {
 export const SIDE_BINS = 64
 
 // Where the shoe is in a side photo (see shoeTexture), with its mask at the photo's size.
+// (A shoe's piece can be as little as SHOE_LEAST of the frame: a flip-flop from the side.)
+const SHOE_LEAST = 0.008
 export function shoeSide(data, w, h) {
-  const cut = cutOut(data, w, h)
+  const cut = cutOut(data, w, h, SHOE_LEAST)
   if (!cut) return null
   const mask = cut.garment.mask.slice()
   // The backdrop seen through the shoe (between the laces, under a pulled-up loop) isn't the shoe: small
@@ -1633,6 +1635,9 @@ export function shoeSide(data, w, h) {
   if (right - left < w * 0.15) return null
   let high = h, low = -1
   for (let y = 0; y < h; y++) for (let x = left; x <= right; x++) if (mask[y * w + x]) { high = Math.min(high, y); low = Math.max(low, y) }
+  // A shoe that runs off the frame's side (its toe or heel cut off), or off both its top and bottom, is a
+  // close-up of it, not its side. (One tilted up on its toe can fill the frame's height.)
+  if (left <= 1 || right >= w - 2 || (high <= 1 && low >= h - 2)) return null
   // A side view: a shoe stands one to five times as long as it's tall (a front or top view doesn't); a
   // knee-high boot stands taller than it's long, down to about half.
   const long = (right - left + 1) / (low - high + 1)
@@ -2013,8 +2018,9 @@ function bleed(data, w, h, mask, sw, sh) {
 
 // The garment in a photo: each pixel's Lab colour, the background's colour (the median round the photo's
 // edge), and the garment as the largest piece of what isn't background joined to the edge (so a white print
-// in the middle of the garment stays garment). Null when no garment stands out.
-function cutOut(data, w, h) {
+// in the middle of the garment stays garment). Null when no garment stands out: when its piece is under
+// `least` of the frame (a shoe's readers take less: a thin sandal from the side fills a hundredth of it).
+function cutOut(data, w, h, least = 0.05) {
   const lab = new Float32Array(3 * w * h)
   for (let i = 0; i < w * h; i++) toLab(data[4 * i], data[4 * i + 1], data[4 * i + 2], lab, 3 * i)
   const edge = []
@@ -2042,7 +2048,7 @@ function cutOut(data, w, h) {
     }
   }
   const garment = largestPiece(mask, w, h)
-  if (garment.count < w * h * 0.05) return null
+  if (garment.count < w * h * least) return null
   return { lab, bg, garment, far, all: mask }
 }
 
@@ -2100,7 +2106,9 @@ export function photoTraits(data, w, h) {
   }
   return {
     garment: Boolean(cut) && fills > 0.05 && touches < 3, fills: round3(fills), touches,
-    dark: round3(dark / n), light: round3(light / n), busy: round3(busy / n), skin: round3(skin / n), plain: round3(plain / n)
+    dark: round3(dark / n), light: round3(light / n), busy: round3(busy / n), skin: round3(skin / n), plain: round3(plain / n),
+    // The garment's own colour (Lab, the median over it), so another photo can be held to it.
+    colour: colour ? colour.map(v => Math.round(v)) : null
   }
 }
 
@@ -3317,3 +3325,103 @@ export function pickMask(bits, count, plane, cut, scores) {
   const loose = guesses.filter(g => g.share >= 0.65).sort((a, b) => b.score - a.score)[0]
   return loose ? loose.k : -1
 }
+
+// A photo of several garments hung together (a three-pack side by side, overlapping): the one in front, the
+// leftmost (shops hang the first colour in front of the next), alone on the backdrop, as the photo of the
+// garment (photo_roles.js marks such a photo `several`). Each row of the garments is walked from its left
+// edge while it stays the first garment's colour; past that (or a row that starts in another garment's
+// colour) it's painted the backdrop's. Returns a data: URL, or src when they can't be told apart.
+export async function firstOfSeveral(src, size = 1600) {
+  const pixels = await loadPixels(src)
+  if (!pixels) return src
+  const keep = severalMask(pixels.data, pixels.w, pixels.h)
+  if (!keep) return src
+  const image = await loadImage(src)
+  const k = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
+  const W = Math.round(image.naturalWidth * k), H = Math.round(image.naturalHeight * k)
+  const canvas = document.createElement("canvas")
+  canvas.width = W; canvas.height = H
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  context.drawImage(image, 0, 0, W, H)
+  const big = context.getImageData(0, 0, W, H), d = big.data
+  const { w, h, mask, bg } = keep
+  for (let y = 0; y < H; y++) {
+    const sy = Math.min(h - 1, Math.floor((y * h) / H))
+    for (let x = 0; x < W; x++) {
+      const i = sy * w + Math.min(w - 1, Math.floor((x * w) / W))
+      if (mask[i] !== 2) continue
+      const o = 4 * (y * W + x)
+      d[o] = bg[0]; d[o + 1] = bg[1]; d[o + 2] = bg[2]
+    }
+  }
+  context.putImageData(big, 0, 0)
+  return canvas.toDataURL("image/png")
+}
+
+// severalMask's working: mask 1 the first garment, 2 the others (to paint out), 0 the backdrop; null when the
+// first garment can't be told from the rest (one colour throughout, or most of it). The first garment is
+// grown from its left side's middle, pixel by pixel while the colour changes only a little from one to the
+// next (its folds' shading) and stays near its own (a white tee in front of a heather grey one is only ten
+// lighter: the step across their edge stops it); what it leaves inside itself (a label, a print) is its own.
+export function severalMask(data, w, h, apart = SEVERAL_APART) {
+  const cut = cutOut(data, w, h)
+  if (!cut) return null
+  const { lab } = cut, garment = cut.garment.mask
+  let top = h, bottom = -1, left = w, right = -1
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (garment[y * w + x]) { top = Math.min(top, y); bottom = Math.max(bottom, y); left = Math.min(left, x); right = Math.max(right, x) }
+  if (bottom - top < h * 0.2 || right - left < w * 0.2) return null
+  // The first garment's colour and where to start: the commonest colour (a coarse Lab histogram's heaviest
+  // cell) in its left two fifths, through the middle of its height, and the pixels of that colour there.
+  const cells = new Map()
+  for (let y = Math.round(top + (bottom - top) * 0.3); y <= top + (bottom - top) * 0.7; y++) {
+    for (let x = left; x <= left + (right - left) * 0.4; x++) {
+      const i = y * w + x
+      if (!garment[i]) continue
+      const key = `${Math.round(lab[3 * i] / 3)},${Math.round(lab[3 * i + 1] / 3)},${Math.round(lab[3 * i + 2] / 3)}`
+      if (!cells.has(key)) cells.set(key, [])
+      cells.get(key).push(i)
+    }
+  }
+  let seeds = []
+  for (const list of cells.values()) if (list.length > seeds.length) seeds = list
+  if (seeds.length < 20) return null
+  const own = [0, 1, 2].map(c => median(seeds.map(i => lab[3 * i + c])))
+  const [stepL, stepC, farL, farC] = apart
+  const near = i => Math.abs(lab[3 * i] - own[0]) <= farL && Math.hypot(lab[3 * i + 1] - own[1], lab[3 * i + 2] - own[2]) <= farC
+  const mask = new Uint8Array(w * h)
+  const stack = seeds.filter(near)
+  for (const i of stack) mask[i] = 1
+  while (stack.length) {
+    const i = stack.pop(), x = i % w
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+      if (j < 0 || j >= w * h || mask[j] || !garment[j] || !near(j)) continue
+      if (Math.abs(lab[3 * j] - lab[3 * i]) > stepL || Math.hypot(lab[3 * j + 1] - lab[3 * i + 1], lab[3 * j + 2] - lab[3 * i + 2]) > stepC) continue
+      mask[j] = 1
+      stack.push(j)
+    }
+  }
+  // Its own inside (a label, a print, a fold's deep shadow): a run of the garment between two of its pixels
+  // on a row, no wider than a tenth of it.
+  const gap = Math.round((right - left) * 0.1)
+  for (let y = top; y <= bottom; y++) {
+    let last = -1
+    for (let x = left; x <= right; x++) {
+      const i = y * w + x
+      if (mask[i] !== 1) continue
+      if (last >= 0 && x - last > 1 && x - last <= gap) for (let k = last + 1; k < x; k++) if (garment[y * w + k]) mask[y * w + k] = 1
+      last = x
+    }
+  }
+  let kept = 0, all = 0
+  for (let i = 0; i < w * h; i++) if (garment[i]) { all++; if (mask[i] === 1) kept++; else mask[i] = 2 }
+  // Nothing apart (one colour), or nearly nothing kept: not several after all.
+  if (kept < all * 0.2 || kept > all * 0.85) return globalThis.__severalDebug ? { kept: kept / all, own } : null
+  // The backdrop's colour as photographed: the frame's edge, where no garment is.
+  const edge = [[], [], []]
+  for (let x = 0; x < w; x++) for (const y of [0, h - 1]) if (!garment[y * w + x]) for (let c = 0; c < 3; c++) edge[c].push(data[4 * (y * w + x) + c])
+  for (let y = 0; y < h; y++) for (const x of [0, w - 1]) if (!garment[y * w + x]) for (let c = 0; c < 3; c++) edge[c].push(data[4 * (y * w + x) + c])
+  const bg = edge[0].length ? edge.map(median) : [235, 235, 235]
+  return { mask, w, h, bg, kept: kept / all }
+}
+// The step from one pixel to the next it's grown over (lightness, colour), and how far from its own colour.
+const SEVERAL_APART = [2.5, 3, 5.5, 3.5]

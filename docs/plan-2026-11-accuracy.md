@@ -216,6 +216,34 @@ Step 1 goes first because a wrong photo poisons everything after it. Step 2's pa
 6 and 7 read from. Footwear (5) is independent and can run alongside 2–4. Steps 3 and 4 move the number
 most per day.
 
+### Step 1, done (7 November)
+
+Every listing photo is given a role before it's read (`photo_roles.js`): from the shop's words for it (how it's
+described, never a garment's parts: Kith's "Man wearing … zip front" had been taken for a front, and "front
+view on a hanger" refused for its "on"), the measurements already taken, and DINOv2 held to 43 example
+centres (22 KB, `photo_role_examples.js`, built from the sample's 1,228 photos labelled by eye in
+`kith_20261107/photo_roles.json`). The first photo of it on its own is the front, else one of it worn
+(`photoRole` "on_model": colour and parts, no outline fit); the back is the first back whose outline and
+colour match the front's; a close-up is a texture only; a shoe's side is never its sole, a pair or an angled
+shot. A three-pack's front is the garment in front, alone (`firstOfSeveral`). Shoes the client had sent down
+the garment path (Kith's heels, flats, ballerinas and derbies, and untyped sneakers) are shoes by their tags;
+an Oxford shirt isn't a shoe; a turtleneck imports.
+
+- Labels, each listing held out from the examples: the old choice had the right front on 235 of 255 garments
+  and tried a wrong back first on 10; the new has the right front on every listing that has one on its own, and
+  no wrong back. Without the shop's words at all, 344 of 346.
+- The live import on all 346 listings (`photo_roles_check.js`): no front, back or close-up that isn't one; 210
+  backs and 85 close-ups used; two shoes go without a side rather than take an angled or cropped photo. The
+  roles take 0.2 s at the median and 0.37 s at the 90th percentile on the Mac's GPU, inside the photo-reading
+  budget; with no DINOv2 within 4 s (a first visit), the words and measurements decide.
+- Rendered again (77 runs: every run tagged with a wrong photo or whose photos changed, and 12 controls;
+  `regrade_step1.py`): **35% fail to 29%** (101 of 351), ahead of the 33% projected. Outerwear 61% to 47%,
+  tops 43% to 36%, bottoms 12% to 7%, footwear 30% to 28%. No control changed.
+- Moved on: a garment with only a front photo has its back drawn plain, pale or blurred (dresses, skirts,
+  shorts) — how the cloth is laid, not which photo, so it's tagged for step 4; a jacket whose words say hood
+  keeps one it hasn't (two Erin jackets) — step 2; a stiletto's heel view now laid on its back shows the red
+  sole — step 5.
+
 ## 6. Performance budgets (unchanged by this plan)
 
 Everything per visitor stays in the browser; the droplet gains only static files (the depth model is

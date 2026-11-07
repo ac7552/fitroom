@@ -439,8 +439,8 @@ export function collarStrip(photo) {
 // A store photo as a canvas (at most `size` across) with its cloth mask: { canvas, mask, box } or null.
 // labels: paint over a neck label (patchLabels; not for trousers, whose drawstring would go the same way).
 // cords: paint out a hood's drawcords hanging down the chest (paintCords; the photo of the front of a hooded
-// garment).
-export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kind = "top", part = null, cords = false } = {}) {
+// garment). worn: the photo is of it worn (its role, photo_roles.js), whatever the skin in it says.
+export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kind = "top", part = null, cords = false, worn: onModel = false } = {}) {
   const image = await new Promise((resolve, reject) => { const img = new Image(); img.crossOrigin = "anonymous"; img.onload = () => resolve(img); img.onerror = reject; img.src = src })
   const scale = Math.min(1, size / Math.max(image.naturalWidth, image.naturalHeight))
   const w = Math.round(image.naturalWidth * scale), h = Math.round(image.naturalHeight * scale)
@@ -456,7 +456,9 @@ export async function loadPhotoForRedrape(src, size = 2000, { labels = true, kin
   sctx.drawImage(canvas, 0, 0, sw, sh)
   const smallData = sctx.getImageData(0, 0, sw, sh).data
   // On someone: the garment alone (segment.js's wornGarmentMask), not the person; only the cloth is laid on.
-  let worn = photoTraits(smallData, sw, sh).skin > WORN_SKIN && faceAtTop(smallData, sw, sh)
+  // (Or the photo's role says so, photo_roles.js: a model in dark clothes, or with darker skin, can show too
+  // little skin for the count.)
+  let worn = onModel || (photoTraits(smallData, sw, sh).skin > WORN_SKIN && faceAtTop(smallData, sw, sh))
   let found = clothMask(smallData, sw, sh)
   if (worn) {
     const garment = await wornGarmentMask(smallData, sw, sh, kind, src).catch(() => null)

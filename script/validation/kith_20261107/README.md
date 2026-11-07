@@ -12,6 +12,7 @@ bottoms 12%.
 | `grades.csv` | one row per run: `key`, `grade`, `tags`, `note` |
 | `tally.py` | the counts by category and cause, and the projected fail share as the plan's steps land |
 | `build_runs.py` | rebuilds the run lists from `sample.json` |
+| `photo_roles.json` | the role of each listing's first eight photos (1,228 photos of 346 listings), labelled by eye: what `photo_roles.js` is held to, and what its examples are built from |
 
 ## The groups
 
@@ -68,3 +69,30 @@ glaring artefact. Tags name causes (a piece can carry several):
 | `S-front` `S-back` `S-streak` `S-washout` | a shoe's front or back smeared from the side photo; stripes; a light shoe ghostly |
 | `S-open` `S-nofoot` `S-tear` `S-hole` | openings filled; the foot hidden; ragged vamp; see-through holes |
 | `S-heel` `S-toe` `S-blob` `S-tilt` `S-tabi` `S-parts` | heel or toe wrong; lumpy shape; an angled photo read as a heel; a split toe or a part lost |
+
+## Photo roles (step 1 of the plan)
+
+Every listing photo gets a role before it's read (`app/javascript/lib/garments/photo_roles.js`). The labels in
+`photo_roles.json` are the truth it's held to, letter by photo: `F` flat_front (a shoe: its side), `B`
+flat_back, `M` on_model, `C` closeup, `S` sole, `A` angled, `P` pair, `V` view (a shoe square on from above,
+behind or in front), `T` tag, `O` other; `foreign` lists photos of another garment in a listing (a liner),
+which must never be its back. In the page at `http://localhost:3000`, with `script/validation/photo_roles_*.js`
+copied to `public/validation/` and the labels beside them as `photo_roles_truth.json` (and `sample.json` as
+`sample_20261107.json`):
+
+    const C = await import("/validation/photo_roles_crawl.js"); await C.crawl(); await C.save()  // ~30 min, once
+    const E = await import("/validation/photo_roles_eval.js"); await E.colours()
+    E.evaluate({ centroids: 4 })   // each listing held out, its photos read against the others' examples
+    E.before()                     // the photo choice before photo_roles.js, on the same labels
+    E.pack({ centroids: 4 })       // the examples photo_role_examples.js ships
+    const K = await import("/validation/photo_roles_check.js"); await K.check(); K.report()   // step 1's gate
+
+`check()` reads every listing as the import does (the controller's `readShop`) and `report()` lists any front
+(or shoe side) that isn't the garment on its own, any back that isn't its back, any close-up that isn't one,
+with the time the roles took. Kith turns a browser away for a while after a few hundred quick requests; `check`
+pauses between listings and takes up where it stopped.
+
+A remote session that can't reach the browser's downloads saves its runs with `script/validation/export_log.js`
+in place of `export.js` (each run's sheet and record are posted to the dev server, which writes them into
+`log/development.log`), then `python3 script/validation/collect_log.py <tag>` takes them out into
+`tmp/kith/<tag>/raw`.

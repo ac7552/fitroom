@@ -169,6 +169,9 @@ class GarmentImportTest < ActiveSupport::TestCase
     assert_equal "sweater", top("Wyona Sweater")[:style]
     assert_equal "sweater", top("Merino Crewneck Sweater")[:style]
     assert_equal "shortknit", top("Mock Neck Short Sleeve Sweater")[:style]
+    # Kith files a turtleneck under "Turtlenecks", which named nothing it knew: it's a knit top.
+    assert_equal "top", GarmentImport.new.send(:kind_of, { name: "&Kin Interlock Cyrus Turtleneck - Black", category: "Turtlenecks", tags: %w[Apparel apparels] })
+    assert_equal [ "top", "sweater" ], top("&Kin Interlock Cyrus Turtleneck - Black", "Turtlenecks").values_at(:garment, :style)
     assert_equal "shirt", GarmentImport.new.send(:style_of, { name: "Ell Denim Ford Jacket - Black", category: "Jackets" }, "x")
     assert_equal "shirt", GarmentImport.new.send(:style_of, { name: "Japanese Denim Trucker Jacket", category: "Jackets", description: "Zip pocket at the chest." }, "x")
     assert_equal "jacket", GarmentImport.new.send(:kind_of, { name: "Willy Chavarria Bad Boy Track Jacket - Peacoat", category: "Jackets" })

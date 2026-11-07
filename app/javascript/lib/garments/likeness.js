@@ -13,9 +13,9 @@ import { remoteEmbedding, visionUrl } from "lib/garments/vision"
 
 const MODEL = "onnx-community/dinov2-small"
 
-let loading = null
+let loading = null, loaded = false
 function load() {
-  loading ??= loadPhotoModel(t => t.AutoModel, MODEL, "dino").catch(error => { loading = null; throw error })
+  loading ??= loadPhotoModel(t => t.AutoModel, MODEL, "dino").then(m => { loaded = true; return m }).catch(error => { loading = null; throw error })
   return loading
 }
 
@@ -39,17 +39,54 @@ async function score(a, b) {
   // The summaries from the vision service when the server has one (vision.js), else the model here.
   let x = null, y = null
   if (visionUrl()) [x, y] = await Promise.all([remoteEmbedding(a), remoteEmbedding(b)])
-  if (!x || !y) {
-    const { t, model, processor } = await load()
-    const summary = async pixels => {
-      const image = new t.RawImage(new Uint8ClampedArray(pixels.data), pixels.width, pixels.height, 4).rgb()
-      const inputs = await processor(image)
-      const { last_hidden_state: hidden } = await model(inputs)
-      return Array.from(hidden.data.slice(0, hidden.dims[2]))
-    }
-    ;[x, y] = [await summary(a), await summary(b)]
-  }
+  if (!x || !y) [x, y] = [await summary(a), await summary(b)]
+  return cosine(x, y)
+}
+
+// The model's summary of one picture (ImageData or { data, width, height } RGBA): its CLS token, 384 numbers.
+async function summary(pixels) {
+  const { t, model, processor } = await load()
+  const image = new t.RawImage(new Uint8ClampedArray(pixels.data), pixels.width, pixels.height, 4).rgb()
+  const inputs = await processor(image)
+  const { last_hidden_state: hidden } = await model(inputs)
+  return Array.from(hidden.data.slice(0, hidden.dims[2]))
+}
+
+export function cosine(x, y) {
   let dot = 0, nx = 0, ny = 0
   for (let i = 0; i < x.length; i++) { dot += x[i] * y[i]; nx += x[i] * x[i]; ny += y[i] * y[i] }
   return dot / Math.sqrt(nx * ny || 1)
+}
+
+// One picture's summary (as above), for photo_roles.js to hold to its examples, or null when the model
+// can't be had within `timeout` ms (the first time, it loads: see the top). The model is loaded once.
+export async function photoSummary(pixels, { timeout = 8000 } = {}) {
+  try {
+    const remote = visionUrl() ? await remoteEmbedding(pixels).catch(() => null) : null
+    if (remote) return remote
+    return await Promise.race([summary(pixels), new Promise(resolve => setTimeout(() => resolve(null), timeout))])
+  } catch {
+    return null
+  }
+}
+
+// Whether the model is loaded already (or the server's is there): a summary then takes a tenth of a second
+// on a graphics card.
+export function likenessReady() {
+  return Boolean(visionUrl()) || loaded
+}
+
+// Whether the model is ready within `ms` (it starts loading now if it hasn't): photo_roles.js's examples are
+// held to its summaries only then, so a first visit doesn't wait on the download.
+export async function likenessWithin(ms) {
+  if (likenessReady()) return true
+  warmLikeness()
+  if (!loading) return false
+  return await Promise.race([loading.then(() => true, () => false), new Promise(resolve => setTimeout(() => resolve(false), ms))])
+}
+
+// Whether a summary is quick (a graphics card, or the server's model): a tenth of a second, not two.
+export async function likenessQuick() {
+  if (visionUrl()) return true
+  try { return (await load()).device === "webgpu" } catch { return false }
 }

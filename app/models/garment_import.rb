@@ -35,7 +35,7 @@ class GarmentImport
   # (Not a "bodysuit", a "catsuit", or a tracksuit's or jumpsuit's top.)
   JACKETS = /jacket|blazer|(?<!body)(?<!cat)(?<!track)(?<!jump)(?<!swim)(?<!play)(?<!boiler)(?<!flight)(?<!sweat)suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket|puffer|windbreaker|anorak|gilet|blouson|shrug|bolero/i
   # T-shirts, shirts, polos, sweatshirts, hoodies and knitwear: worn on the body, under a jacket.
-  TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b|bodysuit|quarter[- ]?zip|half[- ]?zip|1\/4[- ]?zip/i
+  TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b|bodysuit|quarter[- ]?zip|half[- ]?zip|1\/4[- ]?zip|turtle ?necks?|mock ?necks?|roll ?necks?/i
   # How a top looks, for drawing it: the first match in its name wins, then in its category, else a tee.
   # "T-shirt" is checked before "shirt", so a T-shirt is never drawn as a button-up.
   TOP_STYLES = [
@@ -48,7 +48,7 @@ class GarmentImport
     [ "cardigan", /cardigan/i ],
     [ "longsleeve", /long[- ]?sleeve.*\b(t[- ]?shirt|tee)|\b(t[- ]?shirt|tee)s?\b.*long[- ]?sleeve/i ],
     [ "tee", /\bt[- ]?shirts?\b|\btees?\b|\bundershirts?\b/i ],
-    [ "sweater", /sweater|jumper|knit\b|knitted|cashmere crew|merino/i ],
+    [ "sweater", /sweater|jumper|knit\b|knitted|cashmere crew|merino|turtle ?neck|roll ?neck/i ],
     [ "sweatshirt", /sweatshirt|pullover|crew ?neck|fleece/i ],
     [ "shortshirt", /short[- ]?sleeve.*shirt|\bs\/s\b.*shirt|camp[- ]?(collar|shirt)|bowling shirt|aloha|hawaiian|resort shirt/i ],
     # (A "Long Sleeve Shirt" is a button-up; a long-sleeve T-shirt was caught above.)
