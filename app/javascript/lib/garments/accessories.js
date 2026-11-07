@@ -1158,6 +1158,30 @@ export function heelRise(mesh, ankle, heel, floor) {
   return { angle, lift: Math.max(0, lift) }
 }
 
+// The rise for a heel before the shoe is built (a shoe shaped from its photo stands as photographed, so the
+// foot is pitched first and the shoe built round it): from the foot's own reach, with the toe room, as
+// heelRise reads it off a mesh. ankle: the foot bone's world position; heel: m.
+export function riseForHeel(body, frame, side, heel, ankle, style = {}) {
+  if (!(heel > 0) || !ankle) return null
+  const s = (frame.top - frame.floor) / BODY_HEIGHT, floor = frame.floor
+  const slices = legSlices(body, frame, side, floor + 0.06 * s)
+  let zmin = Infinity, zmax = -Infinity
+  for (let k = 0; k < slices.rows && k * STEP < 0.05 * s; k++) for (let j = 0; j < AROUND; j++) {
+    const z = slices.centres[k][1] + slices.reach[k][j] * Math.cos(angleOf(j))
+    zmin = Math.min(zmin, z); zmax = Math.max(zmax, z)
+  }
+  if (!Number.isFinite(zmin)) return null
+  const back = zmin - ((style.thick ?? 0.007) + 0.003) * s, front = zmax + ((style.thick ?? 0.007) + (style.toe ?? 0.014)) * s
+  const length = front - back
+  const angle = Math.asin(Math.min(heel, length * 0.62) / length)
+  // The body lifted so the ball of the foot (7/10 of the way from heel to toe) stays on the floor, as in a
+  // heeled shoe a foot flexes at the ball and its toes lie flat; the mannequin's rigid toes dip below the
+  // floor into the shoe's toe box, where they aren't drawn (stage.js's coverFeet).
+  const ball = back + 0.7 * length
+  const lift = (ball - ankle.z) * Math.sin(angle) - (ankle.y - floor) * (1 - Math.cos(angle))
+  return { angle, lift: Math.max(0, lift) }
+}
+
 // The stem under a heeled shoe's heel, from the shoe as it's posed (pitched, in the scene) straight down to
 // the floor, in world space: the heel end of the sole's underside, drawn in toward its middle by `stem` (1 a
 // block heel the width of the heel, 0.35 a stiletto), walls down to the floor and a cap. reach: how much of

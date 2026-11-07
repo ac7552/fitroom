@@ -28,6 +28,10 @@ MAP = {
 class Handler(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         path = path.split("?", 1)[0]
+        # The photo tools' hosted copies (transformers.js, ONNX Runtime, the models), as the droplet serves them from
+        # /vendor: from tmp/vendor when a file is there (fetched by hand for the harness), else the repo's vendor.
+        if path.startswith("/vendor/") and (ROOT / "tmp/vendor" / path[len("/vendor/"):]).exists():
+            return str(ROOT / "tmp/vendor" / path[len("/vendor/"):])
         for prefix, folder in MAP.items():
             if path.startswith(prefix):
                 file = folder / path[len(prefix):]
@@ -45,6 +49,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def guess_type(self, path):
         if str(path).endswith((".js", ".mjs")):
             return "text/javascript"
+        if str(path).endswith(".wasm"):
+            return "application/wasm"
         return super().guess_type(path)
 
     def log_message(self, *args):

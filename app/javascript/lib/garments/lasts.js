@@ -31,9 +31,10 @@ export const FAMILIES = {
 export function familyFromWords(words, style = "sneaker") {
   const w = String(words ?? "")
   const rules = [
+    // (A sneaker's "padded heel" or "heel tab" isn't a heel: a pump's is named, measured or plural.)
+    ["pump", /\bpumps?\b|stiletto|\bheels\b|heel height|(?:high|kitten|block|stacked|covered|cone|slim|sculpted|flared|platform|\d+(?:\.\d+)?\s?(?:"|”|in(?:ch)?|mm|cm)?)[- ]heel\b|\bkitten\b|heeled|\b\d{2,3} mule/i],
     ["slide", /\bslides?\b|\bmules?\b|\bclogs?\b|\bslippers?\b/i],
     ["sandal", /sandals?|flip[- ]?flops?|birkenstock/i],
-    ["pump", /\bpumps?\b|stiletto|\bheels?\b|platform heel|kitten/i],
     ["flat", /ballet|ballerina|\bflats?\b|mary jane/i],
     ["tall", /rain boots?|wellington|wellies?|dry boot|rubber boot|galosh|knee[- ]high|over[- ]the[- ]knee|thigh[- ]high|tall boot|riding boot|boot high\b/i],
     ["chelsea", /chelsea|zip boot|ankle boot|boot(?!ie).*(?:leather|suede)(?!.*(?:combat|hiking|lace))/i],
@@ -73,7 +74,13 @@ export function measureSide(side) {
   // toe, a boot's; 0.08: a pointed one).
   const front = side.front ?? []
   const taper = front.length ? Math.max(0, (front[1] ?? front[0] ?? 1) - (front[Math.round(front.length * 0.3)] ?? 1)) : 0
-  return { sole, collar, taper, heelRise: Math.max(0, sole.heel - sole.ball), tall: tallAt(0.5) / H }
+  // A heel's rise: the sole thicker at the heel than the ball (a block heel, a wedge, read by colour), or the
+  // shoe's underside standing clear of the floor behind the ball (a stem: the shank between the heel's tip
+  // and the ball rises toward the heel, as high as the heel where it meets the stem).
+  let shank = 0
+  for (let u = 0.12; u <= 0.6; u += 0.02) shank = Math.max(shank, (floor - at(side.bottom, u)) / H)
+  const heelRise = Math.max(0, sole.heel - sole.ball, shank)
+  return { sole, collar, taper, heelRise, shank, tall: tallAt(0.5) / H }
 }
 
 // The last for a shoe: its family's defaults, then what the photo measured laid over them (in metres for a

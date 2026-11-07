@@ -6,7 +6,7 @@
 //
 // Options: --query (the page address's, e.g. "still=off// Options: --items JSONcoarse=off"), --items JSON (see stage.js#setOutfit; sizes in cm), --body men|women, --measures JSON (cm),
 // --scene dark|daylight|studio, --pose standing|relaxed|walking|arms_out, --view mannequin|ghost|fit,
-// --tucked, --turn RADIANS (camera round the figure), --width/--height (picture), --script FILE (a JS module
+// --tucked, --turn RADIANS (camera round the figure), --focus feet (close on the shoes), --width/--height (picture), --script FILE (a JS module
 // run in the page after the drape, with window.stage), --photo (use stage.photo, sharper, rather than a
 // screenshot), --also-side (a second picture from the wearer's left, "-side.png"), --also-back (another from
 // behind, "-back.png").
@@ -41,7 +41,7 @@ await page.evaluate(([w, h]) => { const s = document.querySelector(".stage"); s.
 await page.waitForFunction(() => window.stageReady, null, { timeout: 120000 })
 
 const began = Date.now()
-const result = await page.evaluate(async ({ items, body, measures, scene, pose, view, tucked, turn, script }) => {
+const result = await page.evaluate(async ({ items, body, measures, scene, pose, view, tucked, turn, focus, script }) => {
   const stage = window.stage
   stage.drapeBudget = 1000
   if (scene) stage.setScene(scene)
@@ -72,11 +72,22 @@ const result = await page.evaluate(async ({ items, body, measures, scene, pose, 
   // tucked into are; and finish the clothes' fade in: caught part way, a garment can be all but invisible.)
   for (let i = 0; i < 2; i++) stage.advanceDrape()
   stage.finishFades?.()
+  if (focus === "feet") {
+    // Close on the feet (after the script, whose outfit reframes the camera): the target at ankle height, a
+    // quarter of the way out.
+    stage.cameraMove = null; stage.turn = null
+    const t = stage.controls.target, p = stage.camera.position
+    const floor = stage.meshes?.body ? new (await import("three")).Box3().setFromObject(stage.meshes.body).min.y : 0
+    const dx = p.x - t.x, dy = p.y - t.y, dz = p.z - t.z
+    t.set(t.x, floor + 0.09, t.z)
+    p.set(t.x + dx * 0.22, t.y + 0.12, t.z + dz * 0.22)
+    stage.controls.update()
+  }
   for (let i = 0; i < 3; i++) { stage.wearBelt?.(); stage.wearScarf?.(); stage.wearCollars?.(); stage.hideCovered?.(); stage.draw() }
   stage.visible = false
   if (stage.frameId) { cancelAnimationFrame(stage.frameId); stage.frameId = null }
   return { settled: stage.settled, extra }
-}, { items, body, measures, scene: args.scene, pose: args.pose, view: args.view, tucked: args.tucked, turn: args.turn, script: args.script ? `/harness/${args.script}` : null })
+}, { items, body, measures, scene: args.scene, pose: args.pose, view: args.view, tucked: args.tucked, turn: args.turn, focus: args.focus, script: args.script ? `/harness/${args.script}` : null })
 console.log(`draped in ${Math.round((Date.now() - began) / 1000)}s, settled: ${result.settled}`, result.extra ? JSON.stringify(result.extra) : "")
 
 async function snap(file) {

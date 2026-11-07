@@ -5,6 +5,7 @@ import { findPrint, garmentMask, measureDressMask, readPhoto, readBottomPhoto, r
 import { compareLooks, compareShapes, croppedLengths, nextReading, PLAIN, reshaped } from "lib/garments/look_check"
 import { constructionFrom, dressSleeves, fitChart, readOutline } from "lib/garments/photo_fit"
 import { likeness, warmLikeness } from "lib/garments/likeness"
+import { depthForSide } from "lib/garments/depth"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto, wornSleeves } from "lib/garments/segment"
 import { legPrintAtlas, readLegPrints } from "lib/garments/leg_prints"
@@ -267,6 +268,13 @@ export default class extends Controller {
           if (read.collar) garment.collar = read.collar
           if (read.side) garment.shoeSide = read.side
           if (item.fit) this.render()
+          // The side photo's depth (depth.js) gives the shoe its relief; it comes a moment later, and the
+          // shoe is rebuilt with it. Without it (no network, an old browser) the shoe stays as it is.
+          if (read.side) depthForSide(garment.photo, read.side).then(depth => {
+            if (!depth || this.outfit[kind] !== item) return
+            garment.shoeDepth = depth
+            if (item.fit) this.render()
+          }).catch(() => {})
         }).catch(() => {})
       }
       return
@@ -1941,6 +1949,7 @@ export default class extends Controller {
       shoeSide: kind === "shoes" ? garment.shoeSide ?? null : null,
       shoePhoto: kind === "shoes" && garment.shoeSide ? garment.photo : null,
       shoeViews: kind === "shoes" && garment.shoeSide ? garment.shoeViews ?? null : null,
+      shoeDepth: kind === "shoes" && garment.shoeSide ? garment.shoeDepth ?? null : null,
       onePiece: Boolean(garment.one_piece),
       bodysuit: Boolean(garment.bodysuit),
       puffer: Boolean(garment.puffer),

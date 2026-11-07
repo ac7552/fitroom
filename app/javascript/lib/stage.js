@@ -15,7 +15,7 @@ import { bodyFrame } from "lib/garments/body"
 import { RemoteDrape } from "lib/garments/remote_drape"
 import { hangerSpec } from "lib/garments/hanger"
 import { HangTrial, TRIALS, TRIAL_ON } from "lib/garments/silhouette"
-import { accessoryMaterial, beltGeometry, buckleGeometry, heelRise, heelStemGeometry, outlineOf, photoShoeGeometry, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
+import { accessoryMaterial, beltGeometry, buckleGeometry, heelRise, heelStemGeometry, outlineOf, photoShoeGeometry, riseForHeel, shoeGeometry, sockGeometry, strapGeometry, wrapShoePhoto } from "lib/garments/accessories"
 import { shoeTexture, viewTexture } from "lib/garments/print"
 import { lastFor, shaftShare } from "lib/garments/lasts"
 import { hullGeometry } from "lib/garments/hull"
@@ -482,7 +482,7 @@ export class FittingStage {
   // Shoes and socks, lofted round the mannequin's feet and legs as they stand (see accessories.js), then hung
   // on the calves' bones so they move with the legs. Rebuilt when the body or what's worn changes.
   dressFeet(shoes, socks) {
-    const key = JSON.stringify([shoes && [shoes.style, shoes.name, shoes.words, shoes.color, shoes.sole, shoes.fabric, shoes.shoeSide, (shoes.shoeViews ?? []).map(v => v.kind)], socks && [socks.style, socks.color],
+    const key = JSON.stringify([shoes && [shoes.style, shoes.name, shoes.words, shoes.color, shoes.sole, shoes.fabric, shoes.shoeSide, (shoes.shoeViews ?? []).map(v => v.kind), Boolean(shoes.shoeDepth)], socks && [socks.style, socks.color],
       this.fitted.scale, this.fitted.influences, this.bodyType])
     if (key === this.feet.key) return
     this.feet.key = key
@@ -499,8 +499,8 @@ export class FittingStage {
     const pose = this.pose
     this.pose = "standing"
     this.applyPose()
-    const body = bodySnapshot(this.meshes.body)
-    const frame = bodyFrame(body)
+    let body = bodySnapshot(this.meshes.body)
+    let frame = bodyFrame(body)
     // The shoe's last (lasts.js): its family from the listing's words, its sole, heel, collar and toe
     // from the side photo, over the drawing style.
     const made = shoes && lastFor(shoes.words ?? `${shoes.name ?? ""} ${shoes.family ?? ""}`, shoes.style, shoes.shoeSide)
@@ -516,6 +516,20 @@ export class FittingStage {
       }
     }
     const heeled = last?.heel > 0.012
+    // A shoe shaped from its photo (hull.js) stands as photographed, heel and all: the foot is pitched to
+    // the heel first, the body lifted so the toe stays on the floor, and the shoe built round the foot as
+    // it then stands, hung on the foot's bone.
+    const photoShaped = Boolean(shoes?.shoeSide)
+    if (photoShaped && heeled) {
+      const ankle = this.model.getObjectByName("foot_l")?.getWorldPosition(new THREE.Vector3())
+      this.feet.rise = riseForHeel(body, frame, "L", last.heel * (frame.top - frame.floor) / 1.76, ankle, last)
+      if (this.feet.rise) {
+        this.applyPose()
+        body = bodySnapshot(this.meshes.body)
+        // (The floor stays the floor: the pitched foot's toes dip below it, into the toe box.)
+        frame = { ...bodyFrame(body), floor: frame.floor }
+      }
+    }
     // Hung on the calf's bone, to move with the leg; a heeled shoe on the foot's, which the heel pitches.
     const hang = (mesh, side, onFoot = false) => {
       mesh.castShadow = mesh.receiveShadow = true
@@ -545,18 +559,23 @@ export class FittingStage {
         eyelets.roughness = 0.35
         // Built from the shop's side photo when there's one (see accessories.js), else from the style alone.
         const relief = !(shoes.shoeViews ?? []).some(v => v.kind === "top")
-        // With the shop's other views (front, back, above) the shoe's shape is carved from all of them
-        // (hull.js); with the side photo alone it's lofted from that; with none, drawn from the style.
+        // With a side photo the shoe's shape is carved from it and the shop's other views (hull.js: the
+        // outline exact, the visible side's relief from the photo's depth, the far side mirrored, the width
+        // from a top, front or back photo when there is one); with none, drawn from the style.
         const views = (shoes.shoeViews ?? []).filter(v => v.shoes?.[0]?.silhouette)
-        const geometry = (shoes.shoeSide && views.length && hullGeometry(body, frame, side, shoes.shoeSide, views, last))
-          || (shoes.shoeSide && photoShoeGeometry(body, frame, side, shoes.shoeSide, last, { laces: relief })) || shoeGeometry(body, frame, side, last)
+        const geometry = (photoShaped && hullGeometry(body, frame, side, shoes.shoeSide, views, last, { depth: shoes.shoeDepth ?? null }))
+          || (photoShaped && photoShoeGeometry(body, frame, side, shoes.shoeSide, last, { laces: relief })) || shoeGeometry(body, frame, side, last)
         this.feet.shoes[side] = hang(new THREE.Mesh(geometry, [sole, upper, laces, collar, eyelets]), side, heeled)
-        if (shoes.style === "sandal") hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side, heeled)
+        if (shoes.style === "sandal" && !photoShaped) hang(new THREE.Mesh(strapGeometry(body, frame, side), upper.clone()), side, heeled)
       }
     }
+    // The mannequin's foot is rigid and its toes thick, and a shoe keeps its photo's shape; where the foot
+    // would show through the shoe, under its topline (and a little over it at the toe box), the skin isn't
+    // drawn. An open sandal shows the whole foot.
+    this.coverFeet(body, frame, shoes && last.family !== "sandal" ? this.feet.shoes : null)
     // A heel: the foot pitched toes down by the heel's height (see accessories.js's heelRise), the body
     // lifted to keep the toe on the floor, and a stem built under each heel as it then stands.
-    if (heeled) {
+    if (heeled && !photoShaped) {
       const ankle = this.model.getObjectByName("foot_l")?.getWorldPosition(new THREE.Vector3())
       this.feet.rise = ankle && heelRise(this.feet.shoes.L, ankle, last.heel * (frame.top - frame.floor) / 1.76, frame.floor)
       if (this.feet.rise) {
@@ -574,6 +593,36 @@ export class FittingStage {
     this.pose = pose
     this.applyPose()
     if (shoes?.shoePhoto && shoes.shoeSide) this.wearShoePhoto(shoes, key)
+  }
+
+  // Marks the body's points inside the shoes (see dressFeet): _cover_shoe, which mannequinMaterial hides.
+  coverFeet(body, frame, shoes) {
+    const geometry = this.meshes.body.geometry
+    const n = geometry.attributes.position.count
+    let attribute = geometry.getAttribute("_cover_shoe")
+    if (!attribute || attribute.count !== n) { attribute = new THREE.Float32BufferAttribute(new Float32Array(n), 1); geometry.setAttribute("_cover_shoe", attribute) }
+    const cover = attribute.array
+    cover.fill(0)
+    const photos = shoes && ["L", "R"].map(side => [side, shoes[side]?.geometry.userData.photo]).filter(([, p]) => p?.within)
+    if (photos?.length) {
+      const s = (frame.top - frame.floor) / 1.76
+      for (let i = 0; i < n; i++) {
+        const x = body.positions[3 * i], y = body.positions[3 * i + 1], z = body.positions[3 * i + 2]
+        if (y > frame.floor + 0.25 * s) continue
+        for (const [side, p] of photos) {
+          if ((side === "L") !== x > 0 || Math.abs(x - p.centreX) > p.widest + 0.01 * s) continue
+          const u = (z - p.back) / p.length
+          if (u < -0.02 || u > 1.02) continue
+          // Hidden under the shoe's topline, where its walls rise round the foot (hull.js); over the toe box
+          // (the front 40%) the rigid toes may stand proud of a low shoe, and are hidden with shoe beneath.
+          let hidden = y <= p.top(Math.min(1, Math.max(0, u)))
+          if (!hidden && u > 0.6) for (let d = 0.004 * s; !hidden && d <= 0.03 * s; d += 0.004 * s) hidden = p.within(x, y - d, z)
+          if (hidden) { cover[i] = 1; break }
+        }
+      }
+    }
+    attribute.needsUpdate = true
+    this.meshes.body.material.userData.hideShoe.value = photos?.length ? 1 : 0
   }
 
   // The shop's side photo on the shoes, once it's read: the logo, stitching and sole as photographed, where
@@ -2571,25 +2620,29 @@ function mannequinMaterial() {
   const hideJacket = { value: 0 }
   const hideCasual = { value: 0 }
   const hideTrousers = { value: 0 }
+  const hideShoe = { value: 0 }
   // Both sides drawn, so where the neck is cut and meets the egg's neck, any sliver of the inside is white too.
   const finish = { color: 0xf4f2ee, ...WHITE_FINISH, metalness: 0, side: THREE.DoubleSide }
   const material = new THREE.MeshPhysicalMaterial(finish)
-  material.userData = { hideJacket, hideCasual, hideTrousers, plain: new THREE.MeshPhysicalMaterial(finish) }
+  material.userData = { hideJacket, hideCasual, hideTrousers, hideShoe, plain: new THREE.MeshPhysicalMaterial(finish) }
   material.onBeforeCompile = shader => {
     shader.uniforms.uHideJacket = hideJacket
     shader.uniforms.uHideCasual = hideCasual
     shader.uniforms.uHideTrousers = hideTrousers
+    shader.uniforms.uHideShoe = hideShoe
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", `#include <common>
         attribute float _cover_jacket;
         attribute float _cover_casual;
         attribute float _cover_trousers;
+        attribute float _cover_shoe;
         varying float vCovered;
         uniform float uHideJacket;
         uniform float uHideCasual;
-        uniform float uHideTrousers;`)
+        uniform float uHideTrousers;
+        uniform float uHideShoe;`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
-        vCovered = max(max(_cover_jacket * uHideJacket, _cover_casual * uHideCasual), _cover_trousers * uHideTrousers);`)
+        vCovered = max(max(max(_cover_jacket * uHideJacket, _cover_casual * uHideCasual), _cover_trousers * uHideTrousers), _cover_shoe * uHideShoe);`)
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", "#include <common>\nvarying float vCovered;")
       .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>

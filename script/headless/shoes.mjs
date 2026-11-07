@@ -22,10 +22,15 @@ export default async function (stage) {
   }
   const words = P.get("words") ?? P.get("name") ?? ""
   const last = lastFor(words, style, read?.side)
+  // The side photo's depth (depth.js), for the shoe's relief; ?depth=off skips it.
+  const { depthForSide } = await import("lib/garments/depth")
+  const tDepth = performance.now()
+  const depth = read?.side && P.get("depth") !== "off" ? await depthForSide(photo, read.side) : null
+  const depthMs = Math.round(performance.now() - tDepth)
   stage.setOutfit([
     { kind: "top", style: "tee", size: { chest: 106, shoulders: 47, sleeve: 21, length: 72 }, color: "#b33a3a", fabric: "cotton" },
     { kind: "shoes", style, fabric: P.get("fabric") ?? "leather", color: read?.color ?? "#c9a66b", sole: read?.sole ?? null, collar: read?.collar ?? null,
-      size: {}, name: P.get("name") ?? "", words, shoeSide: read?.side ?? null, shoePhoto: read?.side ? photo : null, shoeViews: views }
+      size: {}, name: P.get("name") ?? "", words, shoeSide: read?.side ?? null, shoePhoto: read?.side ? photo : null, shoeViews: views, shoeDepth: depth }
   ])
   const deadline = Date.now() + 240000
   while (!stage.settled && Date.now() < deadline) { stage.advanceDrape(); await new Promise(r => setTimeout(r, 0)) }
@@ -35,7 +40,7 @@ export default async function (stage) {
   const rise = stage.feet.rise && { angle: round(stage.feet.rise.angle, 3), lift: round(stage.feet.rise.lift) }
   const shoe = stage.feet.shoes.L
   const out = {
-    family: last.family, rise,
+    family: last.family, rise, depth: depth ? { size: [depth.w, depth.h], ms: depthMs } : null,
     params: Object.fromEntries(Object.entries(last.params).map(([k, v]) => [k, round(v)])),
     measured: m && { sole: m.sole, collar: m.collar, taper: round(m.taper, 3), heelRise: round(m.heelRise, 3) }
   }
@@ -111,6 +116,26 @@ export default async function (stage) {
   const { bodyFrame } = await import("lib/garments/body")
   const { legSlices } = await import("lib/garments/accessories")
   const snap = bodySnapshot(stage.meshes.body), frame = bodyFrame(snap)
+  // Where the left foot is (its skin below 12 cm, on the shoe's side), against the shoe: a seated foot's box
+  // sits inside the shoe's, and its toes don't reach past the shoe's.
+  {
+    const fb = new THREE.Box3()
+    for (let i = 0; i < snap.positions.length / 3; i++) {
+      const x = snap.positions[3 * i], y = snap.positions[3 * i + 1], z = snap.positions[3 * i + 2]
+      if (y < frame.floor + 0.12 && x > 0) fb.expandByPoint(new THREE.Vector3(x, y, z))
+    }
+    out.foot = { y: [round(fb.min.y), round(fb.max.y)], z: [round(fb.min.z), round(fb.max.z)], x: [round(fb.min.x), round(fb.max.x)], floor: round(frame.floor) }
+    // How much of the foot's skin is outside the shoe's side silhouette (y–z), over the toes and the vamp.
+    let outside = 0, all = 0
+    for (let i = 0; i < snap.positions.length / 3; i++) {
+      const x = snap.positions[3 * i], y = snap.positions[3 * i + 1], z = snap.positions[3 * i + 2]
+      if (!(y < frame.floor + 0.08 && x > 0)) continue
+      all++
+      const gx = Math.floor((z - lo[0]) / 0.002), gy = Math.floor((y - lo[1]) / 0.002)
+      if (gx < 0 || gy < 0 || gx >= side.w || gy >= side.h || !side.grid[gy * side.w + gx]) outside++
+    }
+    out.foot.outsideShare = round(outside / (all || 1), 3)
+  }
   const slices = legSlices(snap, frame, "L", frame.floor + 0.5)
   const legWidth = y => {
     const k = Math.round((y - frame.floor) / 0.005)

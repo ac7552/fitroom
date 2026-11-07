@@ -1,0 +1,1094 @@
+{
+"date": "2026-11-06",
+"code": "a5da4e4",
+"rows": [
+{
+"handle": "ran70310-177",
+"collection": "womens-footwear-boots",
+"title": "Rains WMNS The Dry Boot - Bark",
+"side": true,
+"views": [],
+"family": "tall",
+"ms": 1355,
+"readMs": 784,
+"rise": null,
+"heel": 0.004,
+"iou": 0.935,
+"front": {
+"8cm": 1.98
+},
+"height": 0.14
+},
+{
+"handle": "ran70310-01",
+"collection": "womens-footwear-boots",
+"title": "Rains WMNS The Dry Boot - Black",
+"side": true,
+"views": [],
+"family": "tall",
+"ms": 9234,
+"readMs": 854,
+"rise": null,
+"heel": 0.003,
+"iou": 0.919,
+"front": {
+"8cm": 1.98
+},
+"height": 0.139
+},
+{
+"handle": "ran70220-157",
+"collection": "womens-footwear-boots",
+"title": "Rains WMNS The Dry Boot High - Black Gloss",
+"side": true,
+"views": [],
+"family": "tall",
+"ms": 16821,
+"readMs": 1751,
+"rise": null,
+"heel": 0,
+"iou": 0.807,
+"front": {
+"8cm": 1.63,
+"15cm": 1.34
+},
+"height": 0.416
+},
+{
+"handle": "ug1180628-blk",
+"collection": "womens-footwear-boots",
+"title": "UGG WMNS Classic Ultra Mini Western - Black",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 20803,
+"readMs": 1822,
+"rise": null,
+"heel": 0.007,
+"iou": 0.923,
+"front": {
+"8cm": 1.54
+},
+"height": 0.113
+},
+{
+"handle": "ug1180628-bcdr",
+"collection": "womens-footwear-boots",
+"title": "UGG WMNS Classic Ultra Mini Western - Burnt Cedar",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 14660,
+"readMs": 1783,
+"rise": null,
+"heel": 0,
+"iou": 0.907,
+"front": {
+"8cm": 1.51
+},
+"height": 0.115
+},
+{
+"handle": "ug1116109-prtbl",
+"collection": "womens-footwear-boots",
+"title": "UGG WMNS Classic Ultra Mini - Portobello",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 15945,
+"readMs": 1842,
+"rise": null,
+"heel": 0,
+"iou": 0.921,
+"front": {
+"8cm": 1.54
+},
+"height": 0.11
+},
+{
+"handle": "ugg1178990-lbnz",
+"collection": "womens-footwear-boots",
+"title": "UGG WMNS Classic Mini Dipper Legwarmer Boot - Light Bronze",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "pump",
+"ms": 26515,
+"readMs": 1927,
+"rise": null,
+"heel": 0,
+"iou": 0.964,
+"front": {
+"8cm": 2.07,
+"15cm": 1.87
+},
+"height": 0.249
+},
+{
+"handle": "ugg1178990-rbnc",
+"collection": "womens-footwear-boots",
+"title": "UGG WMNS Classic Mini Dipper Legwarmer Boot - Ribbon Candy",
+"side": true,
+"views": [
+"back"
+],
+"family": "pump",
+"ms": 32712,
+"readMs": 2141,
+"rise": null,
+"heel": 0.005,
+"iou": 0.97,
+"front": {
+"8cm": 2,
+"15cm": 1.82
+},
+"height": 0.253
+},
+{
+"handle": "ugg1182132-blk",
+"collection": "womens-footwear-boots",
+"title": "UGG WMNS Classic Ultra Tall - Black",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 47715,
+"readMs": 1111,
+"rise": null,
+"heel": 0,
+"iou": 0.78,
+"front": {
+"8cm": 2.05,
+"15cm": 1.77
+},
+"height": 0.351
+},
+{
+"handle": "ugg1182132-che",
+"collection": "womens-footwear-boots",
+"title": "UGG WMNS Classic Ultra Tall - Chestnut",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 7048,
+"readMs": 1923,
+"rise": null,
+"heel": 0,
+"iou": 0.777,
+"front": {
+"8cm": 2.09,
+"15cm": 1.61
+},
+"height": 0.347
+},
+{
+"handle": "bsosa100-carpl",
+"collection": "womens-footwear-heels",
+"title": "Black Suede Studio Osa 100 Mule - Cardovan",
+"side": true,
+"views": [
+"top"
+],
+"family": "slide",
+"ms": 45938,
+"readMs": 1616,
+"rise": null,
+"heel": 0.002,
+"iou": 0.94,
+"front": {
+"8cm": 2.26
+},
+"height": 0.128
+},
+{
+"handle": "cmk201998-003",
+"collection": "womens-footwear-heels",
+"title": "Camper x Issey Miyake Anna - Black",
+"side": true,
+"views": [
+"back"
+],
+"family": "pump",
+"ms": 20029,
+"readMs": 789,
+"rise": null,
+"heel": 0.003,
+"iou": 0.943,
+"front": {
+"8cm": 1.11
+},
+"height": 0.095
+},
+{
+"handle": "fesicilian-mau",
+"collection": "womens-footwear-heels",
+"title": "Femme LA Sicilian Slipper - Mauve",
+"side": true,
+"views": [],
+"family": "slide",
+"ms": 15983,
+"readMs": 810,
+"rise": null,
+"heel": 0.002,
+"iou": 0.836,
+"front": {},
+"height": 0.086
+},
+{
+"handle": "femaeve-cha",
+"collection": "womens-footwear-heels",
+"title": "Femme LA Maeve Slipper - Champagne",
+"side": true,
+"views": [],
+"family": "slide",
+"error": "Cannot read properties of undefined (reading '0')"
+},
+{
+"handle": "bsbrea-chflp",
+"collection": "womens-footwear-heels",
+"title": "Black Suede Studio Brea 100 Mule - Chili Flake Leather",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "slide",
+"ms": 31732,
+"readMs": 792,
+"rise": null,
+"heel": 0,
+"iou": 0.849,
+"front": {
+"8cm": 1.09
+},
+"height": 0.113
+},
+{
+"handle": "febond-taupe",
+"collection": "womens-footwear-heels",
+"title": "Femme LA Bond Slipper - Taupe",
+"side": true,
+"views": [],
+"family": "slide",
+"ms": 28905,
+"readMs": 1498,
+"rise": null,
+"heel": 0,
+"iou": 0.772,
+"front": {
+"8cm": 1.53
+},
+"height": 0.136
+},
+{
+"handle": "femaeve-plum",
+"collection": "womens-footwear-heels",
+"title": "Femme LA Maeve Slipper - Plum",
+"side": true,
+"views": [
+"top"
+],
+"family": "slide",
+"ms": 29939,
+"readMs": 1040,
+"rise": null,
+"heel": 0.002,
+"iou": 0.909,
+"front": {},
+"height": 0.074
+},
+{
+"handle": "femaeve-blk",
+"collection": "womens-footwear-heels",
+"title": "Femme LA Maeve Slipper - Satin Black",
+"side": true,
+"views": [
+"top"
+],
+"family": "slide",
+"ms": 24005,
+"readMs": 1927,
+"rise": null,
+"heel": 0,
+"iou": 0.851,
+"front": {},
+"height": 0.061
+},
+{
+"handle": "ferio-blk",
+"collection": "womens-footwear-heels",
+"title": "Femme LA Rio Thong Slipper - Noir",
+"side": true,
+"views": [],
+"family": "slide",
+"ms": 12802,
+"readMs": 1734,
+"rise": null,
+"heel": 0,
+"iou": 0.871,
+"front": {
+"8cm": 1.2
+},
+"height": 0.119
+},
+{
+"handle": "bsbrea-bleel",
+"collection": "womens-footwear-heels",
+"title": "Black Suede Studio Brea Mule - Black Eel",
+"side": true,
+"views": [
+"back"
+],
+"family": "slide",
+"ms": 31114,
+"readMs": 1181,
+"rise": null,
+"heel": 0,
+"iou": 0.858,
+"front": {
+"8cm": 1.16
+},
+"height": 0.115
+},
+{
+"handle": "dm43402001",
+"collection": "womens-footwear-derbys",
+"title": "Dr. Martens Lowell Studded Analine Leather Moc Toe - Black Analine",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "pump",
+"ms": 31382,
+"readMs": 2195,
+"rise": null,
+"heel": 0.003,
+"iou": 0.961,
+"front": {
+"8cm": 0.77
+},
+"height": 0.097
+},
+{
+"handle": "dm31816001",
+"collection": "womens-footwear-derbys",
+"title": "Dr. Martens Lowell - Black / Aniline",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 42953,
+"readMs": 1011,
+"rise": null,
+"heel": 0,
+"iou": 0.925,
+"front": {
+"8cm": 1.4
+},
+"height": 0.095
+},
+{
+"handle": "aala8147",
+"collection": "womens-footwear-sneakers",
+"title": "Kith Women Classics for adidas Originals Stan Smith Ballet - Brown / Aurora Coffee",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 12473,
+"readMs": 3084,
+"rise": null,
+"heel": 0,
+"iou": 0.928,
+"front": {},
+"height": 0.074
+},
+{
+"handle": "aala8148",
+"collection": "womens-footwear-sneakers",
+"title": "Kith Women Classics for adidas Originals Stan Smith Ballet - Chalky Brown",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 31825,
+"readMs": 1851,
+"rise": null,
+"heel": 0,
+"iou": 0.876,
+"front": {},
+"height": 0.079
+},
+{
+"handle": "aalm6375",
+"collection": "womens-footwear-sneakers",
+"title": "Kith Classics for adidas Originals Stan Smith One Piece - Chalky Brown",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 20446,
+"readMs": 2956,
+"rise": null,
+"heel": 0.008,
+"iou": 0.905,
+"front": {},
+"height": 0.089
+},
+{
+"handle": "aalm6377",
+"collection": "womens-footwear-sneakers",
+"title": "Kith Classics for adidas Originals Stan Smith One Piece - Brown / Aurora Coffee",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 17069,
+"readMs": 1515,
+"rise": null,
+"heel": 0.008,
+"iou": 0.906,
+"front": {
+"8cm": 1.48
+},
+"height": 0.097
+},
+{
+"handle": "aalm6379",
+"collection": "womens-footwear-sneakers",
+"title": "Kith Classics for adidas Originals Stan Smith One Piece - Core White",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 15632,
+"readMs": 1652,
+"rise": null,
+"heel": 0,
+"iou": 0.91,
+"front": {
+"8cm": 1.35
+},
+"height": 0.093
+},
+{
+"handle": "aalm6376",
+"collection": "womens-footwear-sneakers",
+"title": "Kith Classics for adidas Originals Stan Smith One Piece - Core Black",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 17649,
+"readMs": 1593,
+"rise": null,
+"heel": 0,
+"iou": 0.905,
+"front": {
+"8cm": 1.35
+},
+"height": 0.093
+},
+{
+"handle": "ai1203a537-112",
+"collection": "womens-footwear-sneakers",
+"title": "ASICS GEL-KAYANO 14 - Cream / Pistachio",
+"side": true,
+"views": [],
+"family": "runner",
+"ms": 28704,
+"readMs": 1773,
+"rise": null,
+"heel": 0,
+"iou": 0.907,
+"front": {
+"8cm": 1.46
+},
+"height": 0.098
+},
+{
+"handle": "sl41252900",
+"collection": "womens-footwear-sneakers",
+"title": "Salomon XT-6 ADV - White / Lunar Rock",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 15677,
+"readMs": 2587,
+"rise": null,
+"heel": 0.004,
+"iou": 0.924,
+"front": {
+"8cm": 1.37
+},
+"height": 0.094
+},
+{
+"handle": "nbu509e36b",
+"collection": "womens-footwear-sneakers",
+"title": "New Balance 509 - Stoneware / Thunder Brown / Taffy Blue",
+"side": true,
+"views": [],
+"family": "flat",
+"ms": 28025,
+"readMs": 667,
+"rise": null,
+"heel": 0,
+"iou": 0.93,
+"front": {
+"8cm": 1.37
+},
+"height": 0.097
+},
+{
+"handle": "ai1203a759-103",
+"collection": "womens-footwear-sneakers",
+"title": "ASICS GEL-KAYANO 12.1 - White / Carrier Grey",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "pump",
+"ms": 27903,
+"readMs": 1763,
+"rise": null,
+"heel": 0,
+"iou": 0.939,
+"front": {
+"8cm": 1.1
+},
+"height": 0.093
+},
+{
+"handle": "nwbu992bb",
+"collection": "mens-footwear-sneakers",
+"title": "New Balance Made in USA 992 - Medusa Green / Cortado / Thunder Brown",
+"side": true,
+"views": [
+"back"
+],
+"family": "pump",
+"ms": 5345,
+"readMs": 2786,
+"rise": {
+"angle": 0.065,
+"lift": 0.01
+},
+"heel": 0.014,
+"iou": 0.957,
+"front": {
+"8cm": 1.26
+},
+"height": 0.146
+},
+{
+"handle": "aakk2813",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x Wales Bonner BW Army - Core Black / Gum5",
+"side": true,
+"views": [
+"back",
+"top"
+],
+"family": "pump",
+"ms": 16774,
+"readMs": 2256,
+"rise": null,
+"heel": 0.008,
+"iou": 0.958,
+"front": {
+"8cm": 1.41
+},
+"height": 0.137
+},
+{
+"handle": "aakk2809",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x Wales Bonner BW Army - Noble Maroon / Gold Metallic / Wonder White",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "pump",
+"ms": 12874,
+"readMs": 2162,
+"rise": {
+"angle": 0.046,
+"lift": 0.01
+},
+"heel": 0.014,
+"iou": 0.957,
+"front": {
+"8cm": 1.35
+},
+"height": 0.139
+},
+{
+"handle": "aakk0733",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x Wales Bonner Karintha Croc - Dark Brown / Core Black / Gold Metallic",
+"side": true,
+"views": [
+"back"
+],
+"family": "pump",
+"ms": 9136,
+"readMs": 1352,
+"rise": null,
+"heel": 0.006,
+"iou": 0.947,
+"front": {
+"8cm": 1.81
+},
+"height": 0.159
+},
+{
+"handle": "aakk0774",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x Wales Bonner Adizero Adios Suede - Wonder White / Dark Brown / Chalk White",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "pump",
+"ms": 12493,
+"readMs": 988,
+"rise": null,
+"heel": 0.006,
+"iou": 0.954,
+"front": {
+"8cm": 1.73
+},
+"height": 0.154
+},
+{
+"handle": "aakk0735",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x Wales Bonner Gazelle Croc - Crystal Sky / Green Night / Power Blue",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "pump",
+"ms": 10382,
+"readMs": 1129,
+"rise": null,
+"heel": 0.006,
+"iou": 0.96,
+"front": {
+"8cm": 1.61
+},
+"height": 0.147
+},
+{
+"handle": "aakh6636",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x SATISFY Adizero Adios Pro Evo 2 - Silver Metallic / Grey Two",
+"side": true,
+"views": [
+"top"
+],
+"family": "flat",
+"ms": 15731,
+"readMs": 1100,
+"rise": null,
+"heel": 0,
+"iou": 0.962,
+"front": {
+"8cm": 3.71,
+"15cm": 4.26
+},
+"height": 0.256
+},
+{
+"handle": "nikio6260-800",
+"collection": "mens-footwear-sneakers",
+"title": "Nike Kobe 3 Low Protro - Safety Orange / Sundial / Picante Red",
+"side": true,
+"views": [
+"back",
+"top"
+],
+"family": "pump",
+"ms": 22949,
+"readMs": 1074,
+"rise": null,
+"heel": 0.003,
+"iou": 0.959,
+"front": {
+"8cm": 1.29
+},
+"height": 0.134
+},
+{
+"handle": "aakh6682",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x SATISFY Adizero Adios 9 - Brown / Pearl Metallic / Charcoal",
+"side": true,
+"views": [],
+"family": "flat",
+"ms": 28112,
+"readMs": 1050,
+"rise": {
+"angle": 0.115,
+"lift": 0.038
+},
+"heel": 0.054,
+"iou": 0.839,
+"front": {
+"8cm": 1.52,
+"15cm": 1.22
+},
+"height": 0.182
+},
+{
+"handle": "aakh6679",
+"collection": "mens-footwear-sneakers",
+"title": "adidas x SATISFY Adizero Adios 9 - Wonder Blue / Pearl Metallic",
+"side": true,
+"views": [
+"top"
+],
+"family": "flat",
+"ms": 18229,
+"readMs": 1070,
+"rise": {
+"angle": 0.108,
+"lift": 0.024
+},
+"heel": 0.04,
+"iou": 0.952,
+"front": {
+"8cm": 2.67,
+"15cm": 2.93
+},
+"height": 0.196
+},
+{
+"handle": "nwbmsnb16ws",
+"collection": "mens-footwear-boots",
+"title": "New Balance x TDS Niobium C1 Boots - Black / Magnet",
+"side": true,
+"views": [
+"top",
+"back"
+],
+"family": "pump",
+"ms": 20124,
+"readMs": 898,
+"rise": null,
+"heel": 0,
+"iou": 0.964,
+"front": {
+"8cm": 1.38,
+"15cm": 1.57
+},
+"height": 0.191
+},
+{
+"handle": "nwbmsnb130n",
+"collection": "mens-footwear-boots",
+"title": "New Balance x TDS Niobium C1 Boots - Stoneware / Thunder Brown",
+"side": true,
+"views": [
+"back"
+],
+"family": "pump",
+"ms": 14269,
+"readMs": 908,
+"rise": null,
+"heel": 0.007,
+"iou": 0.957,
+"front": {
+"8cm": 2.05,
+"15cm": 2.27
+},
+"height": 0.173
+},
+{
+"handle": "vq7126",
+"collection": "mens-footwear-boots",
+"title": "VASQUE Sundowner GTX - Red Oak",
+"side": true,
+"views": [],
+"family": "chelsea",
+"ms": 8210,
+"readMs": 1183,
+"rise": {
+"angle": 0.06,
+"lift": 0.013
+},
+"heel": 0.018,
+"iou": 0.865,
+"front": {
+"8cm": 1.47,
+"15cm": 1.34
+},
+"height": 0.208
+},
+{
+"handle": "vq7114",
+"collection": "mens-footwear-boots",
+"title": "VASQUE Skywalk GTX - Olive / Dress Blues",
+"side": true,
+"views": [],
+"family": "chelsea",
+"ms": 14611,
+"readMs": 1054,
+"rise": {
+"angle": 0.052,
+"lift": 0.012
+},
+"heel": 0.016,
+"iou": 0.87,
+"front": {
+"8cm": 1.48,
+"15cm": 1.34
+},
+"height": 0.213
+},
+{
+"handle": "vqg7126w",
+"collection": "mens-footwear-boots",
+"title": "Vasque Sundowner GTX Wide - Red / Oak Tanned Leather",
+"side": true,
+"views": [],
+"family": "chelsea",
+"ms": 16351,
+"readMs": 1411,
+"rise": {
+"angle": 0.06,
+"lift": 0.013
+},
+"heel": 0.018,
+"iou": 0.865,
+"front": {
+"8cm": 1.47,
+"15cm": 1.34
+},
+"height": 0.208
+},
+{
+"handle": "tb0a6fd6en2",
+"collection": "mens-footwear-boots",
+"title": "Timberland Textured Premium 6-Inch Boots - Beige Full Grain",
+"side": true,
+"views": [],
+"family": "tall",
+"ms": 15767,
+"readMs": 1088,
+"rise": null,
+"heel": 0,
+"iou": 0.906,
+"front": {
+"8cm": 1.48,
+"15cm": 1.35
+},
+"height": 0.22
+},
+{
+"handle": "tb0a6fd6et4",
+"collection": "mens-footwear-boots",
+"title": "Timberland Textured Premium 6-Inch Boots - Olive Full Grain",
+"side": true,
+"views": [],
+"family": "tall",
+"ms": 18645,
+"readMs": 887,
+"rise": null,
+"heel": 0,
+"iou": 0.903,
+"front": {
+"8cm": 1.48,
+"15cm": 1.34
+},
+"height": 0.223
+},
+{
+"handle": "tb1100617131",
+"collection": "mens-footwear-boots",
+"title": "Timberland 6-Inch Premium Waterproof Boot - Wheat",
+"side": true,
+"views": [],
+"family": "chelsea",
+"ms": 15268,
+"readMs": 918,
+"rise": {
+"angle": 0.067,
+"lift": 0.015
+},
+"heel": 0.02,
+"iou": 0.915,
+"front": {
+"8cm": 1.47,
+"15cm": 1.36
+},
+"height": 0.228
+},
+{
+"handle": "ck26155515",
+"collection": "mens-footwear-boots",
+"title": "Clarks Suede Wallabee - Maple",
+"side": true,
+"views": [
+"back"
+],
+"family": "flat",
+"ms": 5953,
+"readMs": 1540,
+"rise": null,
+"heel": 0.003,
+"iou": 0.97,
+"front": {
+"8cm": 1.37
+},
+"height": 0.091
+},
+{
+"handle": "tb110073001",
+"collection": "mens-footwear-boots",
+"title": "Timberland 6-Inch Lace Up Waterproof Boot - Black",
+"side": true,
+"views": [],
+"family": "combat",
+"ms": 14670,
+"readMs": 1630,
+"rise": null,
+"heel": 0,
+"iou": 0.842,
+"front": {
+"8cm": 1.98,
+"15cm": 1.42
+},
+"height": 0.178
+},
+{
+"handle": "s58wz0160p7803hb636",
+"collection": "womens-footwear-flats",
+"title": "Maison Margiela WMNS Tabi Ballerina Flats - Transparent / Multicolor",
+"side": true,
+"views": [],
+"family": "flat",
+"ms": 19323,
+"readMs": 1377,
+"rise": null,
+"heel": 0,
+"iou": 0.861,
+"front": {},
+"height": 0.089
+},
+{
+"handle": "s58wz0127p3753t2358",
+"collection": "womens-footwear-flats",
+"title": "Maison Margiela WMNS Tabi Ballerina - Brown",
+"side": true,
+"views": [],
+"family": "pump",
+"ms": 25399,
+"readMs": 1178,
+"rise": {
+"angle": 0.092,
+"lift": 0.019
+},
+"heel": 0.031,
+"iou": 0.886,
+"front": {
+"8cm": 0.84
+},
+"height": 0.094
+},
+{
+"handle": "aakj5248",
+"collection": "womens-footwear-flats",
+"title": "adidas x Simone Rocha WMNS Taekwondo Ballerina Leather - Core Black / Better Scarlet",
+"side": true,
+"views": [
+"top"
+],
+"family": "pump",
+"ms": 19627,
+"readMs": 1463,
+"rise": null,
+"heel": 0.005,
+"iou": 0.961,
+"front": {
+"8cm": 2.09
+},
+"height": 0.092
+},
+{
+"handle": "aakj5249",
+"collection": "womens-footwear-flats",
+"title": "adidas x Simone Rocha WMNS Taekwondo Ballerina Leather - Pink Tint / Better Scarlet",
+"side": true,
+"views": [
+"top"
+],
+"family": "pump",
+"ms": 16348,
+"readMs": 954,
+"rise": null,
+"heel": 0,
+"iou": 0.94,
+"front": {
+"8cm": 2.17
+},
+"height": 0.091
+},
+{
+"handle": "aalb1339",
+"collection": "womens-footwear-sandals",
+"title": "Kith Classics for adidas Originals Adilette - Chalky Brown",
+"side": true,
+"views": [],
+"family": "sandal",
+"ms": 25567,
+"readMs": 1731,
+"rise": null,
+"heel": 0,
+"iou": 0.751,
+"front": {},
+"height": 0.057
+},
+{
+"handle": "blob-h1-arc-s125-mb",
+"collection": "womens-footwear-sandals",
+"title": "Bloumme Arc Thong - Midnight Black",
+"side": true,
+"views": [],
+"family": "sandal",
+"ms": 28825,
+"readMs": 1034,
+"rise": null,
+"heel": 0.002,
+"iou": 0.817,
+"front": {},
+"height": 0.062
+},
+{
+"handle": "br1031731",
+"collection": "womens-footwear-sandals",
+"title": "Birkenstock WMNS Arizona Rivets - Mink",
+"side": true,
+"views": [],
+"family": "sandal",
+"error": "Cannot read properties of undefined (reading '0')"
+},
+{
+"handle": "aw30426s005-200",
+"collection": "womens-footwear-sandals",
+"title": "Alexander Wang Courtney Thong Logo Sandal - Brown",
+"side": true,
+"views": [],
+"family": "sandal",
+"ms": 27009,
+"readMs": 957,
+"rise": null,
+"heel": 0,
+"iou": 0.639,
+"front": {
+"8cm": 1.24
+},
+"height": 0.118
+}
+]
+}

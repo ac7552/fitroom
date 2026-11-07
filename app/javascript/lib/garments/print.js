@@ -1615,6 +1615,19 @@ export function shoeSide(data, w, h) {
   const backdrop = new Uint8Array(w * h)
   for (let i = 0; i < w * h; i++) backdrop[i] = mask[i] && Math.abs(lab[3 * i] - bg[0]) <= far[0] && Math.hypot(lab[3 * i + 1] - bg[1], lab[3 * i + 2] - bg[2]) <= far[1] ? 1 : 0
   for (const hole of pieces(backdrop, w, h)) if (hole.length < cut.garment.count * 0.06) for (const i of hole) mask[i] = 0
+  // The soft shadow the shoe casts on the backdrop, reached from outside (withoutShadow): under a heel's
+  // arch it would put the sole on the floor; against the shoe's own colour (the median over it).
+  {
+    const values = [[], [], []]
+    for (let i = 0; i < w * h; i += 3) if (mask[i]) for (let c = 0; c < 3; c++) values[c].push(lab[3 * i + c])
+    if (values[0].length) {
+      const own = values.map(median)
+      const cleaned = withoutShadow(mask, lab, bg, own, w, h)
+      let kept = 0
+      for (let i = 0; i < w * h; i++) kept += cleaned[i]
+      if (kept > cut.garment.count * 0.5) mask.set(cleaned)
+    }
+  }
   let left = w, right = -1
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { left = Math.min(left, x); right = Math.max(right, x) }
   if (right - left < w * 0.15) return null
