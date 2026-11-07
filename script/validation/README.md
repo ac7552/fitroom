@@ -14,6 +14,9 @@ can be measured by how many of them still look like their store photo. Developme
 | `sheet.js` | contact sheets of finished outfits (store photos beside the front, side and back renders), to grade |
 | `RUBRIC.md` | how an outfit is graded, with the calibration examples |
 | `show.py`, `grade.py`, `aggregate.py` | print an outfit's garments for grading; record grades; sum them per group and cause |
+| `export.js` | saves a tab's finished runs as a zip of contact sheets (shop photo beside the renders) and records |
+| `collect.sh` | gathers those zips from the downloads folder into one review folder |
+| `kith_20261107/` | the per-collection sample of 7 Nov 2026: 359 products, run lists, 354 grades with cause tags, `tally.py`; the baseline for `docs/plan-2026-11-accuracy.md` |
 
 ## Running it
 
@@ -28,6 +31,10 @@ Then in a tab at http://localhost:3000 (it can be hidden; the runner keeps its t
     VAL.load(runs.filter(r => r.phase === 1)); VAL.start()
     await VAL.wait()                      // { left, done, log }
     VAL.export(0, 20, { pics: false })    // what each garment came out as (JSON)
+
+The runner's pictures are 200×300 by default; `VAL.picSize = [480, 720]` and `VAL.photoThumb = 480` make
+them big enough to grade from, and `VAL.feet = true` frames the camera close on the feet for shoes (`cat:
+"shoes"` runs). `kith_20261107/README.md` walks through a full sampling run.
 
 Each outfit takes one to three minutes (a bottom's photo reading and the drape are most of it). Several tabs
 share the work: give each its own slice of the runs. A tab's results stay in that tab (`window.__val.results`).

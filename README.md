@@ -71,7 +71,8 @@ Three.js r170 run the page: the mannequin, the pattern drafting, the cloth simul
 WebAssembly, in a Web Worker) and the fabrics. One droplet with no GPU serves all of it
 ([docs/droplet.md](docs/droplet.md)). The
 mannequin is built in Blender from MakeHuman's CC0 assets. The details are in
-[docs/how-it-works.md](docs/how-it-works.md) and the API in [docs/api.md](docs/api.md).
+[docs/how-it-works.md](docs/how-it-works.md) and the API in [docs/api.md](docs/api.md). The measured state of the app
+against 354 Kith products and the plan to fix what it gets wrong is [docs/plan-2026-11-accuracy.md](docs/plan-2026-11-accuracy.md).
 
 Plans are in [ROADMAP.md](ROADMAP.md). License: MIT, see [LICENSE](LICENSE). The 3D model's assets are
 CC0, see [public/models/CREDITS.md](public/models/CREDITS.md).

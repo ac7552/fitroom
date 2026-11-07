@@ -107,17 +107,28 @@ async function thumb(src, most = 240, quality = 0.72) {
 async function pictures() {
   const shot = async (angle, front) => {
     const facing = s.faceFront()
+    const target = s.controls.target.clone()
     try {
       if (angle) { s.turnCamera(angle); s.controls.update() }
+      // Close on the feet (VAL.feet): the target at the ankle, the camera a quarter of the way in.
+      if (VAL.feet) {
+        const ankle = s.controls.target.clone(); s.model.getObjectByName("foot_l")?.getWorldPosition(ankle)
+        const p = s.camera.position, t = s.controls.target
+        const d = p.clone().sub(t)
+        t.set(t.x, ankle.y - 0.02, t.z)
+        p.copy(t).addScaledVector(d, 0.24); p.y = t.y + 0.1
+        s.controls.update()
+      }
       s.draw()
-      const { image } = await s.photoPasses({ width: 200, height: 300, guides: false, front, record: false, close: true })
-      return await thumb(URL.createObjectURL(image), 300)
-    } finally { s.camera.position.copy(facing.position); s.controls.update(); s.draw() }
+      const [pw, ph] = VAL.picSize ?? [200, 300]
+      const { image } = await s.photoPasses({ width: pw, height: ph, guides: false, front: front && !VAL.feet, record: false, close: !VAL.feet })
+      return await thumb(URL.createObjectURL(image), ph)
+    } finally { s.controls.target.copy(target); s.camera.position.copy(facing.position); s.controls.update(); s.draw() }
   }
-  return { front: await shot(0, true), side: await shot(Math.PI / 2, false), back: await shot(Math.PI, false) }
+  return { front: await shot(VAL.feet ? 0.4 : 0, true), side: await shot(Math.PI / 2, false), back: await shot(Math.PI, false) }
 }
 
-const EXPECT = { top: ["top"], outerwear: ["jacket", "coat"], bottom: ["trousers"], dress: ["top"] }
+const EXPECT = { top: ["top"], outerwear: ["jacket", "coat"], bottom: ["trousers"], dress: ["top"], shoes: ["shoes"] }
 const LONG = ["longsleeve", "sweatshirt", "hoodie", "shirt", "sweater", "cardigan", "rugby", "zip", "bomber", "coat", "tailored"]
 
 // What an item came out as, and the automatic checks on it.
@@ -158,7 +169,7 @@ async function check(item, kind, slot) {
   // How it was hung or laid out for its photos, and how well each way's outline matched (silhouette.js).
   const trial = s.slots[slotOf]?.hangTrial
   out.hangTrial = trial ? { chosen: trial.chosen.flat?.angle ?? "hung", scores: trial.scores.map(x => [x.flat?.angle ?? "hung", x.iou == null ? null : Math.round(x.iou * 1000) / 1000]) } : null
-  out.photoThumb = g.photo ? await thumb(g.photo, 200) : null
+  out.photoThumb = g.photo ? await thumb(g.photo, VAL.photoThumb ?? 200) : null
   return out
 }
 
