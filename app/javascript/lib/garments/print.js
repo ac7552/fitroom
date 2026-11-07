@@ -1759,7 +1759,23 @@ function viewOf(data, w, h, side, pair) {
     if (cut < 0 || least > most * (pair ? 0.75 : 0.35)) return [piece]
     return [piece.filter(i => i % w < cut), piece.filter(i => i % w >= cut)]
   }
-  const shoes = big.length === 1 ? split(big[0]) : big
+  let shoes = big.length === 1 ? split(big[0]) : big
+  // A pair standing close from behind or in front (one partly hiding the other) can be one piece with no
+  // gap: too wide for one shoe, by the side photo's proportions (a shoe from behind is about 0.4 of its
+  // length wide), it's split at its narrowest column near the middle.
+  if (shoes.length === 1 && side.right > side.left && side.height > 0) {
+    let x0 = w, x1 = -1, y0 = h, y1 = -1
+    for (const i of shoes[0]) { const x = i % w, y = (i - x) / w; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y) }
+    const lengthOverHeight = (side.right - side.left) / (side.height * side.aspect)
+    const expected = 0.4 * lengthOverHeight
+    if ((x1 - x0 + 1) / (y1 - y0 + 1) > 1.6 * expected && (x1 - x0 + 1) / (y1 - y0 + 1) < 3.2 * expected) {
+      const columns = new Float64Array(w)
+      for (const i of shoes[0]) columns[i % w]++
+      let cut = -1, least = Infinity
+      for (let x = Math.round(x0 + (x1 - x0) * 0.35); x <= Math.round(x0 + (x1 - x0) * 0.65); x++) if (columns[x] < least) { least = columns[x]; cut = x }
+      if (cut > 0) shoes = [shoes[0].filter(i => i % w < cut), shoes[0].filter(i => i % w >= cut)]
+    }
+  }
   const boxes = shoes.map(piece => {
     let x0 = w, x1 = -1, y0 = h, y1 = -1
     for (const i of piece) { const x = i % w, y = (i - x) / w; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y) }
