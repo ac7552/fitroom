@@ -33,7 +33,7 @@ class GarmentImport
   # A shirt dress, sweater dress or slip dress named in one word ("Shirtdress") is one too.
   DRESSES = /\b(?:dress(?:es)?(?!\s*(?:shirts?|pants|trousers|shoes?|socks|coats?|jackets?|boots?)\b)|(?:shirt|sweater|slip|tee|knit|tank|polo|wrap)dress(?:es)?|gowns?|maxi|midi|sundress|frock|kaftan|caftan)\b/i
   # (Not a "bodysuit", a "catsuit", or a tracksuit's or jumpsuit's top.)
-  JACKETS = /jacket|blazer|(?<!body|cat|track|jump|swim|play|boiler|flight|sweat)suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket|puffer|windbreaker|anorak|gilet|blouson|shrug|bolero/i
+  JACKETS = /jacket|blazer|(?<!body)(?<!cat)(?<!track)(?<!jump)(?<!swim)(?<!play)(?<!boiler)(?<!flight)(?<!sweat)suit|coat|sport ?coat|tuxedo|dinner|overshirt|shacket|puffer|windbreaker|anorak|gilet|blouson|shrug|bolero/i
   # T-shirts, shirts, polos, sweatshirts, hoodies and knitwear: worn on the body, under a jacket.
   TOPS = /t-?shirt|\btees?\b|shirt|polo|henley|tank\b|sweatshirt|crewneck|hoodie|hooded|sweater|jumper|cardigan|pullover|knit\b|\bjerseys?\b|\btop\b|bodysuit|quarter[- ]?zip|half[- ]?zip|1\/4[- ]?zip/i
   # How a top looks, for drawing it: the first match in its name wins, then in its category, else a tee.
@@ -61,7 +61,7 @@ class GarmentImport
   TROUSERS = /trouser|pants?\b|jeans?\b|chinos?\b|slacks|leggings?\b|\btights\b|joggers?\b|sweatpants?|track ?pants?|\bshorts?\b(?![- ]?sleeve)|skirts?\b|skort/i
   # Worn over tailoring and cut long; fitted with more room and no "right" length.
   COATS = /overcoat|topcoat|top coat|car coat|trench|peacoat|pea coat|parka|duffle|\bcoat\b/i
-  NOT_COATS = /sport ?coat|(?<!body|cat|track|jump|swim|play|boiler|flight|sweat)suit|blazer|tuxedo/i
+  NOT_COATS = /sport ?coat|(?<!body)(?<!cat)(?<!track)(?<!jump)(?<!swim)(?<!play)(?<!boiler)(?<!flight)(?<!sweat)suit|blazer|tuxedo/i
   # A "hoodie" that's insulated is outerwear (Canada Goose calls jackets hoodies), and so is one that zips up
   # with a hood, unless it's knitwear (a sweater hoodie with a zip is a knit top, worn as a hoodie is).
   # Down as a filling, not as a word ("dress it up or down", "button-down", "down the front").
@@ -88,7 +88,7 @@ class GarmentImport
   ZIP_FRONT = /two-way zip|zip(?:per)? closure|full[- ]zip|zip[- ]up|front zip/i
   STYLES = [
     [ "cardigan", /cardigan/i ],
-    [ "tailored", /blazer|(?<!body|cat|track|jump|swim|play|boiler|flight|sweat)suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
+    [ "tailored", /blazer|(?<!body)(?<!cat)(?<!track)(?<!jump)(?<!swim)(?<!play)(?<!boiler)(?<!flight)(?<!sweat)suit|sport ?coat|tuxedo|dinner jacket|smoking jacket|lapel/i ],
     [ "bomber", /bomber|varsity|letterman|flight jacket|ma-1|baseball jacket|harrington|aviator|blouson/i ],
     [ "zip", ZIP_FRONT ],
     [ "shirt", /denim(?: \w+)? jacket|jean jacket|trucker|chore|overshirt|shirt[- ]jacket|shacket|work jacket|field jacket|barn jacket|hunting jacket|ranch jacket|coach(?:es)? jacket|utility|safari|chambray|button[- ](front|closure|up)|point collar/i ],
