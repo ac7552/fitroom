@@ -10,6 +10,7 @@ bottoms 12%.
 | `sample.json` | the products, by group: title, brand, type, tags, description, photo links. `sample.js` with the groups below, seed 20261107 |
 | `runs_apparel.json`, `runs_shoes.json` | the run lists the runner takes (259 apparel, 91 shoes), from `build_runs.py` |
 | `grades.csv` | one row per run: `key`, `grade`, `tags`, `note` |
+| `grades_step1.csv`, `grades_step2.csv` | the same after each step of the plan (`regrade_step1.py`, `regrade_step2.py`): the runs rendered again regraded, the rest as they stood |
 | `tally.py` | the counts by category and cause, and the projected fail share as the plan's steps land |
 | `build_runs.py` | rebuilds the run lists from `sample.json` |
 | `photo_roles.json` | the role of each listing's first eight photos (1,228 photos of 346 listings), labelled by eye: what `photo_roles.js` is held to, and what its examples are built from |
@@ -109,5 +110,8 @@ Rendered again the same way, a few runs at a time, with `script/validation/probe
 `script/validation/snap.sh` takes the grids out of `log/development.log` into `tmp/kith/snaps/raw/`. The
 finished runs go out with `export_log.js` as before (`await exportLog(VAL, "step2")`, then
 `collect_log.py step2`), and `python3 script/validation/compare.py step2` lays each run's baseline sheet over its new one.
-As for step 1, a `regrade_step2.py` (still to write, see the plan's step 2 section) will write `grades_step2.csv`
-from `grades_step1.csv` and the runs graded again.
+As for step 1, `regrade_step2.py` writes `grades_step2.csv` from `grades_step1.csv` and the 48 runs graded again
+(`runs_step2.json`); `tally.py grades_step2.csv` counts them.
+
+The photo reading's time on its own, against the budget: `script/validation/bench_read.js` in a quiet tab (the
+runner's `times.read` are taken while the cloth drapes and other tabs run, and overstate it).

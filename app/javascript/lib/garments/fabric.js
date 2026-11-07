@@ -8,7 +8,7 @@ import { BORDER, DEPTH_BIAS, FACING, LIGHT } from "lib/projection"
 //   aEdge    how far it is from the edge of its piece (cm): seams show as a soft groove along it
 //   aHem     how far it is from a hem or other free edge (cm): hems are stitched a little way up
 //   aPiece   which piece it's on (1 the front, 2 the back, 3 the left sleeve, 4 the right, 5 and 6 the cuffs,
-//            -1 a hood, 0 the rest)
+//            -1 a hood, -2 a collar or neckband, 0 the rest)
 //   aShade   how open to the room it is (1) or tucked into a fold or under the hood (less): ambient light
 //            reaching it, worked out from the drape
 //   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
@@ -835,7 +835,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         float crease = clamp( vStrain + CREASE_FOLD * ( 1.0 - vShade ), 0.0, 1.0 ) * ( 1.0 - metal );
         diffuseColor.rgb *= 1.0 - CREASE_DARK * crease;
         // (A hood's inside is its outside's cloth, turned: worn down and folded back, it's much of what shows of
-        // the hood round the neck, and at the cloth's inside shade the hood read as dark, or lost.)
+        // the hood round the neck, and at the cloth's inside shade the hood read as dark, or lost. So with a
+        // collar's or neckband's inside, seen at the back of the neck: a light polo's read as a black crew rib.)
         if ( !gl_FrontFacing && uBake < 0.5 ) diffuseColor.rgb *= vPiece < -0.5 ? 0.85 : 0.55;   // the inside (not when baking: a panel's uv winding says nothing about its outside)
         ${fitMap ? "" : PROJECTION.fragmentApply}`)
       // The inside of the cloth (a hood's, a turned-back cuff's) is in its own shade: its sheen dimmed with it,

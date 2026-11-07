@@ -167,7 +167,8 @@ stop taking the body's colour.
 
 Side vents close unless the photo shows slits. The hanger mask grows to cover hook, bar and clips, then is
 painted out from the cloth beside it. Drawcords are drawn as cords where the photo shows them hanging and
-cut from the print.
+cut from the print, relief included (step 2 paints their colour out; their outline stays in the relief). A
+polo's collar leaf is folded crisply and shaded as its own piece (step 2 left it reading as a crew neck).
 
 ### 3.8 Materials the sample showed missing
 
@@ -244,87 +245,67 @@ an Oxford shirt isn't a shoe; a turtleneck imports.
   keeps one it hasn't (two Erin jackets) — step 2; a stiletto's heel view now laid on its back shows the red
   sole — step 5.
 
-### Step 2, in progress (branch `step-2-parts`)
+### Step 2, done (7 November)
 
-Not merged: the code is in and spot-checked run by run, but the gate hasn't been re-measured. What the branch
-does:
+The photo's parts are read and drawn as parts: a placed graphic is laid whole, a hood is kept off the body and
+drawn in its own colour, a neckline the listing names is drafted, and a shirt's collar is open at the front.
 
 - **Placed graphics.** A chest graphic, logo or block of lettering is cut out of the photo at full size
-  (`print.js` `graphicPatch`). The cut-out takes the graphic's marks, what lies between them, and the thin rules
-  beside it. It leaves out marks that run off the front's top or hem, a strip at a side, or a band right across.
-  These checks use the marks as first read, before the print's areas are filled in.
-  - The graphic is painted out of the photo the re-drape lays on. The paint-out fills from all four sides with
-    the cloth's own colour (`cleanedPhoto`). Filled along rows only, it had left ridges in the relief.
-  - The graphic is laid as one piece at the photo's scale both ways (`uPrintWide`), so letters keep their shape.
-    The photo's relief is switched off under it.
-  - A zip hoodie gets this too. A jacket's photo laid on whole no longer loses a graphic painted out of it.
-- **Photos that arrive late.** The front's reading can finish after the re-draping has begun. The photo is then
-  laid on again on the same hanging (`stage.js` `redrapeSwap`); before, the old photo stayed and the print was laid
-  twice, once torn. The runner now waits for this.
-- **Hoods.**
-  - A hood is found over sloping shoulders, and on raglan hoodies whose hood falls straight to the shoulders
-    (`garmentRows`). Under a hood, a print starts `HOOD_DROP` below the shoulders' high points.
-  - The re-drape finds a hooded photo's shoulders where the outline leaps out (`shoulderRow`). A wide hood had been
-    taken for the shoulders.
-  - The hood's inside is kept off the body: a lining, a hanger in the hood (`hoodInside`), and the middle of the
-    front under the hood.
-  - A hood's inside is drawn at 0.85 of its colour (was 0.55, which read as a dark or missing hood). Worn down, it
-    stands 4.5 cm up the neck before folding back.
-  - A hanger's hook over its own shoulders is no longer read as a hood (the Knicks crewneck).
-- **Necklines.** A knit's crew is a 2.8 cm rib (the 5.5 cm rib read as a mock neck). A crew, mock, turtle, V,
-  scoop or boat neck named in the listing is drafted (`necklineOf`, `necked`). A dress's plunge comes down
-  straight to a point.
-- **Collars.**
-  - A shirt's collar leaf is open at the front, with its points out over the chest.
-  - The collar's colour, the collar strip and the collar band leave out a black hanger at a light garment's neck
-    (`hangerLike`). A collar band is always plain, in its own colour (its label had shown at the front of the
-    neck).
-  - Between a shirt's collar points, the front takes the cloth below.
-- **Tools.** `script/validation/probe.js` runs keys and posts picture grids to the dev log; `snap.sh` collects
-  them. `compare.py` puts each run's last earlier sheet over its new one. Tests: `necklines.test.mjs`, and
-  `shoulderRow` in `redrape.test.mjs` (260 pass).
+  (`print.js` `graphicPatch`): its marks, what lies between them and the thin rules beside it, never marks that
+  run off the front's top or hem, a strip at a side or a band right across. It is painted out of the photo the
+  re-drape lays on, filled from all four sides with the cloth's own colour (`cleanedPhoto`), and laid as one
+  piece at the photo's scale both ways (`uPrintWide`), the photo's relief off under it. Zip hoodies and jackets
+  too. A front read after the re-draping began is laid on again on the same hanging (`stage.js` `redrapeSwap`).
+- **Hoods.** Found over sloping shoulders and on raglan hoodies (`garmentRows`); a print starts `HOOD_DROP` below
+  the shoulders' high points; the re-drape finds a hooded photo's shoulders where the outline leaps out
+  (`shoulderRow`); the hood's inside (a lining, a hanger in it, the middle of the front under it) is kept off the
+  body (`hoodInside`); its inside drawn at 0.85 of its colour, standing 4.5 cm up the neck worn down. A hanger's
+  hook is no longer a hood.
+- **Necklines.** A knit's crew is a 2.8 cm rib; a crew, mock, turtle, V, scoop or boat neck named in the listing
+  is drafted (`necklineOf`, `necked`); a dress's plunge comes straight to a point.
+- **Collars.** A shirt's leaf is open at the front, its points out over the chest. The collar's colour, strip and
+  band leave out a black hanger at a light garment's neck (`hangerLike`). The band is plain in its own colour,
+  on an all-over print too (a plaid shirt's and a cable-knit polo's band had taken the hanger and the label at
+  the back of the neck); where the photo there is mostly hanger it takes the collar's colour across the top
+  of the photo. In the collar strip, the back of the neck (which a front photo shows from inside) keeps only
+  what's near the collar's colour. A collar's or neckband's inside is drawn at a hood's 0.85, not 0.55: a
+  light polo's had read as a black crew rib.
+- **Cords.** `paintCords` finds cords either side of a zip as light as they are: the zip's column is taken out
+  of a run that reaches the window's foot, and what's left is tried as cords.
+- **Tools.** `probe.js` runs keys and posts picture grids to the dev log (`snap.sh` collects them);
+  `compare.py` lays each run's earlier sheet over its new one; `bench_read.js` times the photo reading alone.
+  Tests: `necklines.test.mjs`, `shoulderRow` and the light-zip cords in `redrape.test.mjs` (261 pass).
 
-Seen fixed in spot renders, not yet graded:
+Measured on the 48 runs of `kith_20261107/runs_step2.json` (the P-stretch, P-hood and P-lost tops, the hood,
+collar and neck runs, eight print tees that graded ok and eight controls of other kinds), regraded in
+`regrade_step2.py`:
 
-- Rhude, FOG, NBA, VOWELS, F of G, the Kith Ivy logo, the Kith zip-hoodie logo and the Knicks NY are placed whole,
-  in proportion.
-- The horse zip hoodie has no plaid lining on its chest.
-- Hoods on the zip hoodies are their own colour.
-- The Knicks crewneck has no hood.
-- Sweaters show crew necks, and the V-neck knit shows its V.
-- The print controls (Awake, A.P.C., Kith pocket, Rhude crest, Y-3 and the Jamaica tee) look as before or
-  crisper.
-
-To wrap it up, in order:
-
-1. **Render the step 2 set on the branch.** That is 48 runs, listed in `kith_20261107/runs_step2.json`: the
-   P-stretch, P-hood and P-lost tops; the hood, collar and neck runs; the eight print tees that graded ok; and
-   eight controls of other kinds (jackets, dresses, sweatshirts, an outer, a tee). Export with `export_log.js`
-   under the tag `step2`, then run `collect_log.py step2` and `compare.py step2`.
-2. **Grade against step 1.** Write `regrade_step2.py` on the model of `regrade_step1.py`, then `grades_step2.csv`,
-   then tally. The gate: hoodies show their hood; shirts and polos show their collar; no hood lining or cords in a
-   print; no control worse.
-3. **Close what the spot renders left open:**
-   - **Cords.** The zip hoodies' cords are still laid on as loops (acnci0211-ack, awafw26-hd003-blk): `paintCords`
-     misses cords either side of a zip. Fix it here, or move the cords clause of the gate to step 7, where the
-     plan has cords.
-   - **Polo collars.** Check the polos on black hangers (khm033366-002, khm035074-101) with the hanger fix. The
-     collar must read as a polo's, not a dark band.
-   - **The hood from the front.** It's better, but still a thin fold. If graders still mark hoods lost, give the
-     worn-down hood more of a roll round the neck (`place.js` `hoodDown`).
-   - **Print scale.** At the sample's size, a big chest graphic reads larger on the worn front than in the flat
-     photo (NBA, Rhude), because the front wraps the body. That's right by the chart. Keep it unless the grades
-     say otherwise.
-   - **Spot checks still owed:** the women's Kith hoodie label (khwa030159-001, after the raglan hood
-     detection); the Kith women's tee print over the bust (khwg030002-001); the dark neck patch on a dark plaid
-     shirt (the hanger test is off on dark cloth).
-4. **Budget.** Check the photo reading's time in the records (`times.read`). The full-size cut-out, the four-way
-   paint-out and `hoodInside` have to stay inside the photo-reading budget in section 6.
-5. **Merge.** Run `bin/rails test test/models/garment_import_test.rb` on the Mac (owed from step 1). Replace this
-   section with "Step 2, done" and its numbers, then merge to `main` and push.
-
-Not step 2: a white tee on a light backdrop gives no reading at all (rd024-02wcgt428, segmentation), and the
-swirls on knits, plaids and colour blocks are step 4's.
+- **29% fail to 25%** (88 of 351), ahead of the 30% projected. Tops 36% to 24%, outerwear 47% to 45%; 16 runs
+  graded better, none worse; 13 fewer fails.
+- The gate:
+  - *Hoodies show their hood:* 13 of the 14 hoodies in the set, from the side and behind, in their own colour.
+    The women's raglan Tatum (khwa030159-001) shows its hood from behind only.
+  - *Shirts and polos their collar:* the three shirts (a plaid, a shadow check, a camp-collar bowling shirt)
+    show theirs, and the dark patch at the plaid's neck is gone. The two polos lost the hanger's black at the
+    neck, but their leaf still doesn't read: they look crew-necked. Carried to step 7.
+  - *No hood lining or cords in a print:* no lining, hood outline or hood shadow on any chest (the horse zip
+    hoodie, Entire Studios, vowels, Tatum crest). The zip hoodies' white cord loops are gone, but where they
+    were stays in the relief, as an outline (Awake) or a smudge (Acne). Carried to step 7, as section 3.7 has it.
+  - *No control worse:* the 16 controls render as before; the Nahmias tee's front print is now laid in place.
+- **Budget.** Timed alone in a quiet tab (`bench_read.js`, 12 of the set's tops on the Mac): the reading takes
+  0.21–0.34 s, and the cut-out and paint-out before it 0.15–0.24 s, or 1.0–1.2 s on a first visit to a photo
+  with a hanger or hands to paint out. 0.46 s in all at the median, 1.55 s at most (Rhude, first visit): inside
+  the 1.5 s budget but for that one, by 0.05 s. The runner's own `times.read` (several tabs at once, the
+  cloth draping beside it) are several times that and aren't the budget's number.
+- The Erin denim jacket no longer has a hood drawn from its words. The Rainier jacket, whose hood packs into
+  its collar, still has one drawn out: step 3 (type from the photo).
+- Moved on: the polo collar's leaf, which needs a crisper fold and its own shading (step 7); cords' relief
+  (step 7); the raglan hood from the front, a fuller roll for the worn-down hood (`place.js` `hoodDown`; step 7);
+  colour blocks (the Knicks crewneck's cream yoke, Phantom's grey half) swirled or drawn in the body's colour
+  (steps 4 and 6); the C.P. lens badge no longer drawn on its sleeve, its first run since step 1 brought in
+  its back photo (step 6, colour by part, reads sleeve parts on their own); a white tee on a light backdrop
+  unread (segmentation). Print scale stays by the chart: a big chest graphic reads a little larger on the
+  worn front than in the flat photo, as it should.
 
 ## 6. Performance budgets (unchanged by this plan)
 

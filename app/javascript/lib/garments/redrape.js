@@ -430,9 +430,13 @@ export function collarStrip(photo) {
   const fill = collarColour(photo)
   if (!fill) return null
   const rgb = [1, 3, 5].map(k => parseInt(fill.slice(k, k + 2), 16))
+  // The middle third is the back of the neck, which a front photo shows from inside (its label, the hanger
+  // and their shadow): there it keeps only what's near the collar's colour.
+  const mid0 = left + (right - left) / 3, mid1 = right - (right - left) / 3
   for (let y = 0; y < image.height; y++) for (let x = left; x <= right; x++) {
     const i = 4 * (y * w + x)
-    if (mask[(box.top + y) * w + x] && !hangerLike(d[i], d[i + 1], d[i + 2], photo.cloth)) continue
+    const inside = x > mid0 && x < mid1 && Math.hypot(d[i] - rgb[0], d[i + 1] - rgb[1], d[i + 2] - rgb[2]) > FAR
+    if (mask[(box.top + y) * w + x] && !hangerLike(d[i], d[i + 1], d[i + 2], photo.cloth) && !inside) continue
     d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2]; d[i + 3] = 255
   }
   const strip = document.createElement("canvas")
@@ -544,27 +548,27 @@ export function paintCords(ctx, mask, w, h, box) {
     const l = lum(i)
     if (l > high || l < low) cand[(y - y0) * ww + x - x0] = 1
   }
-  const seen = new Uint8Array(ww * wh), fill = new Uint8Array(w * h)
+  const fill = new Uint8Array(w * h)
   let cords = 0
-  for (let k = 0; k < ww * wh; k++) {
-    if (!cand[k] || seen[k]) continue
-    const run = [k]
-    seen[k] = 1
-    let minX = Infinity, maxX = -1, minY = Infinity, maxY = -1
-    for (let r = 0; r < run.length; r++) {
-      const q = run[r], qx = q % ww, qy = (q - qx) / ww
-      if (qx < minX) minX = qx; if (qx > maxX) maxX = qx; if (qy < minY) minY = qy; if (qy > maxY) maxY = qy
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const nx = qx + dx, ny = qy + dy
-        if (nx < 0 || ny < 0 || nx >= ww || ny >= wh) continue
-        const j = ny * ww + nx
-        if (cand[j] && !seen[j]) { seen[j] = 1; run.push(j) }
-      }
-    }
-    const tall = maxY - minY + 1, wide = maxX - minX + 1
-    if (tall < H * 0.06 || tall < 3 * wide || maxY >= wh - 1) continue
-    cords++
-    for (const q of run) { const qx = q % ww, qy = (q - qx) / ww; fill[(qy + y0) * w + qx + x0] = 1 }
+  const isCord = run => {
+    const { tall, wide, maxY } = run
+    return tall >= H * 0.06 && tall >= 3 * wide && maxY < wh - 1
+  }
+  const take = run => { cords++; for (const q of run.cells) { const qx = q % ww, qy = (q - qx) / ww; fill[(qy + y0) * w + qx + x0] = 1 } }
+  for (const run of patchesOf(cand, ww, wh)) {
+    if (isCord(run)) { take(run); continue }
+    // A run on to the window's foot is the zip; a zip as light (or dark) as the cords, with the cords
+    // touching it at the neck (they come out either side of it), is one run with them: the zip's own column
+    // (where it runs alone, below the cords) comes out, and what's left beside it is tried as cords.
+    if (run.maxY < wh - 1 || run.tall < H * 0.2) continue
+    const rows = new Map()
+    for (const q of run.cells) { const qx = q % ww, qy = (q - qx) / ww; const r = rows.get(qy); if (r) { r[0] = Math.min(r[0], qx); r[1] = Math.max(r[1], qx) } else rows.set(qy, [qx, qx]) }
+    const low = [...rows.entries()].filter(([y]) => y > run.maxY - run.tall * 0.25).map(([, r]) => r)
+    if (low.length < 3) continue
+    const mid = median(low.map(([a, b]) => (a + b) / 2)), half = median(low.map(([a, b]) => (b - a) / 2)) + 1.5
+    const rest = new Uint8Array(ww * wh)
+    for (const q of run.cells) { const qx = q % ww; if (Math.abs(qx - mid) > half) rest[q] = 1 }
+    for (const part of patchesOf(rest, ww, wh)) if (isCord(part)) take(part)
   }
   if (!cords) return 0
   // Grown a little (the cord's shadow, its soft edge), within the cloth.
@@ -603,6 +607,34 @@ export function paintCords(ctx, mask, w, h, box) {
 }
 // A cord is this much lighter than the cloth's lightest 2% (or darker than its darkest).
 const CORD_APART = 15
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[sorted.length >> 1]
+}
+
+// The 8-connected patches of set cells in a grid (w by h): each { cells, tall, wide, maxY }.
+function patchesOf(grid, w, h) {
+  const seen = new Uint8Array(w * h), runs = []
+  for (let k = 0; k < w * h; k++) {
+    if (!grid[k] || seen[k]) continue
+    const cells = [k]
+    seen[k] = 1
+    let minX = Infinity, maxX = -1, minY = Infinity, maxY = -1
+    for (let r = 0; r < cells.length; r++) {
+      const q = cells[r], qx = q % w, qy = (q - qx) / w
+      if (qx < minX) minX = qx; if (qx > maxX) maxX = qx; if (qy < minY) minY = qy; if (qy > maxY) maxY = qy
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = qx + dx, ny = qy + dy
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+        const j = ny * w + nx
+        if (grid[j] && !seen[j]) { seen[j] = 1; cells.push(j) }
+      }
+    }
+    runs.push({ cells, tall: maxY - minY + 1, wide: maxX - minX + 1, maxY })
+  }
+  return runs
+}
 
 // The cloth's rim in a photo: the band just inside its outline whose colour leans from the cloth's toward
 // the backdrop's (bg) by more than RIM_LEAN of the way (Kith's &Kin sweatpants: half the way at the
@@ -1260,18 +1292,22 @@ export function trustPieces(top, uv, photos) {
     const share = worst[pairOf(name)]
     let reason = null
     if (/^hood/.test(name)) reason = "hood"
+    // A collar band in its own colour always, an all-over print's too: on a front photo it's seen at the top
+    // with the inside of the back of the neck, its label and the hanger (Awake's blue label was laid on the
+    // front of the neck; a cable-knit polo's and a plaid shirt's bands took the black hanger).
+    else if (name === "collar") reason = "band"
     else if (allOver) reason = null
     else if (/^sleeve/.test(name) && share > (worn ? 0.16 : 0.2)) reason = "sleeve"
-    // A collar band in its own colour always: on a front photo it's seen at the top with the inside of the
-    // back of the neck and its label (Awake's blue label was laid on the front of the neck).
-    else if (name === "collar") reason = "band"
     else if (/^(cuff|waistband|collar|placket)/.test(name) && share > 0.5) reason = "band"
     else if (/^back/.test(name) && !photos.back && graphic) reason = "back"
     if (!reason) continue
     // Bands keep their own colour (a black rib on grey); the rest take the cloth's.
     const median = values => { const v = [...values].sort((a, b) => a - b); return v[v.length >> 1] }
     // (A collar's without the hanger it was photographed on: see hangerLike.)
-    const own = name === "collar" ? hangerless(stats[p].rgb, photos.front.cloth) : stats[p].rgb
+    // When the hanger is most of what the photo shows there (a polo's band, between the hook and the back of
+    // the neck, its shadow included), the band takes the collar's colour across the top of the photo instead.
+    let own = name === "collar" ? hangerless(stats[p].rgb, photos.front.cloth) : stats[p].rgb
+    if (name === "collar" && (!own || hangerLike(...own.map(median).map(v => v * 0.6), photos.front.cloth))) own = topColour(photos.front) ?? stats[p].rgb
     const target = reason === "band" ? own.map(median) : null
     const source = reason === "back" || !photos.back || !/^back/.test(name) ? photos.front : photos.back
     const patch = plainPatch(source, target ?? source.cloth)
@@ -1282,11 +1318,19 @@ export function trustPieces(top, uv, photos) {
   return { plain, far, front, back, allOver }
 }
 
-// rgb ([[r...], [g...], [b...]]) less what's hangerLike, when enough is left.
+// rgb ([[r...], [g...], [b...]]) less what's hangerLike; null when too little is left (it was mostly hanger).
 function hangerless(rgb, cloth) {
   const keep = rgb[0].map((_, k) => !hangerLike(rgb[0][k], rgb[1][k], rgb[2][k], cloth))
-  if (keep.filter(Boolean).length < Math.max(8, rgb[0].length * 0.2)) return rgb
+  const kept = keep.filter(Boolean).length
+  if (kept === keep.length) return rgb
+  if (kept < Math.max(8, rgb[0].length * 0.2)) return null
   return rgb.map(values => values.filter((_, k) => keep[k]))
+}
+
+// collarColour as rgb lists of one value each (what the plain parts take a median of), or null.
+function topColour(photo) {
+  const hex = collarColour(photo)
+  return hex ? [1, 3, 5].map(k => [parseInt(hex.slice(k, k + 2), 16)]) : null
 }
 
 // The share of a photo's cloth off the cloth's colour (FAR away), sampled every 4 pixels.

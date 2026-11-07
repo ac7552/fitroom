@@ -609,7 +609,8 @@ export class DrapedTop {
     geometry.setAttribute("aHem", new THREE.BufferAttribute(Float32Array.from(cloth.toFree, d => Math.min(d, 99)), 1))
     // Which piece each point is on, for the shader: the front 1, the back 2, the sleeves 3 (left) and 4
     // (right), their cuffs 5 and 6, a hood -1 (out of the way of every test above 0), anything else 0.
-    const PIECES = { front: 1, back: 2, sleeve_L: 3, sleeve_R: 4, cuff_L: 5, cuff_R: 6, hood_L: -1, hood_R: -1 }
+    // (A collar or neckband is -2: like a hood's, its inside is much of what shows of it, at the back of the neck.)
+    const PIECES = { front: 1, back: 2, sleeve_L: 3, sleeve_R: 4, cuff_L: 5, cuff_R: 6, hood_L: -1, hood_R: -1, collar: -2 }
     geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => PIECES[cloth.panels[p]] ?? 0), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
