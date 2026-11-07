@@ -233,3 +233,17 @@ test("a hood's cords are painted out of the photo of the front with the cloth be
   for (const x of [185, 215]) for (const y of [110, 150, 200]) assert.ok(lum(x, y) < 130, `cord left at ${x},${y}: ${lum(x, y)}`)
   assert.ok(lum(200, 150) < 40 && lum(200, 300) < 40, "the zip stays")
 })
+
+test("a hooded top's shoulders: where the width last leaps out, though its hood is as wide as most of its chest", async () => {
+  const { shoulderRow } = await import("lib/garments/redrape")
+  // A hood 60 wide at its crown, then 110 (spread out, 0.6 of the chest), then shoulders and body 180–260.
+  const widths = []
+  for (let y = 0; y < 400; y++) widths.push(y < 55 ? 20 + y : y < 112 ? 110 : y < 180 ? 175 + (y - 112) * 0.5 : 260)
+  const row = shoulderRow(widths, 400)
+  assert.ok(row >= 110 && row <= 118, `shoulders at ${row}`)
+  // Sloping shoulders below a narrow hood's neck: where they leap out from it.
+  const sloped = []
+  for (let y = 0; y < 400; y++) sloped.push(y < 40 ? 60 + y : y < 60 ? 100 - (y - 40) : y < 100 ? 80 + (y - 60) * 4 : 260)
+  const r2 = shoulderRow(sloped, 400)
+  assert.ok(r2 >= 60 && r2 <= 85, `sloped shoulders at ${r2}`)
+})

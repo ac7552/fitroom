@@ -1021,9 +1021,14 @@ export class FittingStage {
     d.top.item.photoCloth = item.photoCloth ?? null
     // The store's photos, for re-draping (advanceRedrape); the drape's own record doesn't carry them.
     // (A romper's or jumpsuit's halves share its photos, each its part: above the waist or below it.)
+    const was = d.top.photos
     d.top.photos = item.photo ? { front: item.photo, back: item.back_photo ?? null, part: item.photoPart ?? null, worn: Boolean(item.photoWorn) } : null
     // Its photos taken away (the page decided they're better not laid on): back to its colour and print.
     if (!d.top.photos && d.redrapeState) { d.redrape = null; d.redrapeState = "off" }
+    // Its photos changed once the re-draping had begun (the front's reading came after: its graphic painted
+    // out of the photo to lay on, the graphic laid over it): laid on again from the new ones, on the same
+    // hanging (advanceRedrape). Laid from the old, a chest print was laid twice, once torn.
+    else if (was && d.top.photos && d.redrapeState && d.redrapeState !== "off" && (was.front !== d.top.photos.front || was.back !== d.top.photos.back)) d.redrapeSwap = true
     // With the photographs re-draped onto it (d.redrape), the cloth shows them and nothing else is laid on.
     // (A placed print stays on over the re-draped photo when the photo it was laid from had it painted out:
     // item.printPlaced, see fitting_room_controller.js.)
@@ -2085,6 +2090,22 @@ export class FittingStage {
   // simulated hanging as the store photographed it, a few milliseconds a frame, then each point takes its
   // place in the photos. Runs after the drape, so the garment shows first in its colour and print, then as
   // photographed. Once per draped garment (a new size drapes anew, and is re-draped anew).
+  // A garment's store photos read for re-draping (loadPhotoForRedrape), once per garment (its sizes share
+  // them; the cache holds the last few): a promise of { front, back } or null.
+  redrapePhotosFor(d, photos) {
+    this.redrapeCache ??= new Map()
+    const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}|${photos.part ?? ""}|${photos.worn ? "worn" : ""}`
+    if (!this.redrapeCache.has(key)) {
+      if (this.redrapeCache.size > 6) this.redrapeCache.delete(this.redrapeCache.keys().next().value)
+      const options = { labels: !d.top.bottoms, kind: d.top.bottoms ? "trousers" : "top", part: photos.part }
+      // A hood's drawcords hang over the front (redrape.js's paintCords).
+      const cords = !d.top.bottoms && d.top.cloth.panels.some(p => /^hood/.test(p))
+      this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, { ...options, cords, worn: photos.worn }), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
+        .then(([front, back]) => (front ? { front, back } : null)).catch(() => null))
+    }
+    return this.redrapeCache.get(key)
+  }
+
   advanceRedrape() {
     if (!REDRAPE_ON) return
     for (const slot of ["bottom", "top", "outer"]) {
@@ -2095,23 +2116,24 @@ export class FittingStage {
       const ready = d.top.done && !d.posing && d.shown
       if (!ready && !(HANG_IN_WORKER && this.hangWorker !== null && typeof Worker !== "undefined")) continue
       const item = d.top.item, photos = d.top.photos
+      // New photos for a garment already hung (see setOutfit's redrapeSwap): read, then laid on again.
+      if (d.redrapeSwap && photos && (d.redrapeState === "hanging" || d.redrapeState === "done") && !d.redrapeSwapping) {
+        d.redrapeSwap = false
+        d.redrapeSwapping = true
+        this.redrapePhotosFor(d, photos).then(read => {
+          d.redrapeSwapping = false
+          if (this.slots[slot] !== d || !read) return
+          d.redrapePhotos = read
+          if (d.redrapeState === "done") d.redrapeState = "hanging"
+          this.start()
+        })
+      }
       if (!photos || d.redrapeState === "done" || d.redrapeState === "off") continue
       if (!d.redrapeState) {
         d.redrapeState = "loading"
         // When each step finished, ms after the photos were asked for (the validation runner reports them).
         d.redrapeTimes = { asked: performance.now() }
-        // The photos, read once per garment (its sizes share them; the cache holds the last few).
-        this.redrapeCache ??= new Map()
-        const key = `${photos.front.length}:${photos.front.slice(-64)}|${photos.back?.length ?? 0}|${photos.part ?? ""}|${photos.worn ? "worn" : ""}`
-        if (!this.redrapeCache.has(key)) {
-          if (this.redrapeCache.size > 6) this.redrapeCache.delete(this.redrapeCache.keys().next().value)
-          const options = { labels: !d.top.bottoms, kind: d.top.bottoms ? "trousers" : "top", part: photos.part }
-          // A hood's drawcords hang over the front (redrape.js's paintCords).
-          const cords = !d.top.bottoms && d.top.cloth.panels.some(p => /^hood/.test(p))
-          this.redrapeCache.set(key, Promise.all([loadPhotoForRedrape(photos.front, undefined, { ...options, cords, worn: photos.worn }), photos.back ? loadPhotoForRedrape(photos.back, undefined, options) : null])
-            .then(([front, back]) => (front ? { front, back } : null)).catch(() => null))
-        }
-        this.redrapeCache.get(key).then(photos => {
+        this.redrapePhotosFor(d, photos).then(photos => {
           if (this.slots[slot] !== d) return
           if (!photos) { d.redrapeState = "off"; return }
           d.redrapePhotos = photos
@@ -2447,10 +2469,13 @@ function collarLeaf(top, scale) {
   const centre = points.reduce((c, p) => c.add(p), new THREE.Vector3()).multiplyScalar(1 / points.length)
   const angle = p => Math.atan2(p.x - centre.x, p.z - centre.z)
   // The rim by angle round the neck (0 at the front, toward +x), from the back round to the back.
+  const polo = ["polo", "rugby"].includes(top.item.style)
   const around = 72, columns = []
   for (let j = 0; j <= around; j++) {
     const a = (j / around) * 2 * Math.PI - Math.PI
-    if (Math.abs(a) < 0.16) { columns.push(null); continue }   // open at the front
+    // Open at the front: a shirt's collar points stand apart either side of its open neck (closed to a sliver,
+    // the leaf read as a ring round the neck, a stand collar, not a shirt's); a polo's meet over its placket.
+    if (Math.abs(a) < (polo ? 0.16 : 0.34)) { columns.push(null); continue }
     let best = null, bestD = Infinity
     for (const p of points) {
       const d = Math.abs(Math.atan2(Math.sin(angle(p) - a), Math.cos(angle(p) - a)))
@@ -2460,7 +2485,6 @@ function collarLeaf(top, scale) {
   }
   mesh.geometry.computeBoundingSphere()
   const caster = new THREE.Raycaster()
-  const polo = ["polo", "rugby"].includes(top.item.style)
   const rows = 9, positions = [], uvs = [], index = [], start = []
   for (const column of columns) {
     if (!column) { start.push(-1); continue }
@@ -2472,9 +2496,10 @@ function collarLeaf(top, scale) {
     const u = new THREE.Vector3(Math.sin(a), 0, Math.cos(a))
     // Longer toward the front, where the collar's points are.
     const front = Math.max(0, Math.min(1, (1.1 - Math.abs(a)) / 0.9))
-    const drop = (polo ? 0.05 : 0.052 + 0.03 * front * front) * scale
+    // (The points lie out over the chest, the leaf flatter there than round the back of the neck.)
+    const drop = (polo ? 0.05 + 0.015 * front * front : 0.052 + 0.035 * front * front) * scale
     const rimR = Math.hypot(p.x - centre.x, p.z - centre.z)
-    const spread = (polo ? 0.03 : 0.028 + 0.02 * front) * scale
+    const spread = (polo ? 0.03 + 0.015 * front : 0.028 + 0.04 * front) * scale
     for (let r = 0; r <= rows; r++) {
       const t = r / rows
       // Out from the neck as it comes down: over the stand's top, then flaring a little over the shirt.

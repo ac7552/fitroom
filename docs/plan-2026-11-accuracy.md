@@ -244,6 +244,88 @@ an Oxford shirt isn't a shoe; a turtleneck imports.
   keeps one it hasn't (two Erin jackets) — step 2; a stiletto's heel view now laid on its back shows the red
   sole — step 5.
 
+### Step 2, in progress (branch `step-2-parts`)
+
+Not merged: the code is in and spot-checked run by run, but the gate hasn't been re-measured. What the branch
+does:
+
+- **Placed graphics.** A chest graphic, logo or block of lettering is cut out of the photo at full size
+  (`print.js` `graphicPatch`). The cut-out takes the graphic's marks, what lies between them, and the thin rules
+  beside it. It leaves out marks that run off the front's top or hem, a strip at a side, or a band right across.
+  These checks use the marks as first read, before the print's areas are filled in.
+  - The graphic is painted out of the photo the re-drape lays on. The paint-out fills from all four sides with
+    the cloth's own colour (`cleanedPhoto`). Filled along rows only, it had left ridges in the relief.
+  - The graphic is laid as one piece at the photo's scale both ways (`uPrintWide`), so letters keep their shape.
+    The photo's relief is switched off under it.
+  - A zip hoodie gets this too. A jacket's photo laid on whole no longer loses a graphic painted out of it.
+- **Photos that arrive late.** The front's reading can finish after the re-draping has begun. The photo is then
+  laid on again on the same hanging (`stage.js` `redrapeSwap`); before, the old photo stayed and the print was laid
+  twice, once torn. The runner now waits for this.
+- **Hoods.**
+  - A hood is found over sloping shoulders, and on raglan hoodies whose hood falls straight to the shoulders
+    (`garmentRows`). Under a hood, a print starts `HOOD_DROP` below the shoulders' high points.
+  - The re-drape finds a hooded photo's shoulders where the outline leaps out (`shoulderRow`). A wide hood had been
+    taken for the shoulders.
+  - The hood's inside is kept off the body: a lining, a hanger in the hood (`hoodInside`), and the middle of the
+    front under the hood.
+  - A hood's inside is drawn at 0.85 of its colour (was 0.55, which read as a dark or missing hood). Worn down, it
+    stands 4.5 cm up the neck before folding back.
+  - A hanger's hook over its own shoulders is no longer read as a hood (the Knicks crewneck).
+- **Necklines.** A knit's crew is a 2.8 cm rib (the 5.5 cm rib read as a mock neck). A crew, mock, turtle, V,
+  scoop or boat neck named in the listing is drafted (`necklineOf`, `necked`). A dress's plunge comes down
+  straight to a point.
+- **Collars.**
+  - A shirt's collar leaf is open at the front, with its points out over the chest.
+  - The collar's colour, the collar strip and the collar band leave out a black hanger at a light garment's neck
+    (`hangerLike`). A collar band is always plain, in its own colour (its label had shown at the front of the
+    neck).
+  - Between a shirt's collar points, the front takes the cloth below.
+- **Tools.** `script/validation/probe.js` runs keys and posts picture grids to the dev log; `snap.sh` collects
+  them. `compare.py` puts each run's last earlier sheet over its new one. Tests: `necklines.test.mjs`, and
+  `shoulderRow` in `redrape.test.mjs` (260 pass).
+
+Seen fixed in spot renders, not yet graded:
+
+- Rhude, FOG, NBA, VOWELS, F of G, the Kith Ivy logo, the Kith zip-hoodie logo and the Knicks NY are placed whole,
+  in proportion.
+- The horse zip hoodie has no plaid lining on its chest.
+- Hoods on the zip hoodies are their own colour.
+- The Knicks crewneck has no hood.
+- Sweaters show crew necks, and the V-neck knit shows its V.
+- The print controls (Awake, A.P.C., Kith pocket, Rhude crest, Y-3 and the Jamaica tee) look as before or
+  crisper.
+
+To wrap it up, in order:
+
+1. **Render the step 2 set on the branch.** That is 48 runs, listed in `kith_20261107/runs_step2.json`: the
+   P-stretch, P-hood and P-lost tops; the hood, collar and neck runs; the eight print tees that graded ok; and
+   eight controls of other kinds (jackets, dresses, sweatshirts, an outer, a tee). Export with `export_log.js`
+   under the tag `step2`, then run `collect_log.py step2` and `compare.py step2`.
+2. **Grade against step 1.** Write `regrade_step2.py` on the model of `regrade_step1.py`, then `grades_step2.csv`,
+   then tally. The gate: hoodies show their hood; shirts and polos show their collar; no hood lining or cords in a
+   print; no control worse.
+3. **Close what the spot renders left open:**
+   - **Cords.** The zip hoodies' cords are still laid on as loops (acnci0211-ack, awafw26-hd003-blk): `paintCords`
+     misses cords either side of a zip. Fix it here, or move the cords clause of the gate to step 7, where the
+     plan has cords.
+   - **Polo collars.** Check the polos on black hangers (khm033366-002, khm035074-101) with the hanger fix. The
+     collar must read as a polo's, not a dark band.
+   - **The hood from the front.** It's better, but still a thin fold. If graders still mark hoods lost, give the
+     worn-down hood more of a roll round the neck (`place.js` `hoodDown`).
+   - **Print scale.** At the sample's size, a big chest graphic reads larger on the worn front than in the flat
+     photo (NBA, Rhude), because the front wraps the body. That's right by the chart. Keep it unless the grades
+     say otherwise.
+   - **Spot checks still owed:** the women's Kith hoodie label (khwa030159-001, after the raglan hood
+     detection); the Kith women's tee print over the bust (khwg030002-001); the dark neck patch on a dark plaid
+     shirt (the hanger test is off on dark cloth).
+4. **Budget.** Check the photo reading's time in the records (`times.read`). The full-size cut-out, the four-way
+   paint-out and `hoodInside` have to stay inside the photo-reading budget in section 6.
+5. **Merge.** Run `bin/rails test test/models/garment_import_test.rb` on the Mac (owed from step 1). Replace this
+   section with "Step 2, done" and its numbers, then merge to `main` and push.
+
+Not step 2: a white tee on a light backdrop gives no reading at all (rd024-02wcgt428, segmentation), and the
+swirls on knits, plaids and colour blocks are step 4's.
+
 ## 6. Performance budgets (unchanged by this plan)
 
 Everything per visitor stays in the browser; the droplet gains only static files (the depth model is

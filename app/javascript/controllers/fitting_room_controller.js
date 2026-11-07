@@ -6,6 +6,7 @@ import { compareLooks, compareShapes, croppedLengths, nextReading, PLAIN, reshap
 import { constructionFrom, dressSleeves, fitChart, readOutline } from "lib/garments/photo_fit"
 import { likeness, likenessQuick, likenessReady, likenessWithin, photoSummary, warmLikeness } from "lib/garments/likeness"
 import { depthForSide } from "lib/garments/depth"
+import { necklineOf } from "lib/garments/pattern"
 import { describeOutfit, keepDetails, localStudioReady, studioLook } from "lib/local_studio"
 import { cleanPhoto, wornSleeves } from "lib/garments/segment"
 import { legPrintAtlas, readLegPrints } from "lib/garments/leg_prints"
@@ -356,19 +357,23 @@ export default class extends Controller {
         }
         if (bottoms) garment.photoMap = read ? { image: read.image, soft: read.soft, layout: read.layout, back: back ? { image: back.image, layout: back.layout } : null } : null
         else {
-          this.applyTopReading(garment, read, back)
           // A dress, a jacket, a coat or a button-up shirt has its photo laid on the cloth, as pants have: a
           // dress's sequins, lace, print and texture, a jacket's or shirt's wash, pattern, placket, pockets
           // and seams, which a colour and a placed graphic can't give. The colour stays for what the photo
           // doesn't reach (the sleeves, the straps). Nothing goes over a dress's photo; a jacket or shirt
           // keeps the graphics read off its back and sleeves.
           const dress = garment.style === "dress"
-          if (dress || kind === "jacket" || kind === "coat" || ["shirt", "shortshirt"].includes(garment.style)) {
+          // (A zip hoodie, a jacket only by its zip, is a sweatshirt's cloth: its chest graphic is laid as a top's.)
+          const zipHoodie = kind === "jacket" && Boolean(garment.cut?.hood) && /cotton|fleece|jersey|knit|terry/i.test(garment.fabric ?? "")
+          const mapped = dress || ((kind === "jacket" || kind === "coat") && !zipHoodie) || ["shirt", "shortshirt"].includes(garment.style)
+          this.applyTopReading(garment, read, back, { mapped })
+          if (mapped) {
             const options = { flatten: dress, draped: dress && Boolean(garment.cut?.details?.includes("draping")) }
             const map = (await readDressPhoto(frontPhoto, options).catch(() => null)) ?? (frontPhoto !== garment.photo ? await readDressPhoto(garment.photo, options).catch(() => null) : null)
             if (this.outfit[kind] !== item) return
             garment.photoMap = map ? { image: map.image, soft: map.soft, layout: map.layout, color: map.color } : null
-            if (map) garment.print = null
+            // (Nor the photo laid on with the print painted out, for the print to go over it.)
+            if (map) garment.print = garment.printCleaned = null
             if (map && dress) garment.backPrint = garment.sleevePrint = null
           }
         }
@@ -428,12 +433,14 @@ export default class extends Controller {
 
   // A top's reading of its shop photos (print.js's readPhoto, front and back) laid on it: the front's print,
   // the back's, and the sleeves' graphics.
-  applyTopReading(garment, read, back) {
+  // mapped: its photo is laid on whole (a jacket's, a shirt's, a dress's; see the reading above), and the
+  // photo with its graphic painted out (read.cleaned, for the graphic to go over it in one piece) isn't used.
+  applyTopReading(garment, read, back, { mapped = Boolean(garment.photoMap) } = {}) {
     // A dress's photo shows ties, pleats and drapes that aren't a print: only a listing that says it's
     // printed gets the photo's print, and none goes over a dress with its photo laid on.
     const printed = !(garment.style === "dress" && (garment.photoMap?.layout?.dress || (garment.cut && !garment.cut.printed)))
     garment.print = printed ? read?.print ?? null : null
-    garment.printCleaned = printed && garment.print && read?.cleaned ? read.cleaned : null
+    garment.printCleaned = printed && !mapped && garment.print && read?.cleaned ? read.cleaned : null
     garment.backPrint = printed && back?.print ? { image: back.print.image } : null
     // The sleeves' graphics, by the wearer's side: the front photo shows the right sleeve on its left,
     // the back photo the left one; the front photo shows each sleeve's front half, the back its back.
@@ -1959,7 +1966,7 @@ export default class extends Controller {
       legPrints: garment.legPrints ?? null,
       fabric: garment.fabric,
       style: garment.style,
-      cut: garment.cut ?? null,
+      cut: topCut(garment, kind),
       zip: Boolean(garment.zip),
       sole: garment.sole ?? null,
       collar: garment.collar ?? null,
@@ -2342,6 +2349,12 @@ function fitDetails(garment) {
   const flags = Object.fromEntries(["women", "cropped", "snug", "dropped"].filter(key => garment[key]).map(key => [key, true]))
   if (!garment.cut && !Object.keys(flags).length) return undefined
   return { ...(garment.cut ?? {}), ...flags }
+}
+
+// A top's cut as the 3D view drafts it: its own, with the neckline its listing names (pattern.js's necked).
+function topCut(garment, kind) {
+  const neck = kind === "top" && garment.style !== "dress" ? necklineOf(garment) : null
+  return neck ? { ...(garment.cut ?? {}), neck } : garment.cut ?? null
 }
 
 // The size a shop photographs (its sample): the middle of its chart. Its chest and length (cm) say how big

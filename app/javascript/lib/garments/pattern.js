@@ -34,9 +34,9 @@ export const STYLES = {
   // A tank top: no sleeves, deep armholes, its straps in from the shoulders.
   tank: { sleeve: null, collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 6, length: 0.41 },
   // Knitwear: a sweater (ribbed neck, cuffs and hem) and a cardigan (the same, buttoned down a V front).
-  sweater: { sleeve: "long", collar: "rib", cuffs: "rib", hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4 },
+  sweater: { sleeve: "long", collar: "crew", cuffs: "rib", hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4 },
   // A short-sleeve knit (a knit tee or a mock neck): ribbed at the neck and hem, short sleeves.
-  shortknit: { sleeve: "short", collar: "rib", cuffs: null, hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4 },
+  shortknit: { sleeve: "short", collar: "crew", cuffs: null, hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4 },
   cardigan: { sleeve: "long", collar: "band", cuffs: "rib", hem: "rib", fabric: "fleece", surface: "rib", ease: 12, length: 0.4, closure: "buttons", neck: 20 },
   // Short sleeves, a round neck, close at the waist and flaring out to about the knee.
   dress: { sleeve: "short", collar: "band", cuffs: null, hem: null, fabric: "jersey", ease: 8, length: 0.53, shaped: true }
@@ -46,7 +46,12 @@ export const STYLES = {
 // stretched on, so the edge gathers into it).
 const BANDS = {
   band: { height: 2, stretch: 0.88, fabric: "rib" },
+  // A knit's crew neck: a low rib (a sweater drawn with the 5.5 cm rib read as a mock neck).
+  crew: { height: 2.8, stretch: 0.86, fabric: "rib" },
+  // A rib standing up: a bomber's collar, a mock neck.
   rib: { height: 5.5, stretch: 0.86, fabric: "rib" },
+  // A turtleneck's, folded over (drawn as its height folded, standing).
+  turtle: { height: 8, stretch: 0.86, fabric: "rib" },
   stand: { height: 6, stretch: 1, fabric: "main" },
   // A shirt's collar stand: low, the collar itself folded down over it (drawn over the drape, see stage.js).
   shirtstand: { height: 3.2, stretch: 1, fabric: "main" },
@@ -76,12 +81,19 @@ export function draftTop(styleName, size, body, cut = null) {
   // What the shop's photo showed of the make (photo_fit.js, as cut.photo): the collar, the sleeves' length,
   // bands at the cuffs and hem. The photo outranks the listing's words on a top that isn't shaped.
   if (cut?.photo && !style.shaped) style = photographed(style, cut.photo)
+  // The neckline its listing names (a crew, a mock or turtle neck, a V, a scoop, a boat neck), over the
+  // style's and the photo's: the photo can't tell a crew's rib from a mock neck's.
+  if (cut?.neck && !style.shaped) style = necked(style, cut.neck)
   const m = measures(style, size, body, cut)
   if (style.neck) m.frontNeck = style.neck
+  if (style.neckSquare) m.neckSquare = style.neckSquare
+  if (style.neckWide) m.neckWidth += style.neckWide
   let flounce = 0, flounces = 0
   if (style.shaped) {
     shapeSkirt(m, size, body, cut)
     if (cut?.neckline) m.frontNeck = NECK_DEPTH[cut.neckline] ?? m.frontNeck
+    // A plunge (a V-neck) comes down straight to its point.
+    if (cut?.neckline === "plunge") m.neckSquare = 1
     if (cut?.flounce) { const f = flounceFor(m, cut); flounce = f.height; flounces = f.count; m.length -= f.height * f.count }
     setSlit(m, cut, flounce)
   }
@@ -144,6 +156,40 @@ export function draftTop(styleName, size, body, cut = null) {
   // (A hoodie that zips down the front says so in its cut.)
   const fabric = !style.shaped && cut?.stretch ? "rib" : style.fabric
   return { panels, seams, style: styleName, closure: cut?.closure ?? style.closure ?? null, fabric, measures: m }
+}
+
+// The neckline a top's listing names: "turtle", "mock", "v", "scoop", "boat", "crew", or null. Its name first,
+// then its description when that names only one (a description may name another piece's: "under a V-neck").
+const NECKLINES = [
+  ["turtle", /turtle ?neck|roll ?neck|polo ?neck(?! (?:shirt|tee))/i],
+  ["mock", /mock ?neck|funnel ?neck|high ?neck/i],
+  ["v", /\bv[- ]?neck|\bdeep[- ]v\b/i],
+  ["scoop", /scoop ?neck|\bu[- ]neck/i],
+  ["boat", /boat ?neck|bateau/i],
+  ["crew", /crew ?neck|round ?neck/i]
+]
+export function necklineOf(garment) {
+  const named = text => NECKLINES.filter(([, pattern]) => pattern.test(text ?? "")).map(([neck]) => neck)
+  const inName = named(garment.name)
+  if (inName.length) return inName[0]
+  const inWords = named(String(garment.description ?? "").replace(/<[^>]+>/g, " "))
+  return inWords.length === 1 ? inWords[0] : null
+}
+
+// A style with a neckline its listing names (necklineOf): "crew", "mock", "turtle", "v",
+// "scoop" or "boat". A knit's band is its rib; a jersey's, a band. Not over a hood, a shirt's or a polo's collar.
+// neck: the neck's depth at the front (cm); neckSquare: its shape (1 a V's straight sides, 2 round); neckWide:
+// how much wider it is than the neck (cm each side).
+export function necked(style, neck) {
+  if (["hood", "shirtstand", "polo"].includes(style.collar)) return style
+  const band = style.surface === "rib" || ["rib", "crew", "turtle"].includes(style.collar) ? "crew" : "band"
+  if (neck === "crew") return { ...style, collar: band }
+  if (neck === "mock") return { ...style, collar: "rib" }
+  if (neck === "turtle") return { ...style, collar: "turtle" }
+  if (neck === "v") return { ...style, collar: band, neck: 17, neckSquare: 1 }
+  if (neck === "scoop") return { ...style, collar: band, neck: 14 }
+  if (neck === "boat") return { ...style, collar: band, neck: 4, neckWide: 5 }
+  return style
 }
 
 // A style as the photo showed it (photo_fit.js's constructionFrom): collar "shirt" (a shirt's collar on its
@@ -209,7 +255,7 @@ export function measures(style, size, body, cut = null) {
     sleeve,
     hem: shaped ? Math.max(chest, shaped.hips) * 1.22 : Math.min(size.waist ?? chest, chest) * (hemBand ? 1 : 0.99),
     neckWidth,
-    frontNeck: { stand: 6, shirtstand: 7, rib: 6, hood: 8 }[style.collar] ?? 9,
+    frontNeck: { stand: 6, shirtstand: 7, rib: 6, turtle: 5, crew: 8, hood: 8 }[style.collar] ?? 9,
     backNeck: 2,
     shoulderDrop: 4.4,
     armhole: (body.armpit ?? 19) + (fitted ? 0.5 : 2) + roomy / 8,
@@ -563,7 +609,7 @@ function draftDress(size, body, cut) {
   m.length -= flounce * flounces
   setSlit(m, cut, flounce)
   const neckline = cut.neckline ?? "round"
-  m.neckSquare = neckline === "straight" ? 6 : 2
+  m.neckSquare = neckline === "straight" ? 6 : neckline === "plunge" ? 1 : 2
   const panels = {}, seams = []
   const shoulderBone = body.shoulders / 2
   if (cut.sleeves === "strapless") {

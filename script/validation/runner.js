@@ -83,7 +83,7 @@ async function settle(limit, look) {
     const at = Math.round(performance.now() - t0), w = VAL.current?.waits
     if (w) { if (s.settled) w.drape ??= at; if (lookDone) w.look ??= at; if (read) w.read ??= at }
     // The shop photos laid on point for point (stage.js's advanceRedrape), which follows the drape.
-    const redraped = Object.values(s.slots).every(d => !d || !d.top?.photos || ["done", "off"].includes(d.redrapeState) || late)
+    const redraped = Object.values(s.slots).every(d => !d || !d.top?.photos || (["done", "off"].includes(d.redrapeState) && !d.redrapeSwap && !d.redrapeSwapping) || late)
     stable = s.settled && lookDone && read && redraped ? stable + 1 : 0
     if (stable >= 2) return true
     await sleep(100)

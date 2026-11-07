@@ -7,7 +7,8 @@ import { BORDER, DEPTH_BIAS, FACING, LIGHT } from "lib/projection"
 //   uv       where it is on its pattern piece, in metres (so textures tile at a real size)
 //   aEdge    how far it is from the edge of its piece (cm): seams show as a soft groove along it
 //   aHem     how far it is from a hem or other free edge (cm): hems are stitched a little way up
-//   aPiece   which piece it's on (1 the front, 2 the back, 3 the left sleeve, 4 the right, 0 the rest)
+//   aPiece   which piece it's on (1 the front, 2 the back, 3 the left sleeve, 4 the right, 5 and 6 the cuffs,
+//            -1 a hood, 0 the rest)
 //   aShade   how open to the room it is (1) or tucked into a fold or under the hood (less): ambient light
 //            reaching it, worked out from the drape
 //   aHide    above 0 where it isn't drawn: a tucked top inside the pants (how far inside, m)
@@ -384,6 +385,8 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
     // Each graphic's place in that texture: [u0, v0, du, dv].
     uLegRects: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
     uPrintHalf: { value: 26 },
+    // The front's graphic: half as wide as this either side of the middle (DrapedTop#setPrint).
+    uPrintWide: { value: 26 },
     uPrintLength: { value: 70 },
     // How far below the shoulders' high points the photo's front (and its back's) starts, in cm.
     uPrintTop: { value: 0 },
@@ -543,6 +546,7 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         uniform vec4 uLegRects[ 4 ];
         varying vec3 vLegPrint;
         uniform float uPrintHalf;
+        uniform float uPrintWide;
         uniform float uPrintLength;
         uniform float uPrintTop;
         uniform float uBackTop;
@@ -796,10 +800,12 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
           }
         }
         if ( uPrintOn > 0.5 && vPiece > 0.5 && vPiece < 1.5 && gl_FrontFacing ) {
-          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintHalf ), ( -vPattern.y - uPrintTop ) / ( uPrintLength - uPrintTop ) );
+          vec2 st = vec2( 0.5 + vPattern.x / ( 2.0 * uPrintWide ), ( -vPattern.y - uPrintTop ) / ( uPrintLength - uPrintTop ) );
           if ( st.x > 0.0 && st.x < 1.0 && st.y > 0.0 && st.y < 1.0 ) {
             vec4 printed = texture2D( uPrint, vec2( st.x, 1.0 - st.y ) );
             diffuseColor.rgb = mix( diffuseColor.rgb, printed.rgb, printed.a );
+            // (Not the relief of the photo laid under it, where it was painted out.)
+            gPhotoHeight *= 1.0 - printed.a;
           }
         }
         // A sleeve's graphic: down it by its length from the top of the cap, across it from its top line (x 0)
@@ -828,7 +834,9 @@ export function clothMaterial({ color = "#2a3552", cloth = "jersey", details = {
         // other, so it's a little darker and rougher there (the photo's colour too, laid on above).
         float crease = clamp( vStrain + CREASE_FOLD * ( 1.0 - vShade ), 0.0, 1.0 ) * ( 1.0 - metal );
         diffuseColor.rgb *= 1.0 - CREASE_DARK * crease;
-        if ( !gl_FrontFacing && uBake < 0.5 ) diffuseColor.rgb *= 0.55;   // the inside (not when baking: a panel's uv winding says nothing about its outside)
+        // (A hood's inside is its outside's cloth, turned: worn down and folded back, it's much of what shows of
+        // the hood round the neck, and at the cloth's inside shade the hood read as dark, or lost.)
+        if ( !gl_FrontFacing && uBake < 0.5 ) diffuseColor.rgb *= vPiece < -0.5 ? 0.85 : 0.55;   // the inside (not when baking: a panel's uv winding says nothing about its outside)
         ${fitMap ? "" : PROJECTION.fragmentApply}`)
       // The inside of the cloth (a hood's, a turned-back cuff's) is in its own shade: its sheen dimmed with it,
       // or a black hood's inside catches a grey shine the outside doesn't.

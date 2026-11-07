@@ -83,8 +83,11 @@ export function clothMask(data, w, h) {
     const narrow = []
     for (let y = first; y <= hookEnd; y++) if (widths[y]) narrow.push(widths[y])
     // A hook is a wire or a hook of plastic, a few percent of the garment across; a hood's crown narrows to
-    // nothing at its very top but is a fifth of the garment across a little below.
-    const broad = median(narrow) >= widest * 0.1
+    // nothing at its very top but is a fifth of the garment across a little below. (A hanger's own shoulders
+    // below its hook can make the rows broad on the whole, a crewneck on Kith's black hangers read as a hood:
+    // a wire over the top third of them is a hook.)
+    const wire = median(narrow.slice(0, Math.max(1, Math.round(narrow.length / 3)))) < widest * 0.05
+    const broad = !wire && median([...narrow]) >= widest * 0.1
     if (broad) hookEnd = -1
     else out.fill(0, first * w, (hookEnd + 1) * w)
   }
@@ -305,10 +308,7 @@ export function registerPhoto(top, hanging, front, back = null) {
     if (!hooded || bottoms) return 0
     const widths = []
     for (let y = 0; y < layout.H; y++) widths.push(Number.isNaN(layout.all[0][y]) ? 0 : layout.all[1][y] - layout.all[0][y])
-    const chest = widths.slice(Math.round(0.25 * layout.H), Math.round(0.45 * layout.H)).sort((a, b) => a - b)
-    const typical = chest[chest.length >> 1] ?? 0
-    const y = widths.findIndex(v => v >= 0.6 * typical)
-    return y > 0 && y < 0.4 * layout.H ? y : 0
+    return shoulderRow(widths, layout.H)
   }
   const ends = { front: endsOf(layouts.front), back: layouts.back ? endsOf(layouts.back) : null }
   const tops = { front: shouldersOf(layouts.front), back: layouts.back ? shouldersOf(layouts.back) : 0 }
@@ -397,11 +397,20 @@ export function collarColour(photo) {
   const samples = [[], [], []]
   for (let y = 0; y <= to - box.top; y++) for (let x = box.left; x <= box.right; x += 2) {
     if (!mask[(box.top + y) * w + x]) continue
-    for (let c = 0; c < 3; c++) samples[c].push(data[4 * (y * w + x) + c])
+    const i = 4 * (y * w + x)
+    if (hangerLike(data[i], data[i + 1], data[i + 2], photo.cloth)) continue
+    for (let c = 0; c < 3; c++) samples[c].push(data[i + c])
   }
   if (samples[0].length < 20) return null
   const median = values => { values.sort((a, b) => a - b); return values[values.length >> 1] }
   return "#" + samples.map(v => median(v).toString(16).padStart(2, "0")).join("")
+}
+
+// A pixel of the black hanger a light garment is photographed on (Kith's), at its collar: near black and
+// grey, on cloth far lighter. The collar took its colour, a white polo's drawn black.
+function hangerLike(r, g, b, cloth) {
+  if (!cloth || cloth[0] + cloth[1] + cloth[2] < 330) return false
+  return Math.max(r, g, b) < 70 && Math.max(r, g, b) - Math.min(r, g, b) < 25
 }
 
 // The collar as a photo shows it, as a strip (a canvas): the top 7% of the garment, across the cloth on those
@@ -422,8 +431,8 @@ export function collarStrip(photo) {
   if (!fill) return null
   const rgb = [1, 3, 5].map(k => parseInt(fill.slice(k, k + 2), 16))
   for (let y = 0; y < image.height; y++) for (let x = left; x <= right; x++) {
-    if (mask[(box.top + y) * w + x]) continue
     const i = 4 * (y * w + x)
+    if (mask[(box.top + y) * w + x] && !hangerLike(d[i], d[i + 1], d[i + 2], photo.cloth)) continue
     d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2]; d[i + 3] = 255
   }
   const strip = document.createElement("canvas")
@@ -780,11 +789,26 @@ export function guardForeign(top, uv, photos) {
     return context.get(photo)
   }
   let count = 0
+  // A hooded top's front photo: the inside of its hood, seen through the opening down to where its edges
+  // meet (a plaid lining, a hanger), is no part of the body's cloth.
+  const hooded = cloth.panels.some(name => /^hood/.test(name))
+  const inside = hooded ? hoodInside(photos.front, pixelsOf(photos.front)) : null
+  // A shirt's or polo's open neck: on its photo, between the collar's points, the inside of its back and its
+  // label show (laid on, a dark square under the chin, between the collar's points drawn over it): the
+  // middle of the front's top takes the cloth below it. (neckDepth: how far the front's neckline dips, cm.)
+  const item = top.item ?? {}
+  const collared = item.cut?.photo?.collar ? item.cut.photo.collar === "shirt" : ["shirt", "shortshirt", "polo", "rugby"].includes(item.style)
+  const neckDepth = top.pattern?.measures?.frontNeck ?? 8
   for (let i = 0; i < n; i++) {
     const photo = uv[3 * i + 2] === 3 && photos.back ? photos.back : photos.front
     const w = photo.canvas.width, h = photo.canvas.height
     const x = Math.min(w - 1, Math.max(0, Math.round(uv[3 * i] * w))), y = Math.min(h - 1, Math.max(0, Math.round((1 - uv[3 * i + 1]) * h)))
     const k = y * w + x
+    if (inside && photo === photos.front && inside[k] && /^(front|back)$/.test(cloth.panels[cloth.panel[i]])) { bad[i] = 1; count++; continue }
+    if (collared && cloth.panels[cloth.panel[i]] === "front" && Math.abs(cloth.points[i][0]) < 4.5 && cloth.points[i][1] > -(neckDepth + 4)) { bad[i] = 1; count++; continue }
+    // (And under a hood: where its edges cross at the front and its cords hang, in the cloth's own colour
+    // too, a hood's outline was laid on the chest.)
+    if (hooded && cloth.panels[cloth.panel[i]] === "front" && Math.abs(cloth.points[i][0]) < 7 && cloth.points[i][1] > -(neckDepth + 5)) { bad[i] = 1; count++; continue }
     // Off the cloth: no cloth within a few pixels (a point at the very edge is the edge, not the backdrop).
     let near = false
     for (let dy = -4; dy <= 4 && !near; dy += 2) for (let dx = -4; dx <= 4 && !near; dx += 2) {
@@ -792,6 +816,11 @@ export function guardForeign(top, uv, photos) {
       if (yy >= 0 && yy < h && xx >= 0 && xx < w && photo.mask[yy * w + xx]) near = true
     }
     if (!near) { bad[i] = 1; count++; continue }
+    // The black hanger a light garment hangs on, in its neck (see hangerLike): no part of the cloth.
+    if (photo.mask[k] && y < photo.box.top + 0.25 * (photo.box.bottom - photo.box.top)) {
+      const d = pixelsOf(photo)
+      if (hangerLike(d[4 * k], d[4 * k + 1], d[4 * k + 2], photo.cloth)) { bad[i] = 1; count++; continue }
+    }
     // Skin only counts on a photo of someone wearing it (a flat photo's red or tan cloth reads as skin too),
     // and not where the cloth itself is skin-coloured.
     if (!photo.worn || !photo.mask[k]) continue
@@ -813,6 +842,87 @@ export function guardForeign(top, uv, photos) {
   }
   for (let i = 0; i < n; i++) if (bad[i] && from[i] >= 0) { const j = from[i]; uv[3 * i] = uv[3 * j]; uv[3 * i + 1] = uv[3 * j + 1]; uv[3 * i + 2] = uv[3 * j + 2] }
   return count
+}
+
+// Where a hooded top's shoulders are on its photo, as a row from the garment's top (0 when it can't tell),
+// from its rows' widths (widths[y], the garment's extent on each row from the top down; H rows): where the
+// width last leaps out over the top 45%, from the hood's to the shoulders' (a hood stands narrower than the
+// shoulders it's sewn to). Not the first row as wide as most of the chest: a hood can be (Kith's zip hoodie
+// with its plaid lining, laid out with its hood spread), and its middle was taken for the shoulders, the
+// body's top laid on the hood's lining.
+export function shoulderRow(widths, H) {
+  const chest = widths.slice(Math.round(0.25 * H), Math.round(0.45 * H)).filter(v => v > 0).sort((p, q) => p - q)
+  const typical = chest[chest.length >> 1] ?? 0
+  if (!typical) return 0
+  const step = Math.max(2, Math.round(0.03 * H))
+  const leaps = y => widths[y] > 0 && widths[y + step] - widths[y] > 0.15 * typical
+  let last = -1
+  for (let y = 0; y + step < 0.45 * H; y++) if (leaps(y)) last = y
+  if (last >= 0) {
+    // Halfway out (a sharp leap's row; the middle of shoulders sloping out from a hood's neck): from the
+    // width where the leap begins to where it ends.
+    let first = last
+    while (first > 0 && leaps(first - 1)) first--
+    const from = widths[first], to = widths[last + step]
+    for (let y = first; y <= last + step; y++) if (widths[y] >= (from + to) / 2) return y
+  }
+  const y = widths.findIndex(v => v >= 0.6 * typical)
+  return y > 0 && y < 0.4 * H ? y : 0
+}
+
+// The inside of a hood on a photo of a hooded top's front (a mask the photo's size, or null): what's far from
+// the cloth's colour in the hood above the shoulders (its lining, a hanger in it), and on down through the
+// opening below them, joined to it, until it narrows to under a fiftieth of the photo (where the hood's
+// edges meet; not a zip or a cord running on down). A lining of the cloth's own colour isn't found, and
+// needn't be.
+export function hoodInside(photo, data) {
+  const { mask, box, cloth } = photo
+  if (!cloth || !mask) return null
+  const W = photo.canvas.width, H = box.bottom - box.top + 1
+  const widths = []
+  for (let y = box.top; y <= box.bottom; y++) {
+    let a = -1, b = -1
+    for (let x = box.left; x <= box.right; x++) if (mask[y * W + x]) { if (a < 0) a = x; b = x }
+    widths.push(a < 0 ? 0 : b - a)
+  }
+  const start = shoulderRow(widths, H)
+  if (!start) return null
+  // An all-over print (a camo) is far from the cloth's colour everywhere: its blotches aren't a lining.
+  if (photoShare(photo) > 0.5) return null
+  const shoulders = box.top + start, last = Math.min(box.bottom, shoulders + Math.round(0.18 * H))
+  // Within the hood's own width, about its middle.
+  const hoodRows = []
+  for (let y = box.top + Math.round(0.3 * start); y < shoulders; y++) {
+    let a = -1, b = -1
+    for (let x = box.left; x <= box.right; x++) if (mask[y * W + x]) { if (a < 0) a = x; b = x }
+    if (a >= 0) hoodRows.push([a, b])
+  }
+  if (hoodRows.length < 4) return null
+  const mid = values => values.sort((p, q) => p - q)[values.length >> 1]
+  const half = mid(hoodRows.map(([a, b]) => b - a)) / 2, centre = mid(hoodRows.map(([a, b]) => (a + b) / 2))
+  const x0 = Math.max(box.left, Math.round(centre - half)), x1 = Math.min(box.right, Math.round(centre + half))
+  const far = k => mask[k] && Math.hypot(data[4 * k] - cloth[0], data[4 * k + 1] - cloth[1], data[4 * k + 2] - cloth[2]) > FAR
+  const inside = new Uint8Array(mask.length)
+  const stack = []
+  for (let y = box.top; y < shoulders; y++) for (let x = x0; x <= x1; x++) { const k = y * W + x; if (far(k)) { inside[k] = 1; stack.push(k) } }
+  if (!stack.length) return null
+  while (stack.length) {
+    const k = stack.pop(), x = k % W, y = (k - x) / W
+    for (const j of [x > x0 ? k - 1 : -1, x < x1 ? k + 1 : -1, y > box.top ? k - W : -1, y < last ? k + W : -1]) {
+      if (j < 0 || inside[j] || !far(j)) continue
+      inside[j] = 1
+      stack.push(j)
+    }
+  }
+  // Below the shoulders, row by row until the opening has narrowed away.
+  let open = true
+  for (let y = shoulders; y <= last; y++) {
+    let on = 0
+    for (let x = box.left; x <= box.right; x++) on += inside[y * W + x]
+    if (on < 0.02 * W) open = false
+    if (!open) inside.fill(0, y * W + box.left, y * W + box.right + 1)
+  }
+  return inside
 }
 
 // The photo as a material rather than a picture: its light taken out, its relief kept. The photographer's
@@ -1101,7 +1211,8 @@ export function similarity(src, dst) {
 //
 //   hood            always plain (its outside isn't on a front photo)
 //   sleeves, bands  plain when more of the piece is off the cloth's colour than the photo can explain:
-//                   a fifth of a sleeve (a sixth on a worn photo), half a band
+//                   a fifth of a sleeve (a sixth on a worn photo), half a band; a collar band always, in its
+//                   own colour (its label and the neck's inside show with it on a front photo)
 //   the back        plain when there's no photo of it and the front has a graphic (a chest print isn't
 //                   on the back too), else the front laid on as before
 //
@@ -1151,12 +1262,17 @@ export function trustPieces(top, uv, photos) {
     if (/^hood/.test(name)) reason = "hood"
     else if (allOver) reason = null
     else if (/^sleeve/.test(name) && share > (worn ? 0.16 : 0.2)) reason = "sleeve"
+    // A collar band in its own colour always: on a front photo it's seen at the top with the inside of the
+    // back of the neck and its label (Awake's blue label was laid on the front of the neck).
+    else if (name === "collar") reason = "band"
     else if (/^(cuff|waistband|collar|placket)/.test(name) && share > 0.5) reason = "band"
     else if (/^back/.test(name) && !photos.back && graphic) reason = "back"
     if (!reason) continue
     // Bands keep their own colour (a black rib on grey); the rest take the cloth's.
     const median = values => { const v = [...values].sort((a, b) => a - b); return v[v.length >> 1] }
-    const target = reason === "band" ? stats[p].rgb.map(median) : null
+    // (A collar's without the hanger it was photographed on: see hangerLike.)
+    const own = name === "collar" ? hangerless(stats[p].rgb, photos.front.cloth) : stats[p].rgb
+    const target = reason === "band" ? own.map(median) : null
     const source = reason === "back" || !photos.back || !/^back/.test(name) ? photos.front : photos.back
     const patch = plainPatch(source, target ?? source.cloth)
     if (!patch) continue
@@ -1164,6 +1280,13 @@ export function trustPieces(top, uv, photos) {
     plain.push(name)
   }
   return { plain, far, front, back, allOver }
+}
+
+// rgb ([[r...], [g...], [b...]]) less what's hangerLike, when enough is left.
+function hangerless(rgb, cloth) {
+  const keep = rgb[0].map((_, k) => !hangerLike(rgb[0][k], rgb[1][k], rgb[2][k], cloth))
+  if (keep.filter(Boolean).length < Math.max(8, rgb[0].length * 0.2)) return rgb
+  return rgb.map(values => values.filter((_, k) => keep[k]))
 }
 
 // The share of a photo's cloth off the cloth's colour (FAR away), sampled every 4 pixels.

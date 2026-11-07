@@ -4,6 +4,7 @@
 
 const SIZE = 384   // the photo is read at about this many pixels across
 const PRINT_SIZE = 720   // and its print at about this many (thin lettering is only a few pixels wide)
+const HOOD_DROP = 0.065   // how far below the shoulders' high points a hood's shoulder line shows, of the length (readFront)
 
 // Waits for an image to load. (Not image.decode(), which never settles while the tab is in the background.)
 export function loaded(image) {
@@ -85,8 +86,9 @@ export async function readPhoto(src, { shape = null, hood = true, patterns = tru
     out.width = found.print.width
     out.height = found.print.height
     out.getContext("2d").putImageData(new ImageData(found.print.data, found.print.width, found.print.height), 0, 0)
-    // A tonal graphic: a patch of the photo at its full size (tonalPatch), in place of the reading's.
-    patch = found.print.tonal ? tonalPatch(image, found) : null
+    // A tonal graphic: a patch of the photo at its full size (tonalPatch), in place of the reading's; any
+    // other placed graphic, its own marks at full size (graphicPatch).
+    patch = found.print.tonal ? tonalPatch(image, found) : graphicPatch(image, found)
     const strip = found.print.strip
     print = {
       image: patch?.image ?? out, coverage: patch?.coverage ?? found.print.coverage, tonal: Boolean(found.print.tonal), spread: found.print.spread, tile: found.print.allOver ? allOverTile(found.print) : null, stripes: found.print.stripes, mottled: Boolean(found.print.mottled), fromTop: found.print.fromTop ?? 0,
@@ -107,9 +109,10 @@ export async function readPhoto(src, { shape = null, hood = true, patterns = tru
   // clearly, so either says it for both.
   const { left, right } = found.sleeves ?? {}
   const sleeves = left || right ? { left: canvas(left), right: canvas(right), wrap: Boolean(left?.wrap || right?.wrap) } : null
-  // With a tonal graphic, the photo with it painted out, for laying the photo on the cloth point for point
-  // without it (laid so, its lettering tore), the patch laid as one piece over it (dress.js's setPrint).
-  const cleaned = patch ? cleanedPhoto(image, patch) : null
+  // With a placed graphic, the photo with it painted out, for laying the photo on the cloth point for point
+  // without it (laid so, its lettering tore and a chest print's outer letters ran up over the shoulders), the
+  // patch laid as one piece over it (dress.js's setPrint).
+  const cleaned = patch ? cleanedPhoto(image, patch, found.color) : null
   return { color: found.color, print, sleeves, cuffTone: left?.cuff ?? right?.cuff ?? null, look: found.look, cleaned }
 }
 
@@ -231,10 +234,118 @@ function tonalPatch(image, found) {
   return { image: front, coverage: covered / (FW * FH), fill, box: [FX, FY, FW, FH] }
 }
 
+// A placed graphic (a chest print, a logo, a line of lettering) as a patch of the photo at its full size: the
+// reading's marks and what's between them (its print areas), grown by a margin and feathered, the photo's
+// own pixels in them. Laid as one piece by its box at the photo's scale (dress.js's setPrint) over the photo
+// laid on point for point with it painted out (cleanedPhoto), so the registration can't stretch it: hung on
+// the hanger, the front's top corners droop, and a chest print's outer letters, laid so, ran up over the
+// shoulders (Kith's Rhude and Essentials hoodies). Not an all-over print, stripes or a mottled cloth: those
+// are the cloth itself. Returns tonalPatch's { image, coverage, fill, box } or null.
+function graphicPatch(image, found) {
+  const p = found.print
+  if (p.allOver || p.stripes || p.strip || p.mottled || !(p.coverage > 0.003)) return null
+  const { width: pw, height: ph, data: marks } = p
+  const [fx0, fy0] = found.rect, [cx, cy] = found.crop, s = 1 / found.scale
+  const FX = Math.round(cx + fx0 * s), FY = Math.round(cy + fy0 * s)
+  const FW = Math.min(image.naturalWidth - FX, Math.round(pw * s)), FH = Math.min(image.naturalHeight - FY, Math.round(ph * s))
+  if (FW < 20 || FH < 20 || FW * FH > 8e6) return null
+  const margin = Math.max(2, Math.round(pw * 0.012))
+  const edgeX = Math.max(2, Math.round(pw * 0.02)), edgeY = Math.max(2, Math.round(ph * 0.025))
+  // Only the graphic on the chest. Marks running off the front's top or hem, or off its sides as a strip or a
+  // band right across, are the collar and its label, a colour-blocked yoke, a stripe (a knit's colour blocks,
+  // Kith's Knicks sweater): the cloth, laid on with the photo. Judged on the marks as read (raw), each with
+  // those touching it: the print as laid fills in between its marks, and so had joined the Knicks letters to
+  // the yoke above them, and none of it was placed.
+  const raw = p.raw ?? Float32Array.from({ length: pw * ph }, (_, k) => marks[4 * k + 3] / 255)
+  const seen = new Uint8Array(pw * ph), dropped = new Float32Array(pw * ph)
+  const mark = k => raw[k] > 0.5
+  for (let k0 = 0; k0 < pw * ph; k0++) {
+    if (seen[k0] || !mark(k0)) continue
+    const part = [k0]
+    seen[k0] = 1
+    let ends = false, sides = false, x0 = pw, x1 = -1, y0 = ph, y1 = -1
+    for (let q = 0; q < part.length; q++) {
+      const k = part[q], x = k % pw, y = (k - x) / pw
+      if (y < edgeY || y >= ph - edgeY) ends = true
+      if (x < edgeX || x >= pw - edgeX) sides = true
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y)
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy, j = yy * pw + xx
+        if (xx < 0 || yy < 0 || xx >= pw || yy >= ph || seen[j] || !mark(j)) continue
+        seen[j] = 1
+        part.push(j)
+      }
+    }
+    // At a side: a bit of a band or a sleeve's stripe there, or a band right across; not a big graphic the
+    // front's box was cut narrower than (to its chart's width: the Knicks letters reach its sides).
+    const wide = (x1 - x0 + 1) / pw, tall = (y1 - y0 + 1) / ph
+    if (ends || (sides && (wide < 0.3 || (wide > 0.9 && tall < 0.2)))) for (const k of part) dropped[k] = 1
+  }
+  // The print as read (its marks and what's between them), less what was left out and what's right beside it.
+  const off = boxBlur(dropped, pw, ph, margin)
+  const on = new Float32Array(pw * ph)
+  for (let k = 0; k < pw * ph; k++) on[k] = marks[4 * k + 3] > 64 && !(off[k] > 0.001) ? 1 : 0
+  if (!on.some(v => v > 0)) return null
+  // With the thin lines beside it (rules under a box of lettering: Made Some's Jamaica tee), which the
+  // reading leaves out as seams: left in the photo under it, they were laid on as a band right across.
+  {
+    let x0 = pw, x1 = -1, y0 = ph, y1 = -1
+    for (let k = 0; k < pw * ph; k++) if (on[k]) { const x = k % pw, y = (k - x) / pw; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y) }
+    const gx = Math.round(pw * 0.03), gy = Math.round(ph * 0.05)
+    for (let y = Math.max(edgeY, y0 - gy); y <= Math.min(ph - 1 - edgeY, y1 + gy); y++)
+      for (let x = Math.max(edgeX, x0 - gx); x <= Math.min(pw - 1 - edgeX, x1 + gx); x++) if (mark(y * pw + x) && !(off[y * pw + x] > 0.001)) on[y * pw + x] = 1
+  }
+  // The patch: the graphic grown by half a margin (opaque, and painted out under it), and by a margin and a
+  // half (its feathered edge's reach).
+  const near = boxBlur(on, pw, ph, Math.ceil(margin / 2)), reach = boxBlur(on, pw, ph, margin)
+  // With the holes in it (a photo print's dark squares, read as the cloth): painted out round a hole, the
+  // hole's pixels coloured the fill either side of it, a streak across the front.
+  for (const grown of [near, reach]) {
+    const outside = new Uint8Array(pw * ph), stack = []
+    for (let x = 0; x < pw; x++) stack.push(x, (ph - 1) * pw + x)
+    for (let y = 0; y < ph; y++) stack.push(y * pw, y * pw + pw - 1)
+    while (stack.length) {
+      const k = stack.pop()
+      if (outside[k] || grown[k] > 0.001) continue
+      outside[k] = 1
+      const x = k % pw
+      if (x > 0) stack.push(k - 1)
+      if (x < pw - 1) stack.push(k + 1)
+      if (k >= pw) stack.push(k - pw)
+      if (k < pw * (ph - 1)) stack.push(k + pw)
+    }
+    for (let k = 0; k < pw * ph; k++) if (!outside[k]) grown[k] = Math.max(grown[k], 1)
+  }
+  const front = document.createElement("canvas")
+  front.width = FW
+  front.height = FH
+  const ctx = front.getContext("2d", { willReadFrequently: true })
+  ctx.drawImage(image, FX, FY, FW, FH, 0, 0, FW, FH)
+  const img = ctx.getImageData(0, 0, FW, FH), data = img.data
+  const fill = new Uint8Array(FW * FH), grown = new Float32Array(FW * FH)
+  for (let y = 0; y < FH; y++) {
+    const sy = Math.min(ph - 1, Math.floor(y / s))
+    for (let x = 0; x < FW; x++) {
+      const k = sy * pw + Math.min(pw - 1, Math.floor(x / s))
+      if (near[k] > 0.001) fill[y * FW + x] = 1
+      if (reach[k] > 0.001) grown[y * FW + x] = 1
+    }
+  }
+  const alpha = boxBlur(grown, FW, FH, Math.max(2, Math.round((margin * s) / 2)))
+  let covered = 0
+  for (let k = 0; k < FW * FH; k++) {
+    const a = fill[k] ? 1 : Math.min(1, alpha[k]) * grown[k]
+    data[4 * k + 3] = Math.round(a * 255)
+    covered += a
+  }
+  ctx.putImageData(img, 0, 0)
+  return { image: front, coverage: covered / (FW * FH), fill, box: [FX, FY, FW, FH] }
+}
+
 // The photo at full size with a tonal patch's opaque part (tonalPatch's fill) painted out: filled along each
 // row from the cloth either side of it (a few pixels' mean, so no streaks), as a data URL. The re-draping
 // lays this on point for point, and the patch, laid as one piece over it, hides the fill.
-function cleanedPhoto(image, patch) {
+function cleanedPhoto(image, patch, cloth = null) {
   const W = image.naturalWidth, H = image.naturalHeight
   const canvas = document.createElement("canvas")
   canvas.width = W
@@ -244,32 +355,57 @@ function cleanedPhoto(image, patch) {
   const [FX, FY, FW, FH] = patch.box
   const img = ctx.getImageData(FX, FY, FW, FH), data = img.data, fill = patch.fill
   const src = Uint8ClampedArray.from(data)
-  // The mean of the cloth's pixels over a few rows and columns just outside the fill at (x, y), stepping away
-  // by dir.
-  const side = (x, y, dir, c) => {
+  // The mean of the cloth's pixels over a few rows (or columns) and a few steps just outside the fill at
+  // (x, y), stepping away by (dx, dy): of those near the cloth's colour (cloth: the reading's, hex), when it's
+  // known (a stripe or a seam beside the fill isn't the cloth to fill it with).
+  const rgb = cloth ? [1, 3, 5].map(k => parseInt(cloth.slice(k, k + 2), 16)) : null
+  const clothy = j => !rgb || Math.hypot(src[j] - rgb[0], src[j + 1] - rgb[1], src[j + 2] - rgb[2]) < 60
+  const side = (x, y, dx, dy, c) => {
     let sum = 0, n = 0
-    for (let dy = -3; dy <= 3; dy++) for (let k = 0; k < 4; k++) {
-      const xx = x + dir * k, yy = y + dy
-      if (xx < 0 || yy < 0 || xx >= FW || yy >= FH || fill[yy * FW + xx]) continue
+    for (let across = -3; across <= 3; across++) for (let k = 0; k < 4; k++) {
+      const xx = x + dx * k + (dx ? 0 : across), yy = y + dy * k + (dy ? 0 : across)
+      if (xx < 0 || yy < 0 || xx >= FW || yy >= FH || fill[yy * FW + xx] || !clothy(4 * (yy * FW + xx))) continue
       sum += src[4 * (yy * FW + xx) + c]; n++
     }
     return n ? sum / n : null
   }
-  for (let y = 0; y < FH; y++) {
-    for (let x = 0; x < FW;) {
-      if (!fill[y * FW + x]) { x++; continue }
-      let end = x
-      while (end + 1 < FW && fill[y * FW + end + 1]) end++
-      const a = x - 1, b = end + 1
-      for (let c = 0; c < 3; c++) {
-        const l = a >= 0 ? side(a, y, -1, c) : null, r = b < FW ? side(b, y, 1, c) : null
-        for (let k = x; k <= end; k++) {
-          const t = (k - a) / (b - a)
-          data[4 * (y * FW + k) + c] = l !== null && r !== null ? l + (r - l) * t : l ?? r ?? data[4 * (y * FW + k) + c]
+  // Each pixel of the fill from the cloth beyond it each way, along its row and its column, the nearer counting
+  // for more: filled along rows alone, each row from its own two ends, the fill was streaked, and the re-drape's
+  // relief (read off the photo's shading) showed the streaks as ridges across the chest.
+  const sum = new Float32Array(3 * FW * FH), weight = new Float32Array(FW * FH)
+  const runs = (count, length, at) => {
+    for (let line = 0; line < count; line++) {
+      for (let t = 0; t < length;) {
+        if (!fill[at(line, t)]) { t++; continue }
+        let end = t
+        while (end + 1 < length && fill[at(line, end + 1)]) end++
+        const a = t - 1, b = end + 1
+        const ends = [a >= 0 ? a : null, b < length ? b : null]
+        const colours = ends.map((e, j) => e === null ? null : [0, 1, 2].map(c => {
+          const k = at(line, e), x = k % FW, y = (k - x) / FW
+          const [dx, dy] = at === byRow ? [j ? 1 : -1, 0] : [0, j ? 1 : -1]
+          return side(x, y, dx, dy, c)
+        }))
+        for (let q = t; q <= end; q++) {
+          const k = at(line, q)
+          colours.forEach((colour, j) => {
+            if (!colour || colour.some(v => v === null)) return
+            const w = 1 / Math.max(1, Math.abs(q - ends[j]))
+            for (let c = 0; c < 3; c++) sum[3 * k + c] += colour[c] * w
+            weight[k] += w
+          })
         }
+        t = end + 1
       }
-      x = end + 1
     }
+  }
+  const byRow = (y, x) => y * FW + x, byColumn = (x, y) => y * FW + x
+  runs(FH, FW, byRow)
+  runs(FW, FH, byColumn)
+  for (let k = 0; k < FW * FH; k++) {
+    if (!fill[k]) continue
+    if (weight[k] > 0) for (let c = 0; c < 3; c++) data[4 * k + c] = sum[3 * k + c] / weight[k]
+    else if (rgb) for (let c = 0; c < 3; c++) data[4 * k + c] = rgb[c]
   }
   ctx.putImageData(img, FX, FY)
   return canvas.toDataURL("image/jpeg", 0.92)
@@ -494,6 +630,8 @@ function readFront(data, w, h, shape, { hood: hoodGuess = true, patterns = true,
     }
   }
 
+  // Every mark as read, before the thin ones go (graphicPatch takes the thin lines beside a graphic with it).
+  const raw = Float32Array.from(alpha)
   // Keep only solid areas: specks and the photo's own seams and folds are thin.
   // Marks running off the front's sides or hem are its edge in the light (a sleeve's rim, the hem's fold),
   // not a print: a chest print sits inside the front. (An all-over print, which does reach them, is kept
@@ -592,12 +730,16 @@ function readFront(data, w, h, shape, { hood: hoodGuess = true, patterns = true,
   // shoulder line, a little lower. The top of the collar above it is about the high points (the hook above
   // that is far narrower), so the print starts that share of the way down (a chest logo was drawn about
   // 5 cm too high).
-  let collarTop = top
+  // Under a hood, the shoulders come out from behind it a little below their high points, which the hood
+  // hides: about HOOD_DROP of the length (the hood's edges meet at the front about 3 cm below the shoulder
+  // line in Kith's photos, and a hoodie's neck is cut about 8 cm deep; laid from the high points, a chest
+  // print met the neckline).
+  let collarTop = hood ? top - Math.round(((bottom - top) * HOOD_DROP) / (1 - HOOD_DROP)) : top
   if (!hood) while (collarTop > 0 && rows.rowMax[collarTop - 1] - rows.rowMin[collarTop - 1] >= Math.max(3, widest * 0.12)) collarTop--
   const fromTop = Math.min(0.25, Math.max(0, (top - collarTop) / Math.max(1, bottom - collarTop)))
   // (A tonal reading finds a graphic or nothing: an all-over print or stripes are the ordinary reading's.)
   if (tonal && (allOver || strip || coverage <= 0.003)) return null
-  const print = coverage > 0.003 || patterned || (strong && patterns) ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip, fromTop, mottled: strong && !contrasting && !patterned, tonal, solidBox } : null
+  const print = coverage > 0.003 || patterned || (strong && patterns) ? { data: out, width: pw, height: ph, coverage, spread, allOver, stripes: Boolean(strip), strip, fromTop, mottled: strong && !contrasting && !patterned, tonal, solidBox, raw } : null
   // A graphic on a sleeve (an all-over print or stripes already cover them).
   const sleeves = allOver || !sleeveGuess ? { left: null, right: null } : {
     left: sleevePrint(data, lab, garment.mask, w, h, { x0, x1, top, bottom }, rows, baseLab, -1),
@@ -1020,12 +1162,20 @@ export function garmentRows(mask, w, h, { hood: hoodGuess = true } = {}) {
     return gaps === 0
   }
   const wide = middle.filter(y => width(y) > full * 0.22 && width(y) < full * 0.8 && onePiece(y)).length
-  // And it narrows again at the neck, below its widest: a T-shirt's shoulders, sloping out from the collar
-  // to sleeves held out sideways, only ever widen.
-  const widestAbove = above.reduce((best, y) => width(y) > width(best) ? y : best, above[0])
-  const belowCrown = above.filter(y => y > widestAbove)
-  const pinched = belowCrown.length > 0 && Math.min(...belowCrown.map(width)) < width(widestAbove) * 0.92
-  if (hoodGuess && above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6 && pinched) {
+  // And it narrows again at the neck, below its widest so far: a T-shirt's shoulders, sloping out from the
+  // collar to sleeves held out sideways, only ever widen. (Not below its widest of all: sloping shoulders
+  // widen on out from a hood's neck, the last rows above the shoulder line the widest.)
+  let crown = 0, pinched = false
+  for (const y of above) { if (width(y) < crown * 0.92) { pinched = true; break } crown = Math.max(crown, width(y)) }
+  // Or the shoulders leap out from below it, a good way down (a raglan hoodie's hood falls straight to its
+  // shoulders, no neck to it: Kith's women's hoodies, their hood read as the front's top and a chest label
+  // laid at the neck). A T-shirt's collar and shoulders above its sleeves' leap are a few rows only.
+  const step = Math.max(2, Math.round(0.03 * (last - first)))
+  let leapFrom = -1
+  for (const y of above) if (y + step <= shoulders && width(y + step) - width(y) > 0.15 * full) leapFrom = y
+  const dome = leapFrom < 0 ? 0 : above.filter(y => y <= leapFrom && width(y) > full * 0.22 && width(y) < full * 0.8).length
+  const stepped = dome >= 0.15 * (last - first)
+  if (hoodGuess && above.length > (last - shoulders) * 0.08 && middle.length && wide > middle.length * 0.6 && (pinched || stepped)) {
     // Dropped shoulders slope on out below the shoulder line, so the body's full width comes a good way
     // down it: the shoulders are where the outline leaps out from the hood's narrow neck instead.
     const lower = above.slice(Math.round(above.length * 0.5))

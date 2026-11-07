@@ -96,3 +96,18 @@ A remote session that can't reach the browser's downloads saves its runs with `s
 in place of `export.js` (each run's sheet and record are posted to the dev server, which writes them into
 `log/development.log`), then `python3 script/validation/collect_log.py <tag>` takes them out into
 `tmp/kith/<tag>/raw`.
+
+## Parts (step 2 of the plan)
+
+Rendered again the same way, a few runs at a time, with `script/validation/probe.js` copied to
+`public/validation/` (it runs keys through the runner and sends pictures out without the browser's downloads):
+
+    const { runKeys, snapRuns } = await import("/validation/probe.js")
+    await runKeys(["user:rhufw26ho03012-8611", "m_knit:dai2610166-blk"], { pic: [480, 720] })   // poll window.batch.done
+    await snapRuns("look1", ["user:rhufw26ho03012-8611"])   // a grid: photo, front, side, back
+
+`script/validation/snap.sh` takes the grids out of `log/development.log` into `tmp/kith/snaps/raw/`. The
+finished runs go out with `export_log.js` as before (`await exportLog(VAL, "step2")`, then
+`collect_log.py step2`), and `python3 script/validation/compare.py step2` lays each run's baseline sheet over its new one.
+As for step 1, a `regrade_step2.py` (still to write, see the plan's step 2 section) will write `grades_step2.csv`
+from `grades_step1.csv` and the runs graded again.

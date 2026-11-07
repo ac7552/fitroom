@@ -608,8 +608,8 @@ export class DrapedTop {
     geometry.setAttribute("aEdge", new THREE.BufferAttribute(Float32Array.from(cloth.toEdge), 1))
     geometry.setAttribute("aHem", new THREE.BufferAttribute(Float32Array.from(cloth.toFree, d => Math.min(d, 99)), 1))
     // Which piece each point is on, for the shader: the front 1, the back 2, the sleeves 3 (left) and 4
-    // (right), their cuffs 5 and 6, anything else 0.
-    const PIECES = { front: 1, back: 2, sleeve_L: 3, sleeve_R: 4, cuff_L: 5, cuff_R: 6 }
+    // (right), their cuffs 5 and 6, a hood -1 (out of the way of every test above 0), anything else 0.
+    const PIECES = { front: 1, back: 2, sleeve_L: 3, sleeve_R: 4, cuff_L: 5, cuff_R: 6, hood_L: -1, hood_R: -1 }
     geometry.setAttribute("aPiece", new THREE.BufferAttribute(Float32Array.from(cloth.panel, p => PIECES[cloth.panels[p]] ?? 0), 1))
     geometry.setAttribute("aShade", new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
     geometry.setAttribute("aHide", new THREE.BufferAttribute(new Float32Array(n).fill(-1), 1))
@@ -713,6 +713,11 @@ export class DrapedTop {
     // Where the photo's front starts below the shoulders' high points (print.js's fromTop), front and back.
     uniforms.uPrintTop.value = (print?.fromTop ?? 0) * shown.length
     uniforms.uBackTop.value = (back?.fromTop ?? 0) * shown.length
+    // A placed graphic at the photo's scale both ways, so its letters keep their aspect: as tall as the photo's
+    // front from where it starts to the hem, as wide as that makes it (the photo's front is often read too wide,
+    // its sleeves laid along it). An all-over print or stripes span the front's width.
+    const graphic = print?.image && !print.tile && !print.strip
+    uniforms.uPrintWide.value = graphic ? ((shown.length - uniforms.uPrintTop.value) * (print.image.width / print.image.height)) / 2 : shown.chest / 4
     const texture = (canvas, wrap = false) => {
       const t = new THREE.CanvasTexture(canvas)
       t.colorSpace = THREE.SRGBColorSpace

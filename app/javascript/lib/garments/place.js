@@ -129,7 +129,9 @@ export function placeCloth(cloth, pattern, frame) {
     const round = Math.max(radius, frame.torso.at(neckY - 0.1, sign * Math.PI * 0.75) + gap) + 0.012
     const s = Math.max(py, 0) / 100
     const across = Math.max(0, crownX(py) - Math.abs(px)) / 100
-    const shoulder = (Math.PI / 2) * 0.92, rise = 0.03
+    // (It stands 4.5 cm up the neck before folding back: at 3, the fold settled flat round the neck and the hood
+    // didn't show from the front.)
+    const shoulder = (Math.PI / 2) * 0.92, rise = 0.045
     let fromBack = across / round, y = neckY - s, extra = 0
     if (fromBack > shoulder) {
       // Past the shoulder: sewn to the front neckline. Up the neck, then folded back onto the back.

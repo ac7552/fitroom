@@ -1,0 +1,59 @@
+{
+ "note": "Step 2's re-render set (docs/plan-2026-11-accuracy.md, step 2): run with probe.js's runKeys([...prints, ...parts, ...print_controls, ...controls]).",
+ "prints": [
+  "m_sweat:khm034263-413",
+  "w_hoodie:khwa030159-001",
+  "user:khmg030334-104",
+  "user:rhufw26ho03012-8611",
+  "m_hoodie:esss26ho02012-6236",
+  "m_hoodie:h011-99-yel",
+  "m_hoodie:wos-nt02-02b",
+  "m_hoodie:ess192as266991f-103",
+  "m_sweat:ess192nb256401f-blk",
+  "m_sweat:feafg9m12-9938bhf",
+  "m_sweat:h081-99",
+  "m_sweat:khm032865-001",
+  "m_sweat:prm2918-t-005-lss",
+  "w_hoodie:khwa030102-2023",
+  "w_hoodie:khwa030170-211",
+  "m_hoodie:acnci0211-ack",
+  "m_hoodie:awafw26-hd003-blk",
+  "w_tee:rd024-02wcgt428"
+ ],
+ "parts": [
+  "m_knit:khm033366-002",
+  "m_tee:khm035074-101",
+  "m_hoodie:arcx000010726-black",
+  "w_hoodie:esfw26ho03012-sun",
+  "m_hoodie:casm-aw26-jtp-292-02",
+  "m_shirt:ourm2262erc",
+  "m_shirt:khma030081-4042",
+  "m_shirt:m206t711ast",
+  "m_knit:dai2610166-blk",
+  "m_knit:cpc20cmkn117a-yellow",
+  "m_knit:mrncvmg0157q0-mxv66",
+  "m_sweat:khma030297-001",
+  "m_jacket:khma010168-151",
+  "m_denim:khma010173-416"
+ ],
+ "print_controls": [
+  "w_tee:ms-tee-ja",
+  "m_tee:awafw26-ts004-blk",
+  "m_tee:cohbu-m26388-tiq",
+  "m_tee:es125ho254191f",
+  "m_tee:khta030070-001",
+  "m_tee:rhupf26tt01012-6498",
+  "m_tee:y5-t23l27-007",
+  "w_tee:khwg030002-001"
+ ],
+ "controls": [
+  "m_denim:acnb00363-900",
+  "m_denim:apcwvbek-h09248",
+  "w_dress:amfw2608",
+  "w_dress:pdch-su26-5032-0156",
+  "m_sweat:56200012s0060-v0029",
+  "m_sweat:dai2610117-gry",
+  "w_outer:nf0a3xeo-gof",
+  "w_tee:dia257560qjcg"
+ ]
+}
