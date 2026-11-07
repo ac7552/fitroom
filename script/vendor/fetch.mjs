@@ -1,6 +1,6 @@
 // The page's photo tools, for the Fitroom server to serve itself (lib/hosted.js): transformers.js and ONNX
 // Runtime's WebAssembly, MediaPipe's tasks-vision, the pose model, and the two Hugging Face models the page
-// runs on shop photos (SlimSAM, DINOv2-small, at the precisions lib/garments/photo_models.js asks for), laid
+// runs on shop photos (SlimSAM, DINOv2-small, Depth Anything V2 Small, at the precisions the page asks for), laid
 // out under one folder with a manifest.json saying what's there. Run by the Dockerfile's vendor stage (where
 // the build has the internet), after `npm install` of the two packages below:
 //
@@ -66,7 +66,9 @@ try {
 // anything a later version asks for that isn't listed: the page takes those from the Hugging Face hub.)
 const MODELS = {
   "Xenova/slimsam-77-uniform": ["onnx/vision_encoder_fp16.onnx", "onnx/prompt_encoder_mask_decoder_fp16.onnx", "onnx/vision_encoder_quantized.onnx", "onnx/prompt_encoder_mask_decoder.onnx"],
-  "onnx-community/dinov2-small": ["onnx/model_fp16.onnx", "onnx/model_quantized.onnx"]
+  "onnx-community/dinov2-small": ["onnx/model_fp16.onnx", "onnx/model_quantized.onnx"],
+  // The depth model (lib/garments/depth.js): a shoe's relief from its side photo.
+  "onnx-community/depth-anything-v2-small": ["onnx/model_fp16.onnx", "onnx/model_quantized.onnx"]
 }
 try {
   for (const [name, files] of Object.entries(MODELS)) {
